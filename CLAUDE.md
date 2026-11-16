@@ -70,10 +70,12 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 - **Permissions.** Gate actions with `Q.can(perm)` (roles map in `store.js`), and records with `Q.canSee` and
   `Q.canDownload`. The System Administrator can't approve; the auditor is read-only.
 - **Sample data version.** After changing the shape of the data in `seed.js`, bump `version` in `seed.js` and
-  the matching check in `Q.load` in `store.js` (both are `8`). Old browsers then reseed instead of breaking.
+  the matching check in `Q.load` in `store.js` (both are `9`). Old browsers then reseed instead of breaking.
 - **New script files** need a `<script>` tag in `index.html`, before `js/app.js`.
-- **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The brand is still the
-  Step 2 placeholder; swap `--accent*` and the two font stacks when the Katalyze Data brand arrives.
+- **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The Katalyze Data brand
+  is applied: pink `#E2186F` fills (`--accent-fill`), purple `#940080` text accents (`--accent`), navy `#002B49` ink,
+  Montserrat, and the logo in `img/` (primary on light, reversed on dark, via `--logo`). Neutral greys, tints and the
+  overdue/due status colours are functional UI colours outside the brand palette and await brand sign-off.
 
 ## Check your work
 
@@ -89,8 +91,8 @@ Untested so far: opening `index.html` straight from disk, Safari, Firefox, and s
 ## Demo personas
 
 Switch with the account menu → **Demo · view as**. The main ones: Victoria E. (Quality Manager, approver),
-Tom Hughes (approver), Sam Okafor (author), Grace Lim (process owner), Daniel Cruz (employee),
-Hannah Weber (System Administrator), Alex Morgan (auditor). Full table in `veqms/README.md`.
+PJ Walters (approver), Jim Speir (author), Louise Harvey (process owner), Daniel Greenwood (employee),
+Lucy Parkin (System Administrator), Fraser Scott (auditor). Full table in `veqms/README.md`.
 
 ## What's simulated
 
@@ -99,6 +101,6 @@ malware scanning, Office-to-PDF conversion and server-side PDFs. Integrations ar
 
 ## Sensible next steps
 
-- Swap in the Katalyze Data brand (colours, logo, fonts) when it arrives.
+- Get brand sign-off for the functional UI colours (greys, tints, status colours) and the marque favicon.
 - Test in Safari and Firefox, and with VoiceOver.
 - Port to Next.js + TypeScript per Step 1, keeping this prototype as the reference for screens and flows.

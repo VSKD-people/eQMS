@@ -85,7 +85,7 @@
       return h`<a class="rail-item ${active ? 'active' : ''}" href="${n.href}" data-tip="${n.label}" aria-label="${n.label}" ${Q.raw(active ? 'aria-current="page"' : '')}>${Q.icon(n.icon)}<span class="rail-text">${n.label}</span>${n.id === 'today' && overdue ? h`<span class="rail-badge" aria-label="${overdue} overdue">${overdue}</span>` : ''}</a>`;
     });
     document.getElementById('rail').innerHTML = String(h`
-      <button class="rail-logo" data-act="rail-toggle" aria-label="Expand or collapse navigation" title="VeQMS">V</button>
+      <button class="rail-logo" data-act="rail-toggle" aria-label="Expand or collapse navigation" title="Expand or collapse navigation">${Q.icon('menu')}</button>
       ${rail}
       <div class="rail-spacer"></div>
       ${Q.can('admin.any') ? h`<a class="rail-item ${sec === 'admin' ? 'active' : ''}" href="#/admin" data-tip="Administration" aria-label="Administration">${Q.icon('admin')}<span class="rail-text">Administration</span></a>` : ''}
@@ -96,7 +96,7 @@
     var me = Q.me();
     var unread = Q.unread();
     document.getElementById('topbar').innerHTML = String(h`
-      <button class="rail-logo mobile-logo" data-act="go" data-href="#/today" aria-label="Today">V</button>
+      <a class="brand-logo" href="#/today" aria-label="Katalyze Data · VeQMS home"></a>
       <button class="cmd-trigger" data-act="palette" aria-label="Search, create or jump to a record (Ctrl K)">${Q.icon('search', 'ico-sm')}<span>Search, create or jump to a record</span><span class="kbd">${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'}</span></button>
       <div class="topbar-spacer"></div>
       ${Q.readOnly() ? '' : h`<button class="btn btn-primary new-btn" data-act="new-menu" aria-haspopup="menu">${Q.icon('plus', 'ico-sm')} New</button>`}
@@ -530,8 +530,8 @@
     Q.toast('Exported ' + name + ' · logged in the audit trail');
   };
   Q.printHtml = function (title, bodyHtml, what) {
-    var css = '<style>body{font:13px/1.5 Inter,system-ui,sans-serif;color:#17191E;margin:32px}h1,h2{font-family:"Space Grotesk",Inter,sans-serif}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #DADDE2;padding:6px 8px;text-align:left;vertical-align:top}th{background:#F1F1EE}.wm{position:fixed;top:40%;left:0;right:0;text-align:center;font:700 72px sans-serif;color:rgba(168,67,15,.12);transform:rotate(-28deg);pointer-events:none}.foot{margin-top:24px;font-size:11px;color:#5B616B;border-top:1px solid #DADDE2;padding-top:8px}.mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all}@media print{.noprint{display:none}}</style>';
-    var html = '<!doctype html><html><head><meta charset="utf-8"><title>' + Q.esc(title) + '</title>' + css + '</head><body><p class="noprint" style="background:#E8EFF7;padding:8px 12px;border-radius:6px">Prototype output: use your browser’s Print → Save as PDF. In production the server renders this PDF.</p>' + bodyHtml + '</body></html>';
+    var css = '<style>body{font:13px/1.5 Montserrat,Arial,Helvetica,sans-serif;color:#002B49;margin:32px}h1,h2{font-family:Montserrat,"Arial Black",Arial,sans-serif;font-weight:800}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #DADDE2;padding:6px 8px;text-align:left;vertical-align:top}th{background:#F2F3F5}.wm{position:fixed;top:40%;left:0;right:0;text-align:center;font:700 72px sans-serif;color:rgba(168,67,15,.12);transform:rotate(-28deg);pointer-events:none}.foot{margin-top:24px;font-size:11px;color:#55606B;border-top:1px solid #DADDE2;padding-top:8px}.mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all}@media print{.noprint{display:none}}</style>';
+    var html = '<!doctype html><html><head><meta charset="utf-8"><title>' + Q.esc(title) + '</title>' + css + '</head><body><p class="noprint" style="background:#FCEAF2;padding:8px 12px;border-radius:6px">Prototype output: use your browser’s Print → Save as PDF. In production the server renders this PDF.</p>' + bodyHtml + '</body></html>';
     var w = window.open('', '_blank');
     if (!w) { Q.download(title.replace(/\W+/g, '-') + '.html', html, 'text/html'); Q.toast('Pop-up blocked, so the file was downloaded instead'); }
     else { w.document.open(); w.document.write(html); w.document.close(); }

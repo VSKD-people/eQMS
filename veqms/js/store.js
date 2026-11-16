@@ -8,7 +8,7 @@
   Q.load = function () {
     var s = null;
     try { var raw = localStorage.getItem(KEY); if (raw) s = JSON.parse(raw); } catch (e) { s = null; }
-    if (!s || s.version !== 8) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
+    if (!s || s.version !== 9) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
   };
   Q.save = function () { try { localStorage.setItem(KEY, JSON.stringify(Q.S)); } catch (e) { /* storage blocked: demo still runs in memory */ } };
   Q.reset = function () { Q.S = Q.seed(); Q.seedAudit(); Q.save(); };

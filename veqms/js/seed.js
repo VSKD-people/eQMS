@@ -12,7 +12,7 @@
 
   Q.seed = function () {
     var S = {
-      version: 8,
+      version: 9,
       seededAt: new Date().toISOString(),
       session: { userId: 'u-vic', signedInAt: D(0, 8, 2) },
       counters: { POL: 10, SOP: 21, WI: 4, FRM: 8, REG: 3, PLN: 2, SOA: 2, SPEC: 1, CR: 17, QE: 17, CAPA: 9, OBS: 23, PR: 37, TR: 5, TPL: 9, RULE: 15, SIG: 120, ACT: 60 },
@@ -22,14 +22,14 @@
 
     // ---------------- People, roles, groups ----------------
     S.users = [
-      { id: 'u-vic', name: 'Victoria E.', initials: 'VE', email: 'victoria@veqms.example', roles: ['qm', 'approver', 'process'], title: 'Quality Manager (stand-in) · Support Owner', clearance: 'Restricted', status: 'Active', site: 'London', manager: null, groups: ['All staff', 'Managers'] },
-      { id: 'u-sam', name: 'Sam Okafor', initials: 'SO', email: 'sam.okafor@veqms.example', roles: ['author', 'reviewer'], title: 'IT Operations Lead', clearance: 'Confidential', status: 'Active', site: 'London', manager: 'u-tom', groups: ['All staff', 'IT team'] },
-      { id: 'u-priya', name: 'Priya Raman', initials: 'PR', email: 'priya.raman@veqms.example', roles: ['reviewer', 'author'], title: 'Information Security Analyst', clearance: 'Restricted', status: 'Active', site: 'London', manager: 'u-vic', groups: ['All staff', 'IT team'] },
-      { id: 'u-tom', name: 'Tom Hughes', initials: 'TH', email: 'tom.hughes@veqms.example', roles: ['approver', 'process'], title: 'Head of IT', clearance: 'Restricted', status: 'Active', site: 'London', manager: null, groups: ['All staff', 'IT team', 'Managers'] },
-      { id: 'u-grace', name: 'Grace Lim', initials: 'GL', email: 'grace.lim@veqms.example', roles: ['process', 'reviewer', 'author'], title: 'Operations Manager', clearance: 'Confidential', status: 'Active', site: 'Manila', manager: 'u-vic', groups: ['All staff', 'Managers', 'Support team'] },
-      { id: 'u-daniel', name: 'Daniel Cruz', initials: 'DC', email: 'daniel.cruz@veqms.example', roles: ['employee'], title: 'Customer Support Agent', clearance: 'Internal', status: 'Active', site: 'Manila', manager: 'u-grace', groups: ['All staff', 'Support team'] },
-      { id: 'u-hannah', name: 'Hannah Weber', initials: 'HW', email: 'hannah.weber@veqms.example', roles: ['admin'], title: 'System Administrator', clearance: 'Confidential', status: 'Active', site: 'London', manager: 'u-tom', groups: ['All staff', 'IT team'] },
-      { id: 'u-aud', name: 'Alex Morgan', initials: 'AM', email: 'alex.morgan@auditors.example', roles: ['auditor'], title: 'External ISMS auditor', clearance: 'Confidential', status: 'Active', site: 'External', manager: null, groups: [], accessUntil: D(12, 23, 59) },
+      { id: 'u-vic', name: 'Victoria E.', initials: 'VE', email: 'victoria@veqms.example', roles: ['qm', 'approver', 'process'], title: 'HR Administrator · Support Owner', clearance: 'Restricted', status: 'Active', site: 'London', manager: null, groups: ['All staff', 'Managers'] },
+      { id: 'u-sam', name: 'Jim Speir', initials: 'JS', email: 'jim.speir@veqms.example', roles: ['author', 'reviewer'], title: 'IT Operations Lead', clearance: 'Confidential', status: 'Active', site: 'London', manager: 'u-tom', groups: ['All staff', 'IT team'] },
+      { id: 'u-priya', name: 'Carrie Foreman', initials: 'CF', email: 'carrie.foreman@veqms.example', roles: ['reviewer', 'author'], title: 'Information Security Analyst', clearance: 'Restricted', status: 'Active', site: 'London', manager: 'u-vic', groups: ['All staff', 'IT team'] },
+      { id: 'u-tom', name: 'PJ Walters', initials: 'PW', email: 'pj.walters@veqms.example', roles: ['approver', 'process'], title: 'Head of IT', clearance: 'Restricted', status: 'Active', site: 'London', manager: null, groups: ['All staff', 'IT team', 'Managers'] },
+      { id: 'u-grace', name: 'Louise Harvey', initials: 'LH', email: 'louise.harvey@veqms.example', roles: ['process', 'reviewer', 'author'], title: 'Operations Manager', clearance: 'Confidential', status: 'Active', site: 'Manila', manager: 'u-vic', groups: ['All staff', 'Managers', 'Support team'] },
+      { id: 'u-daniel', name: 'Daniel Greenwood', initials: 'DG', email: 'daniel.greenwood@veqms.example', roles: ['employee'], title: 'Customer Support Agent', clearance: 'Internal', status: 'Active', site: 'Manila', manager: 'u-grace', groups: ['All staff', 'Support team'] },
+      { id: 'u-hannah', name: 'Lucy Parkin', initials: 'LP', email: 'lucy.parkin@veqms.example', roles: ['admin'], title: 'System Administrator', clearance: 'Confidential', status: 'Active', site: 'London', manager: 'u-tom', groups: ['All staff', 'IT team'] },
+      { id: 'u-aud', name: 'Fraser Scott', initials: 'FS', email: 'fraser.scott@auditors.example', roles: ['auditor'], title: 'External ISMS auditor', clearance: 'Confidential', status: 'Active', site: 'External', manager: null, groups: [], accessUntil: D(12, 23, 59) },
       { id: 'u-omar', name: 'Omar Haddad', initials: 'OH', email: 'omar.haddad@veqms.example', roles: ['reviewer', 'author'], title: 'Network Engineer', clearance: 'Confidential', status: 'Active', site: 'London', manager: 'u-tom', groups: ['All staff', 'IT team'] },
       { id: 'u-mia', name: 'Mia Santos', initials: 'MS', email: 'mia.santos@veqms.example', roles: ['employee', 'author'], title: 'HR Coordinator', clearance: 'Confidential', status: 'Active', site: 'Manila', manager: 'u-grace', groups: ['All staff', 'Support team'] },
       { id: 'u-lena', name: 'Lena Novak', initials: 'LN', email: 'lena.novak@veqms.example', roles: ['employee'], title: 'Finance Officer', clearance: 'Internal', status: 'Active', site: 'London', manager: 'u-vic', groups: ['All staff'] },
@@ -496,12 +496,12 @@
       { id: 'N-4', to: 'u-vic', at: D(-3, 9, 5), kind: 'fyi', title: 'FYI: you’ll be asked to approve SOP-020', body: 'Expected around ' + Q.fmtDay(D(9)) + ', after review.', record: 'SOP-020', read: true, channels: ['in-app'] },
       { id: 'N-5', to: 'u-vic', at: D(-2, 8, 0), kind: 'reminder', title: 'Reminder: SOP-012 training is due tomorrow', body: 'Read and confirm · Rule: All staff', record: 'SOP-012', read: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-6', to: 'u-vic', at: D(-4, 11, 30), kind: 'info', title: 'High-severity event QE-016 raised', body: 'Two laptops found without disk encryption. CAPA-008 created.', record: 'QE-016', read: true, channels: ['in-app', 'email', 'teams'] },
-      { id: 'N-7', to: 'u-vic', at: D(-2, 10, 12), kind: 'info', title: 'Training rule TR-04 needs your approval', body: 'Grace Lim created "Support team (Manila)". Rules go live only after approval.', record: 'TR-04', read: false, channels: ['in-app', 'email'] },
+      { id: 'N-7', to: 'u-vic', at: D(-2, 10, 12), kind: 'info', title: 'Training rule TR-04 needs your approval', body: 'Louise Harvey created "Support team (Manila)". Rules go live only after approval.', record: 'TR-04', read: false, channels: ['in-app', 'email'] },
       { id: 'N-8', to: 'u-vic', at: D(-5, 18, 2), kind: 'security', title: 'New sign-in from a new device', body: 'Safari on macOS, London. If this was not you, tell IT at once.', record: null, read: true, mandatory: true, channels: ['email'] },
       { id: 'N-9', to: 'u-tom', at: D(-6, 15, 45), kind: 'fyi', title: 'FYI: you’ll be asked to approve POL-004 v2.0', body: 'You approve after Victoria E. (sequential route).', record: 'POL-004', read: false, channels: ['in-app', 'email'] },
       { id: 'N-10', to: 'u-tom', at: D(-4, 9, 0), kind: 'action', title: 'Your turn to approve the plan for CR-016', body: 'Major change · due ' + Q.fmtDay(D(2)), record: 'CR-016', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
       { id: 'N-11', to: 'u-grace', at: D(-1, 14, 41), kind: 'action', title: 'New observation OBS-021 to review', body: 'Server room door propped open · raised by Ruth Adeyemi', record: 'OBS-021', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
-      { id: 'N-12', to: 'u-daniel', at: D(-1, 7, 0), kind: 'overdue', title: 'Overdue: SOP-012 training', body: 'Your manager Grace Lim has been told. Repeats every 2 days.', record: 'SOP-012', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
+      { id: 'N-12', to: 'u-daniel', at: D(-1, 7, 0), kind: 'overdue', title: 'Overdue: SOP-012 training', body: 'Your manager Louise Harvey has been told. Repeats every 2 days.', record: 'SOP-012', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-13', to: 'u-sam', at: D(-3, 7, 0), kind: 'overdue', title: 'Overdue: periodic review of REG-002', body: 'Due ' + Q.fmtShort(D(-5)) + '. Your manager has been told.', record: 'PR-032', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-14', to: 'u-hannah', at: D(-1, 3, 12), kind: 'info', title: '2 automations failed after 6 tries', body: 'They are in the dead-letter queue. Nothing was lost; retry when the connector is fixed.', record: null, href: '#/admin/automations?tab=failed', read: false, channels: ['in-app', 'email'] }
     ];
@@ -632,7 +632,7 @@
     return [
       [-400, 9, 0, 'u-sam', 'create', 'Document', 'POL-004', 'Created POL-004 from template TPL-POL'],
       [-390, 14, 2, 'u-tom', 'sign', 'Document', 'POL-004', 'Signed POL-004 v1.0 · Approved'],
-      [-160, 9, 30, 'u-hannah', 'role.change', 'User', 'u-priya', 'Granted Reviewer to Priya Raman'],
+      [-160, 9, 30, 'u-hannah', 'role.change', 'User', 'u-priya', 'Granted Reviewer to Carrie Foreman'],
       [-70, 11, 0, 'u-grace', 'create', 'Quality event', 'QE-012', 'Raised QE-012 Leaver account left active'],
       [-60, 10, 0, 'u-vic', 'legal-hold', 'Quality event', 'QE-012', 'Placed QE-012 on legal hold'],
       [-58, 9, 0, 'u-priya', 'create', 'Quality event', 'QE-013', 'Raised QE-013 Phishing simulation'],
@@ -652,7 +652,7 @@
       [-9, 14, 0, 'u-grace', 'create', 'Document', 'SOP-020', 'Created SOP-020 from template TPL-SOP'],
       [-8, 9, 0, 'u-tom', 'create', 'Change request', 'CR-015', 'Created CR-015'],
       [-6, 15, 42, 'u-omar', 'review', 'Document', 'POL-004', 'Closed review with 1 comment'],
-      [-6, 15, 45, 'u-sam', 'state', 'Document', 'POL-004', 'Sent v2.0 for approval (sequential: Victoria E., then Tom Hughes)'],
+      [-6, 15, 45, 'u-sam', 'state', 'Document', 'POL-004', 'Sent v2.0 for approval (sequential: Victoria E., then PJ Walters)'],
       [-6, 8, 55, 'u-lena', 'create', 'Observation', 'OBS-020', 'Raised OBS-020'],
       [-5, 9, 0, 'u-grace', 'state', 'Observation', 'OBS-020', 'Escalated OBS-020 to QE-015'],
       [-5, 18, 2, 'u-vic', 'login', 'Session', 'u-vic', 'Signed in from a new device (Safari, macOS)'],
@@ -664,7 +664,7 @@
       [-2, 11, 15, 'u-sam', 'review', 'Document', 'SOP-020', 'Marked reviewed'],
       [-1, 14, 40, 'u-ruth', 'create', 'Observation', 'OBS-021', 'Raised OBS-021'],
       [-1, 15, 5, 'u-priya', 'review', 'Change request', 'CR-015', 'Marked reviewed'],
-      [-1, 16, 0, 'u-hannah', 'role.request', 'User', 'u-grace', 'Requested Approver role for Grace Lim (needs a second admin)'],
+      [-1, 16, 0, 'u-hannah', 'role.request', 'User', 'u-grace', 'Requested Approver role for Louise Harvey (needs a second admin)'],
       [-1, 16, 20, 'u-sam', 'checkout', 'Document', 'WI-003', 'Checked out WI-003'],
       [-1, 9, 10, 'u-aud', 'read', 'Document', 'PLN-001', 'Download attempt blocked: PLN-001 is Restricted'],
       [0, 7, 0, 'system', 'automation', 'Document', 'POL-004', 'RULE-07 overdue escalation (day 2)'],
