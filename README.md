@@ -18,8 +18,10 @@ veqms-prototype/
 │   └── text/            plain-text copies of the PDFs and spreadsheets
 ├── tools/
 │   └── smoke-test.js    paste into the browser console to check every page renders
-└── .claude/
-    └── launch.json      lets the Claude desktop app preview the app in its browser pane
+├── .claude/
+│   └── launch.json      lets the Claude desktop app preview the app in its browser pane
+├── .github/workflows/   deploys veqms/ to Azure Static Web Apps
+└── DEPLOY.md            how to put it online behind Microsoft Entra ID sign-in
 ```
 
 `.claude` is a hidden folder. On a Mac, press Cmd+Shift+. in Finder to see it.
