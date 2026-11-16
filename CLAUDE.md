@@ -72,8 +72,10 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 - **Sample data version.** After changing the shape of the data in `seed.js`, bump `version` in `seed.js` and
   the matching check in `Q.load` in `store.js` (both are `8`). Old browsers then reseed instead of breaking.
 - **New script files** need a `<script>` tag in `index.html`, before `js/app.js`.
-- **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The brand is still the
-  Step 2 placeholder; swap `--accent*` and the two font stacks when the Katalyze Data brand arrives.
+- **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The Katalyze Data brand
+  is applied: pink `#E2186F` fills (`--accent-fill`), purple `#940080` text accents (`--accent`), navy `#002B49` ink,
+  Montserrat, and the logo in `img/` (primary on light, reversed on dark, via `--logo`). Neutral greys, tints and the
+  overdue/due status colours are functional UI colours outside the brand palette and await brand sign-off.
 
 ## Check your work
 
@@ -99,6 +101,6 @@ malware scanning, Office-to-PDF conversion and server-side PDFs. Integrations ar
 
 ## Sensible next steps
 
-- Swap in the Katalyze Data brand (colours, logo, fonts) when it arrives.
+- Get brand sign-off for the functional UI colours (greys, tints, status colours) and the marque favicon.
 - Test in Safari and Firefox, and with VoiceOver.
 - Port to Next.js + TypeScript per Step 1, keeping this prototype as the reference for screens and flows.
