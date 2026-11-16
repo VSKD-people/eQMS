@@ -1,0 +1,1344 @@
+
+
+===== PAGE 1 =====
+eQMS — Step 3: Threat Model & Control 
+Mapping
+Draft for approval · ​Nov 12, 2026 · @Mother of Dragons
+Status and scope
+This is the Step 3 deliverable from the build prompt: a STRIDE threat model of the design
+in Step 1, the Section 10 control mapping with evidence and tests, and a list of what the
+design cannot fully meet. No code is written until you approve this doc and Step 2.
+It assesses the MVP (Phases 1 to 3) in depth, because real quality records go live at Gate
+2. Phase 4 to 7 items (Teams, SharePoint, DocuSign, mobile) are covered at the threat level
+only and get a deeper pass before their phase starts.
+Inputs it relies on:
+Step 1 plan as revised on 12 Nov 2026, build prompt Revision 2.2, and your answers in
+the open questions sheet.
+Your answers today: code lives in a GitHub repository, Steps 2 and 3 come before any
+code, and you (Victoria) are the named pull-request reviewer.
+Working assumptions still open: RPO 1 hour, RTO 1 business day, 99.5% availability, 25
+concurrent users, 60-minute leaver target.
+Ratings use a simple scale: likelihood and impact each Low, Medium or High. They are my
+judgement for a 22-user internal system on Azure, not measured figures. Annex A
+references follow ISO/IEC 27001:2022 as I understand the numbering; check each against
+your licensed copy.
+System and trust boundaries
+The API is the only component that changes records, so most controls sit where requests
+cross into it. Workers make every outbound call, which keeps a failing integration away
+from users.
+eQMS — Step 3: Threat Model & Control Mapping
+Page 1 of 16
+
+
+===== PAGE 2 =====
+What is checked at each crossing:
+B1, device to app: TLS 1.2+, WAF and rate limits, then token validation, user status and
+permissions in the API.
+B2, Entra to app: signed OIDC tokens (issuer, audience, tenant, auth_time, acrs);
+SCIM calls need a secret token.
+B3, app to data: private endpoints only; the app's database role cannot update or
+delete signatures or audit entries.
+B4, app to anchor: workers can add anchor files but nothing can change them until
+the WORM policy expires.
+B5, app to third parties: outbound only, credentials from Key Vault; inbound
+webhooks (DocuSign, Phase 6) come back through B1 and are HMAC-checked.
+trust boundaries · 7 zones, 6 crossings
+eQMS — Step 3: Threat Model & Control Mapping
+Page 2 of 16
+
+
+===== PAGE 3 =====
+B6, build to Azure: GitHub Actions deploys through OIDC federation with no stored
+cloud secret, after an environment approval.
+Assets and actors
+The two assets an auditor relies on most are the signatures and the audit trail. If either can
+be forged or quietly changed, every record in the system loses its value as evidence.
+Asset
+Why it matters
+Where it lives
+Electronic signatures
+Prove who approved what,
+when, and against which exact
+version
+signature table, manifest page
+on PDFs
+Audit trail and anchors
+Prove the history is complete
+and unchanged
+audit_log_entry table, WORM
+Blob container
+Controlled documents
+and versions
+ISMS policies, SoA, risk
+register, procedures
+document_version rows, Blob
+storage
+Training records
+Evidence that staff read and
+accepted procedures
+Training tables
+Personal data
+Names, emails, job roles,
+device and IP data; UK GDPR
+applies
+app_user , audit log,
+notification log
+Identity tokens and
+sessions
+Let a holder act as a user
+Browser, mobile keychain, API
+Integration secrets
+Graph, DocuSign and bot
+credentials
+Azure Key Vault
+Workflow and
+automation definitions
+Decide who must approve and
+what runs automatically
+Versioned JSON in Postgres
+Source code and CI
+pipeline
+Whoever changes them
+changes every control above
+GitHub repository and Actions
+Backups
+Restore point after loss or
+ransomware
+Azure managed backups, UK
+West copy
+eQMS — Step 3: Threat Model & Control Mapping
+Page 3 of 16
+
+
+===== PAGE 4 =====
+STRIDE threat register
+The register lists 36 threats. Thirty-two are in MVP scope and get a test before Gate 2; the
+other four belong to Phases 6 and 7. Three leave residual risk that needs your acceptance
+(T08, T12, T28; see the residual risks section).
+Actor
+Access
+Main concern
+External attacker
+Internet only
+Phishing, credential stuffing,
+web exploits, malicious uploads
+Ordinary user (22 in scope)
+Own tasks and records
+Over-reach into Restricted
+records, mistakes
+Approver or author
+Signs records
+Self-approval, signing under
+pressure, repudiation
+System Administrator
+Users, roles, settings
+Granting themselves approval
+rights or altering history
+Support Owner (Victoria, up
+to 3 more)
+Alerts, support contacts
+Alert fatigue; one person holding
+many roles
+Cloud or database super-
+admin
+Azure subscription,
+Postgres admin
+Editing rows directly, bypassing
+the app
+Leaver
+Was trusted, access
+being removed
+Using a live session after leaving
+Support staff in the
+Philippines
+Remote access to UK
+data
+Restricted transfer under UK
+GDPR; device security
+AI coding agent (Claude)
+and contractors
+Write code via pull
+requests
+Insecure or malicious code
+reaching production
+Third-party providers
+Microsoft, DocuSign,
+Apple, Google
+Outage, compromise, data
+exposure in transit
+Compromised dependency
+npm packages in the
+build
+Supply-chain code running in the
+API
+eQMS — Step 3: Threat Model & Control Mapping
+Page 4 of 16
+
+
+===== PAGE 5 =====
+STRIDE: S spoofing, T tampering, R repudiation, I information disclosure, D denial of
+service, E elevation of privilege. L/I = likelihood / impact. Phase = the phase that builds the
+mitigation; its test must pass before that phase exits.
+ID
+Component: threat
+STRIDE
+L/I
+Mitigation
+Test or evidence
+Phase
+T01
+Sign-in: phishing
+steals a password or
+session
+S
+M/H
+Entra MFA through
+Conditional Access;
+phishing-resistant
+MFA for admins; short
+session lifetime
+Conditional Access
+policy export; new-
+device login alert test
+1
+T02
+Signing: attacker with
+a stolen session signs
+as the user
+S
+M/H
+Fresh sign-in
+(prompt=login) plus
+authentication context
+MFA per signing
+action; API refuses
+tokens unless acrs
+holds the context and
+auth_time is later than
+the signing intent
+E2E: an older token is
+refused, even one
+minutes old
+1
+T03
+API: token from
+another app or tenant
+accepted
+S
+L/H
+Validate issuer,
+audience, tenant and
+signature on every
+token with a
+maintained library,
+never hand-written
+Integration tests with
+wrong audience, issuer
+and tenant
+1
+T04
+Signatures: row
+edited to change
+signer or meaning
+T
+L/H
+App database role has
+insert-only rights; each
+signature also writes a
+chained audit entry;
+manifest rendered
+from rows
+UPDATE as app role
+fails; a DBA edit is
+caught by the verifier
+1
+T05
+Signatures: signer
+denies approving
+R
+M/M
+Signature binds signer,
+meaning, statement
+text, UTC time, version
+id, content SHA-256,
+auth_time and acrs
+Manifest shows every
+field; sample signature
+export
+1
+T06
+Files: approved file
+swapped in Blob
+storage
+T
+L/H
+SHA-256 stored at
+approval and
+rechecked on every
+render; immutability
+on approved files
+(verify Blob option)
+Swap a file in test:
+render blocked and
+alert raised
+2
+eQMS — Step 3: Threat Model & Control Mapping
+Page 5 of 16
+
+
+===== PAGE 6 =====
+ID
+Component: threat
+STRIDE
+L/I
+Mitigation
+Test or evidence
+Phase
+T07
+Audit log: DBA edits
+or deletes rows
+T
+L/H
+Hash chain; WORM
+anchor every 15 min;
+hourly verifier; nightly
+full recompute; DBA
+access break-glass
+only
+Audit-tamper test at
+Gate 2
+1
+T08
+Audit log: super-
+admin rewrites and
+re-hashes the chain
+before the next
+anchor
+T
+L/H
+Break-glass approval
+and alert; anchor
+window capped at 15
+min
+Break-glass drill.
+Residual risk
+1
+T09
+Audit log: entries lost
+under load or on error
+R
+M/H
+Audit entry in the
+same transaction as
+the change (no audit,
+no change); per-tenant
+advisory lock
+Concurrent-save test:
+one unbroken chain
+1
+T10
+API: user reads or
+edits a record outside
+their rights (IDOR)
+E
+M/H
+Every handler checks
+RBAC, record
+permissions and
+classification; Postgres
+RLS underneath
+Allow and deny test for
+every permission rule;
+DAST
+1
+T11
+Workflow: author
+approves own record
+E
+M/H
+SoD guard in the API;
+override needs a
+named admin, reason
+and signature, logged
+as its own event
+E2E: self-approval
+blocked; override
+logged
+1
+T12
+Admin: System
+Administrator gives
+themselves approval
+rights, then signs
+E
+M/H
+Privilege changes alert
+the Support Owner
+and other admins;
+quarterly access
+review; see residual
+risks
+Alert test; access-
+review report. Residual
+risk
+1
+T13
+Database: pooled
+connection carries
+another request's
+identity
+I
+L/H
+SET LOCAL tenant and
+user inside every
+transaction
+Integration test across
+interleaved requests
+1
+eQMS — Step 3: Threat Model & Control Mapping
+Page 6 of 16
+
+
+===== PAGE 7 =====
+ID
+Component: threat
+STRIDE
+L/I
+Mitigation
+Test or evidence
+Phase
+T14
+Files: Restricted
+document
+downloaded without
+clearance, or link
+forwarded
+I
+M/H
+Clearance checked
+before a link is issued;
+short-lived, read-only,
+single-file SAS links;
+viewer name
+watermarked; every
+download logged
+Uncleared user denied
+and the attempt logged
+2
+T15
+Uploads: malware or
+weaponised file
+T
+M/H
+Quarantine container
+until scanned clean;
+nothing rendered
+before the scan
+EICAR test file blocked
+1
+T16
+PDF conversion:
+exploit in the Office-
+to-PDF converter
+E
+M/H
+Converter in its own
+container: no
+outbound network, no
+secrets, non-root,
+patched monthly
+Container scan;
+network-isolation test
+2
+T17
+Web: stored XSS
+through comments,
+titles or rich text
+T
+M/H
+React escaping;
+sanitised rich text;
+strict Content Security
+Policy
+DAST (ZAP); CSP
+violation reports
+1
+T18
+Web: cross-site
+request forgery
+S
+L/M
+Tokens sent in the
+Authorization header,
+or SameSite cookies
+plus CSRF tokens
+(decided in Phase 1)
+DAST
+1
+T19
+API: flooding or
+expensive search
+queries
+D
+L/M
+WAF; rate limits per
+user and IP; page-size
+caps; query timeouts
+Load test (k6) and rate-
+limit test
+1
+T20
+Workers: automation
+or notification fails
+silently
+D
+M/M
+Retries with backoff;
+dead-letter queue;
+Failed Automations
+screen; alert to
+Support Owner
+Kill a worker mid-job
+drill
+1
+T21
+Automation: rule
+edited to skip an
+approval
+E
+L/H
+Rules versioned and
+approved before going
+live; no rule can take a
+signature-required
+transition; every run
+audited
+Test: rule cannot
+advance a signature-
+required step
+1
+eQMS — Step 3: Threat Model & Control Mapping
+Page 7 of 16
+
+
+===== PAGE 8 =====
+ID
+Component: threat
+STRIDE
+L/I
+Mitigation
+Test or evidence
+Phase
+T22
+Notifications:
+Restricted content in
+email, Teams or lock-
+screen push
+I
+M/M
+Messages carry
+number, title, due date
+and link only; titles
+masked for
+Confidential and
+Restricted in push
+Template test per
+classification
+1
+T23
+Email: phished look-
+alike "Approve" link
+S
+M/M
+Links only open the
+app; signing always
+needs step-up; SPF,
+DKIM and DMARC on
+the sending domain
+Step-up test from email
+link; DMARC report
+1
+T24
+Leavers: live session
+used after leaving
+E
+M/M
+API checks user status
+on every request;
+admin revoke-now;
+refresh tokens
+revoked
+Leaver test: 60 min and
+revoke-now
+1
+T25
+SCIM: forged
+provisioning call
+creates or promotes a
+user
+S
+L/H
+SCIM endpoint needs
+a secret token from
+Key Vault; SCIM can
+only assign base roles;
+approval roles
+assigned in-app and
+audited
+Unauthenticated SCIM
+call refused
+1
+T26
+Email: leaked app
+credential sends mail
+as any mailbox
+E
+L/H
+Mail.Send scoped to
+the QMS mailbox
+through Exchange
+RBAC for Applications;
+certificate credential
+in Key Vault, rotated
+IT test: sending as
+another mailbox fails
+1
+T27
+Secrets: credentials
+in code, config or logs
+I
+M/H
+Managed identities;
+Key Vault; secrets
+scanning in CI; log
+scrubbing
+CI scan history
+1
+T28
+Repo: insecure or
+malicious code
+merged (AI agent,
+contractor,
+dependency, or a
+rubber-stamped
+review)
+T
+M/H
+Branch protection;
+required named
+reviewer; required
+checks (CodeQL, SCA,
+gitleaks, Trivy); signed
+commits; lockfile;
+agent has no
+production access
+Branch-protection
+export; PR history.
+Residual risk
+1
+eQMS — Step 3: Threat Model & Control Mapping
+Page 8 of 16
+
+
+===== PAGE 9 =====
+ID
+Component: threat
+STRIDE
+L/I
+Mitigation
+Test or evidence
+Phase
+T29
+CI/CD: deploy
+pipeline used to
+reach production
+data
+E
+L/H
+GitHub OIDC
+federation, no stored
+cloud secrets; deploy
+identity cannot read
+data; production
+deploy needs an
+environment approval
+Settings export
+1
+T30
+Backups:
+ransomware or
+deletion of database
+and backups
+D
+L/H
+Azure managed
+backups the app
+cannot delete; UK
+West copy; quarterly
+restore test
+Restore test within RTO
+at Gate 2
+1
+T31
+Logs: personal data in
+logs or non-
+production
+I
+M/M
+Structured logs with
+masking; no
+production personal
+data in dev or test
+Log sample review each
+release
+1
+T32
+Support from the
+Philippines: weak
+device or no transfer
+mechanism
+I
+M/M
+Conditional Access
+requires an Intune-
+compliant device;
+least-privilege support
+role; transfer
+mechanism
+documented
+([CONFIRM])
+Transfer record; device
+compliance report
+Gate
+2
+T33
+Mobile: lost phone
+exposes cached data
+I
+M/M
+Intune; tokens in
+keychain; documents
+streamed, not stored;
+wipe on revoke
+Lost-device drill
+7
+T34
+DocuSign: forged
+webhook advances a
+workflow
+S
+L/H
+HMAC over raw body;
+de-duplication; status
+re-fetched from
+DocuSign before
+acting
+Forged and replayed
+webhook tests
+6
+T35
+SharePoint: published
+copy edited outside
+the QMS
+T
+M/M
+Read-only library;
+Sites.Selected grant;
+watermark marks it as
+a copy; QMS stays the
+system of record
+Edit attempt in library
+refused
+6
+T36
+Teams: spoofed bot
+traffic
+S
+L/M
+Validate Bot
+Framework tokens on
+every inbound call
+Unsigned request
+refused
+6
+eQMS — Step 3: Threat Model & Control Mapping
+Page 9 of 16
+
+
+===== PAGE 10 =====
+Abuse cases specific to an eQMS
+These six scenarios are the ones an ISO auditor or pen tester is most likely to probe. Each
+becomes a scripted test before Gate 2.
+1. Forged approval. Someone signs a policy as their manager using an unlocked laptop.
+Stopped by: every signing action forces a fresh Entra sign-in with MFA (T02). The
+open session alone cannot sign.
+Left over: if the manager's MFA device is also unlocked and to hand, the system
+cannot tell. That is a device and behaviour control, covered by your ISMS policies.
+2. Rewritten history. After an audit finding, someone edits an old approval date or
+deletes a rejection.
+Stopped by: insert-only grants on signatures and audit entries (T04), the hash
+chain and WORM anchors (T07), hourly and nightly verification.
+Left over: a cloud super-admin edit inside the 15-minute anchor window (T08).
+3. Admin approves their own change. The System Administrator adds themselves to the
+Approver role, then approves a document.
+Stopped by: SoD guard if they authored it (T11); privilege-change alert; quarterly
+access review.
+Left over: with about 22 users there may be only one admin, so nobody
+independent sees the alert in time (T12).
+4. Leaver keeps working. A leaver keeps using an open browser tab for an hour after HR
+offboards them.
+Stopped by: per-request status check and revoke-now (T24). SCIM alone takes a
+provisioning cycle (about 40 minutes reported; verify).
+Left over: the 60-minute target relies on someone pressing revoke-now for urgent
+cases.
+5. Insider takes the ISMS pack. A user bulk-exports the risk register and Statement of
+Applicability before leaving.
+Stopped by: classification limits on export, watermarked downloads with the
+viewer's name, export logging, and a mass-export alert.
+Left over: a permitted user can still read and photograph what they are cleared to
+see.
+6. Backdoor in the code. A pull request from the AI agent or a compromised
+dependency adds a hidden bypass to the signing check.
+eQMS — Step 3: Threat Model & Control Mapping
+Page 10 of 16
+
+
+===== PAGE 11 =====
+Stopped by: required human review, CodeQL, dependency and secrets scanning,
+signed commits, branch protection (T28).
+Left over: the review is only as strong as the reviewer's ability to read the change.
+See residual risks.
+Control mapping
+Every Section 10 row is supported by the design, but ten depend partly on things the
+organisation must do outside the software. Those are marked "Software + org" and listed
+with an owner in the decisions section. "Software" means the build alone produces the
+evidence.
+Area
+Annex A
+(verify)
+Feature that
+supports it
+Evidence for the
+auditor
+Threats
+Depends on
+Identity and
+authentication
+A.5.16,
+A.5.17,
+A.8.5
+Entra SSO, MFA,
+step-up signing,
+session timeout
+Conditional Access
+export; step-up
+test results
+T01–T03
+Software + org (IT
+owns Entra
+policies)
+Access control
+A.5.15,
+A.5.18,
+A.8.2,
+A.8.3
+API RBAC, record
+permissions,
+classification, RLS
+Permission test
+suite; quarterly
+access-review
+export
+T10, T12,
+T13
+Software + org
+(someone runs the
+review)
+Joiners, movers,
+leavers
+A.5.18,
+A.6.5
+SCIM, per-request
+status check,
+revoke-now
+Leaver test record
+T24, T25
+Software + org
+(HR triggers
+offboarding in
+Entra)
+Audit trail and
+logging
+A.8.15,
+A.8.16,
+A.8.17
+Hash-chained audit
+log, WORM anchors,
+verifier, Azure time
+sync
+Tamper test; anchor
+files; verifier logs
+T04,
+T07–T09
+Software
+Records
+protection
+A.5.33
+Soft delete,
+retention, legal hold,
+immutable versions
+Retention
+configuration;
+delete-attempt test
+T06
+Software
+Cryptography
+A.8.24
+TLS 1.2+, encryption
+at rest with
+customer-managed
+keys, field-level
+encryption
+Crypto standard
+doc; Key Vault
+config export
+T27
+Software
+eQMS — Step 3: Threat Model & Control Mapping
+Page 11 of 16
+
+
+===== PAGE 12 =====
+Area
+Annex A
+(verify)
+Feature that
+supports it
+Evidence for the
+auditor
+Threats
+Depends on
+Classification and
+labelling
+A.5.12,
+A.5.13
+Classification field,
+UI labels,
+watermarks, file
+metadata
+Screenshots;
+watermark samples
+T14
+Software
+Data leakage
+prevention
+A.8.12,
+A.5.14
+Download and
+export rules by
+class, export log,
+mass-export alert,
+link-only messages
+Export log; alert
+test
+T14, T22
+Software
+Personal data and
+privacy
+A.5.34,
+A.8.11
+Minimisation,
+subject-access
+export, masking in
+logs and non-prod
+Data map; masking
+test
+T31, T32
+Software + org
+(privacy notice,
+transfer
+mechanism)
+Secure deletion
+A.8.10
+Scheduled purge of
+non-record data
+with deletion log
+Deletion log sample
+—
+Software
+Backup and
+continuity
+A.8.13,
+A.8.14,
+A.5.30
+PITR, UK West copy,
+restore runbook
+Restore test record
+within RTO
+T30
+Software + org
+(RPO/RTO
+accepted,
+quarterly test run)
+Secure
+development
+A.8.25–
+A.8.29
+Threat model, ASVS
+L2, CI security
+gates, DAST
+This doc; CI results;
+ZAP report
+T17–T19,
+T28
+Software
+Outsourced / AI-
+assisted
+development
+A.8.30
+Named reviewer on
+every PR; agent has
+no production
+access
+PR approval history
+T28
+Software + org
+(reviewer
+capability)
+Source code
+access
+A.8.4
+Branch protection,
+signed commits,
+role-based repo
+access
+GitHub settings
+export
+T28
+Software
+Security in
+project
+management
+A.5.8
+Security exit criteria
+per phase
+Phase exit
+checklists
+—
+Software
+Environments and
+test data
+A.8.31,
+A.8.33
+Separate dev,
+staging, prod
+subscriptions;
+masked data
+Subscription list;
+masking script
+T29, T31
+Software
+eQMS — Step 3: Threat Model & Control Mapping
+Page 12 of 16
+
+
+===== PAGE 13 =====
+What the design cannot fully meet
+The biggest gap is not technical: one person is set to be pull-request reviewer, Support
+Owner and probably an admin, and the reviewer may not be able to judge security code.
+An auditor testing A.8.30 and segregation of duties will look here first.
+Area
+Annex A
+(verify)
+Feature that
+supports it
+Evidence for the
+auditor
+Threats
+Depends on
+Change
+management
+A.8.32
+PR, approval, tests,
+change record,
+rollback plan
+Release records
+T28, T29
+Software
+Configuration and
+vulnerabilities
+A.8.8,
+A.8.9
+IaC baselines,
+Dependabot,
+container scanning
+Scan reports; patch
+log
+T16, T28
+Software + org
+(patch SLAs,
+annual pen test
+bought)
+Malware
+A.8.7
+Quarantine and
+scan before store or
+render
+EICAR test
+T15
+Software
+Network
+A.8.20,
+A.8.22
+WAF, rate limiting,
+private endpoints
+Network config
+export
+T19
+Software
+Cloud and
+suppliers
+A.5.19–
+A.5.23
+Sub-processor
+register, shared-
+responsibility note
+Register; Microsoft
+and DocuSign
+certificates
+—
+Software + org
+(contracts and
+DPAs)
+Integrations
+A.5.14,
+A.5.15,
+A.8.24
+Sites.Selected,
+scoped Mail.Send,
+Key Vault, HMAC
+webhooks
+Permission list with
+justification
+T26,
+T34–T36
+Software + org (IT
+grants
+permissions)
+Incident
+management
+A.5.24–
+A.5.28
+Security alerts,
+anchored audit log
+for evidence
+Tested incident
+runbook
+T07, T20
+Software + org
+(on-call cover)
+Monitoring
+A.8.16
+Central logs; alerts
+on anomalous
+logins, privilege
+changes, mass
+exports
+Alert test records
+T01, T12
+Software
+eQMS — Step 3: Threat Model & Control Mapping
+Page 13 of 16
+
+
+===== PAGE 14 =====
+ID
+Gap or residual risk
+Why it remains
+Recommendation
+Your call
+R1
+Code review may
+not catch a
+security flaw (T28)
+You are the named
+reviewer. If you
+cannot read
+TypeScript, the AI
+agent is in effect
+reviewing its own
+code, which Step 1
+already flagged
+Keep yourself as
+approver of every PR,
+and add an
+independent developer
+to review security-
+sensitive PRs (sign-in,
+signing, audit log,
+permissions, RLS, CI)
+before they merge. A
+few paid hours a month
+is likely enough at this
+size
+Accept, or
+name a
+reviewer
+R2
+One person holds
+too many roles
+Support Owner, PR
+reviewer and likely
+System
+Administrator sit
+with you; the prompt
+bars the System
+Administrator from
+Gate 2 UAT sign-off
+In production, give the
+System Administrator
+role to someone else, or
+document
+compensating controls
+(alerts to a second
+person, quarterly
+review by the CEO or
+COO)
+Decide
+before Gate
+2
+R3
+Admin self-
+elevation (T12)
+With one admin,
+nobody
+independent sees
+the privilege-change
+alert in time
+Two-person rule:
+granting Approver,
+Quality Manager or
+Administrator needs a
+second admin's
+approval. Needs at least
+two admins
+Accept or
+decline
+R4
+Audit rewrite
+inside the anchor
+window (T08)
+A super-admin can
+change rows and re-
+hash before the next
+anchor. The design is
+tamper-evident, not
+tamper-proof
+Shorten the anchor
+interval from 15 to 5
+minutes (small storage
+cost), and keep break-
+glass alerting
+Accept 15
+or move to 5
+eQMS — Step 3: Threat Model & Control Mapping
+Page 14 of 16
+
+
+===== PAGE 15 =====
+Decisions needed to approve Step 3
+Four answers let Phase 1 start once Step 2 is also approved. The rest can follow during
+Phase 1, before Gate 2.
+Needed before Phase 1:
+ID
+Gap or residual risk
+Why it remains
+Recommendation
+Your call
+R5
+Leaver target
+depends on Entra
+and people
+Entra provisions in
+periodic cycles
+(about 40 minutes
+reported; verify),
+and urgent cases
+need someone to
+press revoke-now
+Keep 60 minutes; add
+revoke-now to the HR
+offboarding checklist
+Accept
+R6
+99.5% availability
+without zone
+redundancy
+A zone outage takes
+the database down
+until failover or
+restore, within the 1-
+business-day RTO
+Accept for the MVP;
+review once usage
+grows
+Accept or
+upgrade
+R7
+Restricted transfer
+for support from
+the Philippines
+Software cannot
+provide a lawful
+transfer mechanism
+Choose and document
+a mechanism (for
+example the UK IDTA or
+Addendum; verify with
+a privacy adviser)
+before Gate 2
+Owner
+needed
+R8
+Part 11 / Annex 11
+records
+If any record type
+needs it, formal
+validation is extra
+work not costed in
+Step 1
+Keep the switch off
+unless a regulated
+record type is named
+Confirm
+none
+R9
+Mobile hardening
+on Expo
+Certificate pinning
+and root detection
+need native modules
+not yet verified for
+Expo
+Verify before Phase 7; if
+unavailable, document
+the justification the
+prompt allows
+Phase 7
+eQMS — Step 3: Threat Model & Control Mapping
+Page 15 of 16
+
+
+===== PAGE 16 =====
+Needed before Gate 2:
+R1: keep yourself as sole reviewer, or add an independent reviewer for security-
+sensitive PRs
+R3: two-person rule for granting approval and admin roles (yes or no)
+R4: audit anchor every 15 or every 5 minutes
+The GitHub repository to use, as owner/repo (an empty private repo is fine)
+R2: who holds System Administrator in production, and who signs UAT
+R7: transfer mechanism for support access from the Philippines, and its owner
+R5, R6, R8: accept the leaver target, the availability target and "no Part 11 records"
+Pen-test supplier and budget for the Gate 2 test
+eQMS — Step 3: Threat Model & Control Mapping
+Page 16 of 16

@@ -1,0 +1,588 @@
+
+
+===== PAGE 1 =====
+STEP 2 DRAFT · FOR APPROVAL
+VeQMS design foundations
+Placeholder palette and fonts until the Katalyze Data hex codes, logo and fonts arrive. Swapping them 
+changes the accent and type only; layouts and components stay. Every text colour below passes WCAG 2.1 
+AA (4.5:1) on its background.
+Colour tokens, light and dark
+ground
+#F6F6F3 · dark #111317
+surface
+#FFFFFF · dark #1A1D23
+ink
+#17191E · 17.6:1 · dark 
+#ECEEF1
+muted
+#5B616B · 6.2:1 · dark 
+#A3A9B3
+accent (placeholder)
+#20558A · 7.7:1 · dark 
+#8DB4E2
+border
+#DADDE2 · dark #2E333B
+Overdue
+overdue
+#A8430F on #FBEDE4 · 
+5.3:1
+Due soon
+due-soon
+#7A5A00 on #FBF3DC · 
+5.8:1
+Done
+done
+#1E6B47 on #E5F2EA · 5.6:1
+Your turn
+accent-tint
+#20558A on #E8EFF7 · 
+6.6:1
+Dark mode
+Same roles, swapped values. Muted 7.1:1 and accent 7.8:1 on 
+dark surface.
+Status colours differ in lightness as well as hue and always carry a word, so they never rely on colour alone.
+Type scale
+Display 32/40
+Heading 1 24/32
+Heading 2 18/26
+Body 15/22 Inter. Plain words, short sentences.
+Small 13/18 for metadata and help text
+LABEL 12/16
+Spacing, radius, targets
+4
+8
+12
+16
+24
+32
+48
+Radius 6 for controls, 10 for cards and drawers, full for chips. Every control is at least 
+44 px tall. Focus ring: 2 px accent with a 2 px offset.
+Focused control
+Keyboard focus is always visible
+Components
+BUTTONS
+Sign and approve
+Send back
+View record
+One primary action per card or drawer.
+STATUS CHIPS
+Overdue 3 days
+Due Fri
+Your turn
+Done
+CLASSIFICATION
+PUBLIC
+INTERNAL
+CONFIDENTIAL
+RESTRICTED
+TASK CARD
+Approve · Document
+Overdue 2 days
+POL-004 Access Control Policy v2.0
+Review and sign
+
+
+===== PAGE 2 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Today
+Thursday 12 November · 2 overdue · 3 due in the next 7 days
+All
+Upcoming
+Overdue
+Assigned to me
+Created by me
+Saved view: My approvals
+OVERDUE · 2
+Approve · Document
+Overdue 2 days
+INTERNAL
+POL-004 Access Control Policy v2.0
+Review and sign
+Complete training
+Overdue 1 day
+SOP-012 Backup and Restore Procedure v3.0
+Start training
+NEXT 7 DAYS · 3
+Periodic review
+Due Fri 13 Nov
+POL-001 Information Security Policy
+Start review
+Review · Change request
+Due Mon 16 Nov
+CR-015 Move backup copies to UK West
+Review
+Corrective action
+Due Wed 18 Nov
+CAPA-007 Patch missed on file server
+Update action
+UPCOMING · 2
+FYI · You approve after review
+Expected around 24 Nov
+SOP-020 Supplier Security Review
+View
+Effectiveness check
+Due Wed 2 Dec
+CAPA-005 Phishing simulation follow-up
+Open
+Sample records, for layout only.
+SELECTED TASK
+POL-004 Access Control Policy v2.0
+You are approver 1 of 2 · sequential route
+Stage 4 of 6: In approval
+Change summary
+[Author's change summary for v2.0 appears here.]
+Owner
+[Document owner]
+Reviewers
+2 of 2 done
+Training on effective
+Rule: All staff
+Classification
+Internal
+Review and sign
+Open full record
+
+
+===== PAGE 3 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Documents / POL-004
+Policy · POL-004
+INTERNAL
+v2.0 major · checked in
+Access Control Policy
+Send back to draft
+Review and sign
+Draft
+In review
+Review closed
+In approval · 0 of 2 signed
+Pending training
+Effective
+Document
+Compare versions
+Comments · 4
+Version history
+Training
+−
+100%
++
+Page 1 of [n]
+Open in new tab
+FOR APPROVAL
+POL-004 Access Control Policy
+Viewed by [viewer name] on 12 Nov 2026. Uncontrolled when printed.
+Office files are converted to PDF on our own server and shown here; nothing is sent to an outside viewer. The highlighted 
+block has a reviewer comment.
+DETAILS
+Owner
+[Document owner]
+Quality process
+ISMS · Access control
+Source template
+TPL-POL Policy
+Approval due
+10 Nov · overdue
+Periodic review
+Every 12 months
+Tags
+A.5.15, A.8.3
+PEOPLE
+[Author] · Author 
+Submitted
+[Reviewer 1] · Reviewer 
+Reviewed
+[Reviewer 2] · Reviewer 
+Reviewed
+You · Approver 1 
+Your turn
+[Approver 2] · Approver 2 
+Waiting · FYI sent
+LINKED RECORDS
+CR-012 Review joiner and leaver steps
+CAPA-004 Leaver account left active
+ACTIVITY (FROM THE AUDIT TRAIL)
+[Reviewer 2] closed review with 1 comment 
+9 Nov, 15:42
+[Reviewer 1] marked reviewed 
+6 Nov, 10:05
+[Author] submitted v2.0 for review 
+3 Nov, 09:18
+Full audit trail
+
+
+===== PAGE 4 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Policy · POL-004 
+Access Control Policy
+ELECTRONIC SIGNATURE
+Sign POL-004 v2.0
+×
+1 Confirm
+2 Sign in again
+3 Recorded
+Meaning of your signature
+Signature statement
+[Signature statement text agreed by the Quality Manager, 
+for example: "I approve this document. I understand this 
+electronic signature is the legally binding equivalent of my 
+handwritten signature."]
+Signing as
+[Your name]
+Version
+v2.0, approved content locked
+Content fingerprint (SHA-256)
+[64-character hash shown here]
+Next, Microsoft will ask you to sign in again
+Each signature needs a fresh sign-in with MFA, even if you signed in 
+a minute ago. Fingerprint or face unlock on your phone does not 
+count as a signature.
+Continue to sign-in
+Cancel
+Signing a batch: choose several approvals on Today and use "Sign all". One fresh 
+sign-in covers the listed batch; each record still gets its own signature.
+
+
+===== PAGE 5 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Change requests / CR-015 · Switch to board view
+Change request · CR-015
+Major change
+INTERNAL
+Move backup copies to UK West
+Generate plan PDF
+Send back
+Complete review
+Planning
+Review
+Approval · signed
+In execution
+Effectiveness check
+Closed · signed
+Overview
+Items to change · 2
+Actions · 3
+Attachments
+Related items
+Effectiveness check
+Description
+[What will change, in plain words.]
+Reason
+[Why the change is needed.]
+Expected impact
+[Who and what it affects.]
+Impacted processes
+Backup and continuity; Supplier management
+Major or minor
+Major: changes a controlled process or needs new 
+training. Minor: wording or layout only.
+Actions
+Action
+Linked document
+Assignee
+Due
+Signature
+Update backup procedure
+SOP-012
+[Assignee]
+[Date]
+Required
+Run and record a restore test
+—
+[Assignee]
+[Date]
+Required
+Update the asset inventory
+REG-002
+[Assignee]
+[Date]
+Not required
+Add action
+DETAILS
+Process owner
+[Process owner]
+Quality process
+ISMS · Continuity
+Review due
+Mon 16 Nov
+Route
+Parallel review
+SIGNATURES NEEDED
+Approve the plan 
+After review
+Approve completion 
+After effectiveness check
+ACTIVITY (FROM THE AUDIT TRAIL)
+[Process owner] submitted for review 
+[Date, time]
+[Process owner] linked SOP-012 
+[Date, time]
+
+
+===== PAGE 6 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Quality events and CAPA / CAPA-007 · Switch to board view
+CAPA · CAPA-007 · from QE-011 Internal audit finding
+High severity
+CONFIDENTIAL
+Patch missed on file server
+Upload evidence
+Submit actions for approval
+Planning · actions locked
+Execution · 1 of 3 actions done
+Effectiveness check
+Closed
+Overview
+Actions · 3
+Root cause
+Risk assessment
+Evidence · 2
+Effectiveness check
+5 Whys
+5 Whys
+Fishbone
+Problem 
+[The finding as stated by the auditor.]
+Why 1 
+[Answer]
+Why 2 
+[Answer]
+Why 3 
+[Answer]
+Why 4 
+Why 
+4 
+answer
+Root cause
+[Pick the why that is the root cause. Actions in Planning should answer it.]
+Actions (set in Planning)
+Corrective · Apply the missed patch and confirm 
+Done · signed
+Corrective · Scan all servers for missing patches 
+Due Wed 18 Nov
+Preventive · Add a monthly patch report to SOP-018 
+Not started
+DETAILS
+Process owner
+[Process owner]
+Quality process
+ISMS · Vulnerability mgmt
+Route
+High severity: QM approval
+Effectiveness check
+90 days after close of actions
+EVIDENCE
+patch-report.xlsx → PDF 
+Scanned clean
+screenshot-console.png → PDF 
+Scanning…
+Files can't be opened until the malware scan finishes.
+LINKED RECORDS
+QE-011 Internal audit finding · source event
+SOP-018 Patch Management
+
+
+===== PAGE 7 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Training
+My training
+Organisation
+Training rules
+My assignments
+Read and confirm · Rule: All staff
+Overdue 1 day
+SOP-012 Backup and Restore Procedure v3.0
+1 Read Opened 11 Nov
+2 Knowledge check 3 questions
+3 Sign Fresh sign-in required
+Continue
+Read and confirm · Rule: All staff, yearly
+Due Sat 5 Dec
+POL-009 Acceptable Use Policy v1.2
+Start
+Completed: [n] records · See history
+Organisation training (Quality Manager view)
+Export CSV
+Export PDF
+Complete
+[n]%
+Average completion time
+[n] days
+Overdue
+[n]
+User
+Document
+Assigned
+Due
+Completed
+Status
+[User]
+SOP-012 v3.0
+[Date]
+[Date]
+—
+Overdue
+[User]
+SOP-012 v3.0
+[Date]
+[Date]
+[Date]
+Done
+[Leaver] · left
+POL-009 v1.1
+[Date]
+[Date]
+[Date]
+Done · kept
+Leavers' records stay and are never deleted. A new major version of a document assigns training automatically to 
+everyone in its rules.
+
+
+===== PAGE 8 =====
+V
+Search, create or jump to a record
+Ctrl K
+New
+VE
+Analytics
+You see only records you have access to. Last 90 days vs the 90 days before.
+Last 90 days
+Export
+Overview
+Documents
+Training
+Change requests
+Quality events and CAPA
+Periodic reviews
+Actions
+Training overdue
+[n]
+of [n] due
+CAPA closed on time
+[n]%
+vs [n]% prior period
+Documents and versions created
+[n]
+vs [n] prior period
+Periodic reviews overdue
+[n]
+across [n] owners
+Average days in each workflow state
+Full report
+Draft 
+In review 
+In approval 
+Pending training
+Layout only: bars show placement, not data.
+Training due vs overdue, by week
+Full report
+Layout only. Blue: due. Orange: overdue. Every chart opens its records and exports.
+Change requests by state
+Full report
+Planning [n]
+Review [n]
+Approval [n]
+In execution [n]
+Effectiveness [n]
+Closed [n]
+Quality events and CAPA by state
+Full report
+Open events [n]
+CAPA in execution [n]
+Closed without CAPA [n]
+Effectiveness checks due [n]
+
+
+===== PAGE 9 =====
+Today
+2 overdue · 3 due in the next 7 days
+OVERDUE
+Approve · Document
+2 days
+POL-004 Access Control Policy v2.0
+Review and sign
+Complete training
+1 day
+SOP-012 Backup and Restore Procedure v3.0
+NEXT 7 DAYS
+Periodic review
+Fri 13 Nov
+POL-001 Information Security Policy
+Review · Change request
+Mon 16 Nov
+CR-015 Move backup copies to UK West
+Corrective action
+Wed 18 Nov
+CAPA-007 Patch missed on file server
+Home
+Tasks
+Raise
+Alerts
+Profile
+
+
+===== PAGE 10 =====
+‹
+Approve · POL-004
+Access Control Policy v2.0
+Overdue 2 days
+You are approver 1 of 2
+Read the document
+[n] pages ›
+Change summary
+[Author's change summary for v2.0.]
+Meaning of your signature
+[Signature statement text.]
+You'll sign in again with Microsoft
+Face or fingerprint unlock opens the app but never 
+counts as a signature.
+Continue to sign-in
+Send back with a reason
+Home
+Tasks
+Raise
+Alerts
+Profile
+
+
+===== PAGE 11 =====
+Raise an observation
+Anyone can raise one. The process owner reviews it.
+You're offline
+Your draft is saved encrypted on this phone and 
+sends when you're back online.
+What did you notice?
+Details
+Process area
+Add photo or file
+Attach my location
+Submit when online
+Home
+Tasks
+Raise
+Alerts
+Profile

@@ -1,0 +1,8 @@
+
+===== SHEET Spec documents =====
+Document | What it covers | Where to find it | Notes
+Build prompt (Revision 2.2) | The full spec: modules, roles, workflows, integrations, ISO 27001 controls, phases, acceptance criteria | Project file: QMS_Build_Prompt.md | Not updated since Steps 2 and 3; still shows the code reviewer as unconfirmed (your answer, you, is recorded in Step 3)
+Open Questions sheet | Every unconfirmed item, with owners and working assumptions | eQMS — Open Questions | 
+Step 1: Architecture & Delivery Plan | System design, tech stack, data model, phases and go-live gates | Step 1 plan | 
+Step 2: Design System & Key Screens | Colours, components and the 11 screen layouts | Step 2 canvas | Placeholder brand until Katalyze Data colours, logo and fonts arrive
+Step 3: Threat Model & Control Mapping | Security threats, ISO 27001 control mapping, and the gaps and risks to accept | Step 3 doc | Three decisions at the end are still open

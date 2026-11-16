@@ -1,0 +1,1203 @@
+
+
+===== PAGE 1 =====
+eQMS — Step 1: Architecture & Delivery Plan
+Nov 12, 2026 · ​@Mother of Dragons
+Status and assumptions
+This is the Step 1 deliverable from the build prompt, drafted before the [CONFIRM] items
+were answered. Every open item below has a working assumption so design could
+proceed. Anything marked assumption changes if your answer differs. Platform facts
+marked verified were checked against vendor documentation on 12 Nov 2026; anything
+marked verify was not.
+This plan does not make the system "ISO 27001 compliant". It describes features that
+support Annex A controls and produce audit evidence.
+Revised 12 Nov 2026 after review against the Revision 2 build prompt, then updated with
+your answers from the open questions sheet. These changed: the leaver target, how the
+audit chain is written, the signing rule, ownership duties, Gate 2 criteria, the Annex A
+table, and the core tables.
+Open item
+Answer or working
+assumption
+Status
+What changes if
+wrong
+Organisation
+and entities
+VeQMS (placeholder,
+may change). Legal
+entities still to confirm.
+22 users, read from
+your answer; number of
+sites to confirm
+Needs your input
+Sizing, licensing, data
+residency
+Management
+standard
+ISO 27001 ISMS: the
+system runs ISMS
+policies, procedures,
+risk register, Statement
+of Applicability and
+corrective actions. No
+quality standard named
+yet; workflows stay
+configurable for ISO
+9001 later
+Needs your input
+Record types,
+templates, retention
+periods
+eQMS — Step 1: Architecture & Delivery Plan
+Page 1 of 24
+
+
+===== PAGE 2 =====
+Open item
+Answer or working
+assumption
+Status
+What changes if
+wrong
+21 CFR Part 11 /
+EU Annex 11
+A per-record-type
+"regulated" switch, off
+by default. On, it adds
+stricter signature
+display and audit-trail
+review, and records
+under it need formal
+validation
+Needs your input:
+do any records
+need it?
+Validation effort for
+that configuration
+Data protection
+law
+UK GDPR and the Data
+Protection Act 2018.
+Support access from
+the Philippines to UK
+personal data is a
+restricted transfer and
+needs a transfer
+mechanism (verify)
+Answered
+Transfer terms,
+privacy notice
+Cloud and
+region
+Microsoft Azure; UK
+South primary, backups
+copied to UK West
+(verify region pairing);
+Europe allowed
+Answered
+IaC and the services in
+the tech stack
+SSO
+Microsoft Entra ID
+(OIDC) with
+Conditional Access; an
+authentication context
+for signing is required
+Answered
+Step-up signing
+design
+Email channel
+Microsoft Graph from
+the shared QMS
+mailbox, permission
+scoped to that mailbox
+Answered
+Sub-processor list,
+deliverability setup
+eQMS — Step 1: Architecture & Delivery Plan
+Page 2 of 24
+
+
+===== PAGE 3 =====
+Open item
+Answer or working
+assumption
+Status
+What changes if
+wrong
+SharePoint
+option
+Option A (publish-only)
+plus Option B (import).
+Option C (storage) was
+requested but is not
+adopted: it lets anyone
+with site access change
+controlled copies
+outside approvals
+Needs your input:
+why C?
+Graph permissions,
+migration phase,
+record integrity
+DocuSign
+Any document type
+may go to DocuSign
+when an external signer
+is needed. Internal
+approvals stay on built-
+in signatures, with no
+per-envelope fee. API
+access will be included
+Answered; confirm
+this reading
+Phase 6 scope and
+cost
+AI change
+summary
+Off until an AI provider
+is approved; then
+blocked for
+Confidential and
+Restricted documents,
+with every call logged
+Assumption
+Sub-processor list, AI
+policy approval
+Delegation
+Delegates may review
+but not sign approvals
+Answered
+Signature rules, SoD
+checks
+Biometrics in
+signing
+Not accepted;
+biometrics only unlock
+the app
+Answered
+Mobile signing flow
+Signing
+freshness
+Every signing action
+needs its own fresh re-
+authentication. A batch
+signs a listed set of
+records after one re-
+authentication, and
+each record still gets its
+own signature
+Assumption;
+confirm
+Signing flow, user
+effort
+eQMS — Step 1: Architecture & Delivery Plan
+Page 3 of 24
+
+
+===== PAGE 4 =====
+Open item
+Answer or working
+assumption
+Status
+What changes if
+wrong
+MDM and
+distribution
+Intune manages
+company devices.
+Private distribution
+through Intune is
+recommended; decision
+still open
+Answered
+(distribution open)
+Distribution and wipe
+controls
+Support and on-
+call
+You hold a transferable
+Support Owner role and
+can add up to 3 people.
+A technical contact for
+incidents and patching
+is still needed
+Answered
+Gate 2 readiness
+Build team
+1 or 2 people, with
+Claude writing most of
+the code. A human who
+can review code is still
+needed
+Answered
+Phase durations, PR
+review control
+Budget
+Lowest cost that still
+meets the controls:
+smallest service tiers,
+no zone-redundant
+database at first
+Answered
+Service tiers,
+availability
+RPO / RTO
+1 hour / 1 business day
+(proposed for lowest
+cost)
+Assumption
+Backup tier, cost
+Availability
+99.5% (proposed),
+without a zone-
+redundant database
+Assumption
+Zone redundancy, cost
+Performance
+Main pages under 2 s at
+25 concurrent users
+Assumption
+Load test targets
+eQMS — Step 1: Architecture & Delivery Plan
+Page 4 of 24
+
+
+===== PAGE 5 =====
+Open item
+Answer or working
+assumption
+Status
+What changes if
+wrong
+Escalation
+Overdue: owner and
+manager on day 2, then
+repeated every 2 days.
+The Quality Manager
+step ships as a
+configurable rule,
+switched on once a
+Quality Manager is
+appointed after the
+build
+Answered
+Default automation
+rules
+Leaver access
+removal
+Standard leavers:
+access removed within
+60 minutes. Entra
+provisions in periodic
+cycles (about 40
+minutes reported;
+verify), and the API
+checks user status on
+every request. Urgent
+leavers: an admin
+"revoke now" action
+ends access at once
+Assumption
+SCIM cycle, revoke-
+now action, leaver test
+at Gate 2
+Notification
+latency
+Within 2 minutes of the
+triggering event
+Assumption
+Worker polling
+interval, monitoring
+Brand
+Katalyze Data colours.
+Hex codes, logo, fonts
+and confirmation that
+VeQMS may use the
+brand are needed
+before Step 2
+Needs your input
+Design tokens
+eQMS — Step 1: Architecture & Delivery Plan
+Page 5 of 24
+
+
+===== PAGE 6 =====
+Scope, MVP and build vs buy
+Recommendation: ship an MVP of audit trail, e-signatures, Document Control and
+Training first, then add modules. These four carry most of the audit value of a QMS. Every
+later module reuses their workflow, signature and audit services.
+MVP scope:
+Entra ID SSO, MFA, RBAC with classification, audit trail with external anchoring
+Shared workflow engine and step-up e-signatures
+Document Control with templates, versioning, manifest page, watermarks
+Training rules, assignments, records
+Email and in-app notifications through the automation engine, with default rules
+My Work home
+Deferred past the MVP: Change Control, Periodic Reviews, Quality Events, CAPA,
+Analytics, Teams, SharePoint publishing, DocuSign, mobile.
+Build vs buy: decided, build (12 Nov 2026). Building means VeQMS owns these for as long
+as the system runs, so each is now a standing line in the plan:
+Standing duty
+When
+First needed
+at
+Patching and dependency
+upgrades
+Monthly; critical fixes within 7 days and
+high within 30 days (proposed patch
+SLAs)
+Gate 2
+Third-party penetration test
+Before Gate 2, before Gate 3, then
+annually
+Gate 2
+Backup restore test, with
+evidence
+Before Gate 2, then quarterly
+Gate 2
+Access review report
+Quarterly from MVP go-live
+Gate 2
+On-call support and incident
+response
+From MVP go-live
+Gate 2
+ISMS scope and surveillance
+audits
+Added at Gate 2, then at every audit
+Gate 2
+eQMS — Step 1: Architecture & Delivery Plan
+Page 6 of 24
+
+
+===== PAGE 7 =====
+Every duty starts at Gate 2, because real quality records go live then. A named support
+owner and on-call cover are therefore needed before Gate 2, not Gate 3. Costs are not
+estimated yet: they need pen-test and support quotes and an Azure pricing estimate,
+tracked in the open questions sheet.
+System architecture
+All three clients call one API. The API is the only component that changes records,
+checks permissions or records signatures. Anything slow or external runs in workers
+that read the outbox, so an integration outage never blocks a user.
+Reading the picture:
+The API sends users to Entra ID for sign-in and for the step-up check before signing.
+The API writes records, workflow state, audit entries and outbox events to
+PostgreSQL in one transaction.
+Workers pick up outbox events. They send notifications, call Graph, Teams, DocuSign
+and push, and write audit checkpoints to the immutable anchor.
+system architecture · Azure, one API, async workers
+eQMS — Step 1: Architecture & Delivery Plan
+Page 7 of 24
+
+
+===== PAGE 8 =====
+Tech stack
+The prompt's stack holds, with two changes: the API runs as its own service, not inside
+Next.js, and the job queue lives in Postgres. A separate API keeps signing, permissions
+and audit logic in one place that web, mobile and Teams all call. A Postgres-backed queue
+lets the outbox and the job sit in the same transaction.
+Tool names below are candidates. Each must be checked against current documentation
+and licence terms before use. The prompt's no-invented-APIs rule applies.
+Layer
+Choice
+Why
+Status
+Repo
+TypeScript monorepo
+(pnpm workspaces)
+with shared domain ,
+api-client ,
+validation packages
+Web and mobile share
+types and validation
+Choice
+Web
+Next.js (React), server-
+rendered shell, calls the
+API only
+Prompt default
+Choice
+Mobile
+React Native with Expo
+Shares packages with
+web
+Verify certificate
+pinning and root-
+detection options
+for Expo
+API
+Node.js service (NestJS
+or Fastify) with OpenAPI
+contract
+One enforcement
+point for RBAC, SoD,
+signatures
+Choice
+Database
+Azure Database for
+PostgreSQL (Flexible
+Server), smallest tier
+that passes load tests;
+zone-redundant HA
+added only if the
+availability target needs
+it
+Managed backups,
+PITR
+Verify region and HA
+tier
+Row-level
+security
+Postgres RLS as a
+second layer under API
+checks
+Defence in depth for
+record access
+Choice
+eQMS — Step 1: Architecture & Delivery Plan
+Page 8 of 24
+
+
+===== PAGE 9 =====
+Layer
+Choice
+Why
+Status
+Jobs / outbox
+Postgres-backed queue
+(e.g. pg-boss)
+Outbox and job in one
+transaction
+Verify library
+Files
+Azure Blob Storage,
+private, customer-
+managed keys in Key
+Vault, short-lived SAS
+links
+Encrypted object
+storage
+Verify
+Audit anchor
+Separate Blob container
+with immutability
+(WORM) policy
+Hash checkpoints
+outside app admin
+reach
+Verify policy options
+Malware scan
+Defender for Storage
+malware scanning, or
+ClamAV in a container
+Scan before store or
+render
+Verify
+PDF
+Office-to-PDF
+conversion service (e.g.
+Gotenberg); manifest
+and watermark
+stamping (e.g. pdf-lib);
+viewer PDF.js
+Office files viewed as
+PDF, never sent to an
+external viewer
+Verify licences
+Search
+Postgres full-text search
+Prompt default
+Choice
+Identity
+Microsoft Entra ID,
+OIDC; SCIM
+provisioning from Entra
+No home-grown auth
+Verified (step-up)
+Secrets
+Azure Key Vault,
+managed identities
+No secrets in config
+Choice
+Infra
+Bicep or Terraform;
+staging and prod in
+separate subscriptions
+IaC, environment
+separation
+Choice
+CI/CD
+GitHub Actions: SAST,
+SCA, secrets scan,
+container scan, DAST on
+staging
+Security gates from
+the prompt
+Verify tools
+eQMS — Step 1: Architecture & Delivery Plan
+Page 9 of 24
+
+
+===== PAGE 10 =====
+Data model
+Every quality record shares one record header table, with a 1:1 detail table per module.
+Links, permissions, classification, retention and audit then work the same way for every
+module, and the polymorphic Link keeps real foreign keys at both ends.
+Arrows point to what each group references. The tables that carry the signature, audit
+and leaver controls are set out below. Columns for the remaining tables come with the
+Phase 1 migrations.
+Layer
+Choice
+Why
+Status
+Observability
+OpenTelemetry to Azure
+Monitor / Application
+Insights
+Logs, metrics, traces
+Choice
+data model · domain map of the prompt's entities
+eQMS — Step 1: Architecture & Delivery Plan
+Page 10 of 24
+
+
+===== PAGE 11 =====
+Modelling rules:
+Every table carries created_by , created_at , updated_by and updated_at , with
+timestamps stored in UTC.
+Quality records are soft-deleted only, and only when their retention policy allows it.
+Approved DocumentVersions, Signatures and AuditLogEntries cannot be changed.
+Database grants enforce this, not just application code.
+Workflow and automation definitions are versioned. Each instance points to the exact
+version it ran under.
+tenant_id and site_id sit on every row so RLS policies can filter by them. The API
+sets the tenant and user at the start of each transaction ( SET LOCAL ), so a pooled
+connection never carries another request's identity.
+Table
+Key columns
+Rule
+record
+id, tenant_id, site_id, type, number,
+title, state, owner_id, classification,
+retention_policy_id, legal_hold,
+workflow_instance_id, deleted_at
+Shared header for every
+module; soft delete only
+document_version
+id, record_id, major, minor, status,
+file_blob_id, content_sha256,
+change_summary, approved_at
+Immutable once approved
+signature
+id, record_id, record_version_id,
+signer_id, meaning, statement_text,
+signed_at_utc, content_sha256,
+auth_time, acrs
+Insert-only; one row per
+record, even in a batch
+audit_log_entry
+seq, tenant_id, occurred_at_utc,
+actor_id, on_behalf_of_id, action,
+object_type, object_id, before_json,
+after_json, ip, device, prev_hash,
+hash
+Insert-only; chained per
+tenant
+outbox_event
+id, tenant_id, record_id, event_type,
+actor_id, payload, created_at,
+processed_at, attempts
+Written in the same
+transaction as the change
+app_user
+id, entra_object_id, status,
+disabled_at, sessions_revoked_at
+Checked by the API on every
+request
+eQMS — Step 1: Architecture & Delivery Plan
+Page 11 of 24
+
+
+===== PAGE 12 =====
+Workflow engine and e-signatures
+One engine drives every module. Every transition runs in a single database transaction
+that writes the state change, the audit entry and the outbox events together, or none
+of them.
+The document lifecycle is the first workflow definition shipped. Change Requests, Quality
+Events and CAPA use the same engine with their own states.
+Workflow definitions:
+Stored as versioned JSON. A new definition version needs Quality Manager approval
+before it goes live. Running instances keep the version they started on.
+Each transition declares:
+the roles allowed to take it
+required fields
+signature meaning (for example "Approved" or "Reviewed")
+SoD rule (for example "author cannot approve")
+SLA timer
+Stages route parallel (all assignees at once, with a completion rule of all or N) or
+sequential (ordered list).
+Guards are evaluated in the API, never in the client.
+An SoD override needs a named admin, a reason and a signature, and is logged as its
+own audit event.
+How signing works:
+document lifecycle · default definition, configurable per type
+eQMS — Step 1: Architecture & Delivery Plan
+Page 12 of 24
+
+
+===== PAGE 13 =====
+1. The user clicks Sign, or Sign all on a listed batch. The API records a signing intent: the
+time, the signer and the exact record versions.
+2. The API answers with a claims challenge for an Entra authentication context (for
+example c1 ). A Conditional Access policy tied to c1 requires MFA.
+3. The client signs in again with OIDC prompt=login , so a fresh sign-in happens every
+time, then retries with the new token.
+4. The API accepts the token only if acrs contains c1 and auth_time is later than the
+signing intent. An older sign-in is refused, however recent.
+5. The API writes one immutable Signature row per record: signer, meaning, signature
+statement, UTC time, record version id, SHA-256 hash of the signed content.
+This replaces the earlier 5-minute window, which let one sign-in cover any signature made
+in those 5 minutes. Each signing action now needs its own fresh sign-in, as the prompt
+requires. Entra authentication context and claims challenges are documented by
+Microsoft (developer guide). Microsoft has also announced a Conditional Access "sign-in
+frequency: every time" option for authentication contexts. Its current status and browser
+behaviour are not confirmed, so the plan does not rely on it: the API's auth_time check is
+the control. Verify with IT that prompt=login works together with the claims challenge.
+Signature integrity:
+Signature rows cannot be updated or deleted. The app's database role has insert-only
+rights on them.
+Each signature references an approved, immutable DocumentVersion.
+The manifest page is rendered from these rows, not typed.
+Automation and notifications
+Nothing is sent from request code. Every event goes into an outbox row in the same
+transaction as the change. Workers then turn outbox rows into rule runs and
+notifications. So no notification goes out for a change that rolled back, and none is lost for
+a change that saved.
+Pipeline:
+1. Outbox. Each transition, assignment or due-date event writes an outbox_event row
+with the record, the event type and the actor.
+eQMS — Step 1: Architecture & Delivery Plan
+Page 13 of 24
+
+
+===== PAGE 14 =====
+2. Rule runner. A worker reads new rows and matches them against active, approved
+AutomationRuleVersions (event → conditions → actions). Each match writes an
+AutomationRun and an audit entry.
+3. Actions become jobs:
+notify
+create task
+reassign
+escalate
+advance stage
+calendar entry
+SharePoint publish
+DocuSign send
+webhook
+4. Dispatcher. For each notify job, the dispatcher:
+resolves recipients, including delegates and FYI-only later-stage participants
+applies user preferences and quiet hours
+fans out one job per channel
+Mandatory types skip preferences: your turn to sign, overdue, security alerts.
+5. Channel senders (email, Teams, push, in-app) retry with exponential backoff. After a
+set number of tries (proposed 6), the job moves to the dead-letter queue. The admin
+Failed Automations screen shows it, with a manual retry button.
+6. NotificationLog records recipient, channel, template, time, provider message id and
+delivery status, as audit evidence that people were told.
+Timers:
+A scheduler job runs every minute and raises "due approaching", "overdue" and
+"periodic review due" events.
+Escalation steps are rule actions, so the 2-day and 5-day defaults are editable without
+code.
+Each event fires once, enforced by a unique key on (task, event type, step).
+Content rules, the same on every channel:
+Email, Teams cards and push carry only record number, title, due date and a deep link.
+Restricted and Confidential titles are masked in push notifications, because those
+show on lock screens.
+eQMS — Step 1: Architecture & Delivery Plan
+Page 14 of 24
+
+
+===== PAGE 15 =====
+"Approve" buttons only open the app, where step-up signing applies.
+Integrations
+Each connector is a separate module behind one integration interface, with its own
+on/off switch, health status and retry queue. If one connector is down, the core QMS
+keeps working. All secrets live in Key Vault. Every call and inbound event is written to the
+audit trail.
+Webhook handling (DocuSign and any future inbound source):
+Connector
+Mechanism
+Least permission proposed
+Status / note
+Entra ID sign-in
+OIDC, Conditional Access, authentication
+context for signing
+openid , profile ,
+offline_access ; API
+scope
+Verified: auth context + claims
+challenge (Microsoft)
+Provisioning
+Entra pushes users and groups to the app's
+SCIM endpoint
+No Graph directory read
+needed
+Verify Entra SCIM app setup
+with IT. Cycles are periodic and
+slow down if a job is
+quarantined, so urgent leavers
+use the app's revoke-now
+action
+SharePoint
+publish (Option
+A)
+Graph drive upload to one publication library;
+archive library for superseded
+Application
+Sites.Selected , then a
+write grant on the QMS site
+only
+Verified: app gets no site
+access until granted per site
+(Microsoft)
+SharePoint
+import (Option
+B)
+One-time Graph read of the legacy library into
+drafts
+Sites.Selected read
+grant on the legacy site,
+revoked after migration
+Same as above
+Email
+Graph send-mail as the shared QMS mailbox
+Mail.Send (application),
+limited to that one mailbox
+by Exchange RBAC for
+Applications
+Verify scoping with IT; without
+it Mail.Send reaches every
+mailbox
+Calendar entries
+Send .ics invites from the QMS mailbox
+None beyond email
+Avoids broad
+Calendars.ReadWrite
+Out-of-office
+suggestion
+Read
+mailboxSettings.automaticRepliesSetting
+Mailbox settings read
+permission, scoped like
+email
+Verified the setting is exposed
+by Graph (Microsoft); exact
+least permission to verify.
+Optional, later phase
+Teams
+Bot registered in Azure Bot Service; personal
+and channel messages sent proactively with
+Adaptive Cards
+Bot installed only in the
+QMS-related teams
+Verify proactive messaging and
+app approval policy with IT
+DocuSign
+eSignature REST API with JWT grant; Connect
+webhook
+Integration user limited to
+QMS envelopes
+Verified: Connect signs with
+HMAC-SHA256 in X-DocuSign-
+Signature-1 once HMAC is
+enabled (DocuSign)
+eQMS — Step 1: Architecture & Delivery Plan
+Page 15 of 24
+
+
+===== PAGE 16 =====
+1. Verify the HMAC over the raw body before parsing.
+2. De-duplicate on envelope id plus status.
+3. Re-fetch envelope status from the API before acting, so a replayed or forged payload
+cannot advance a workflow.
+4. Download the signed PDF and the completion certificate, attach both, advance the
+stage, notify the owner.
+5. For declined, voided and expired envelopes, notify the owner and return the task to
+them.
+Security architecture and Annex A support
+The audit trail is built to be tamper-evident, not tamper-proof. A cloud or database
+super-admin can always change rows. The design makes any change detectable and
+keeps those super-admin powers behind break-glass access that is itself logged.
+How the audit log works:
+1. Each AuditLogEntry stores hash = SHA-256(prev_hash ||
+canonical_json(entry)) , chained per tenant. Entries are serialised with one fixed
+canonical JSON scheme (RFC 8785 proposed; verify), so the verifier rebuilds exactly
+the same bytes.
+2. The writing transaction takes a per-tenant lock ( pg_advisory_xact_lock ) before it
+reads the previous hash. Two saves at the same moment queue instead of splitting
+the chain. Load tests check the queue stays short at the agreed concurrency.
+3. Logged events: every create, update, delete, signature, permission change, login,
+export and read of a Restricted record, with user, UTC time, before and after values, IP
+and device.
+4. The app's database role can only insert into the audit table. No update or delete
+grants exist for it.
+5. Every 15 minutes (proposed), a job writes the latest chain hash and entry count to a
+Blob container under a time-based immutability (WORM) policy. Nobody in the app
+can change that container, including its admins.
+6. An hourly verifier checks every entry since the last anchor, and a nightly run
+recomputes the whole chain. A mismatch raises a security incident alert.
+7. Database admin and cloud owner roles are break-glass only: time-boxed, with
+approval and alerting.
+eQMS — Step 1: Architecture & Delivery Plan
+Page 16 of 24
+
+
+===== PAGE 17 =====
+Residual risks carried into the Step 3 threat model: a super-admin who rewrites entries
+before the next anchor (up to 15 minutes) is not caught by the anchors, only by break-
+glass alerting. Other tampering is caught within about an hour.
+Annex A references are ISO/IEC 27001:2022 as I understand the numbering. Check each
+one against your licensed copy of the standard.
+Area
+Design in this plan
+Annex A (verify)
+Identity and authentication
+Entra ID SSO; MFA via Conditional
+Access; phishing-resistant MFA for
+admins; step-up for signing
+A.5.16, A.5.17, A.8.5
+Access control
+API-enforced RBAC + record
+permissions + classification; Postgres
+RLS underneath; quarterly access-
+review export
+A.5.15, A.5.18, A.8.2,
+A.8.3
+Joiners, movers, leavers
+SCIM deprovisioning plus a per-
+request user status check; admin
+revoke-now for urgent leavers;
+sessions and refresh tokens revoked;
+records and signatures kept
+A.5.18, A.6.5
+Logging and monitoring
+Hash-chained audit log, including
+reads of Restricted records, logins
+and exports; WORM anchors every 15
+minutes; hourly verifier; central logs;
+alerts on anomalous logins, privilege
+changes, mass exports
+A.8.15, A.8.16,
+A.8.17
+Records protection
+No hard delete of quality records;
+retention schedules; legal hold;
+immutable approved versions
+A.5.33
+Cryptography
+TLS 1.2+ (1.3 preferred); storage and
+DB encryption with customer-
+managed keys in Key Vault; field-level
+encryption for sensitive personal
+data
+A.8.24
+eQMS — Step 1: Architecture & Delivery Plan
+Page 17 of 24
+
+
+===== PAGE 18 =====
+Area
+Design in this plan
+Annex A (verify)
+Classification and leakage
+Classification on every record; labels
+in UI, watermark and file metadata;
+download, print and share rules per
+class; export logging; no public links
+A.5.12, A.5.13,
+A.8.12, A.5.14
+Privacy
+Data minimisation; subject-access
+export; PII masked in logs and non-
+prod
+A.5.34, A.8.11
+Secure deletion
+Non-record data (unsubmitted
+drafts, temporary files, cached
+exports) deleted at end of retention,
+with a deletion log; quality records
+only under their retention policy and
+never under legal hold
+A.8.10
+Backup and continuity
+PITR + geo-redundant backups to UK
+West; quarterly restore test with
+evidence; zone redundancy only if
+the availability target needs it
+A.8.13, A.8.14,
+A.5.30
+Secure development
+Threat model (Step 3), ASVS L2,
+required PR review, CI security gates,
+DAST before release
+A.8.25–A.8.29
+Outsourced / AI-assisted
+development
+AI agent and any contractor treated
+as outsourced development: named
+human reviewer approves every PR;
+agent has no prod credentials
+A.8.30
+Source code access
+Repo access by role; branch
+protection; signed commits
+A.8.4
+Security in the project
+Security requirements and risks
+tracked as part of each phase's exit
+criteria
+A.5.8
+Environments and change
+Separate dev, staging, prod; masked
+test data; releases via PR + approval +
+change record; rollback plan
+A.8.31, A.8.33,
+A.8.32
+Vulnerabilities and config
+IaC baselines; patch SLAs by severity;
+annual third-party pen test
+A.8.8, A.8.9
+eQMS — Step 1: Architecture & Delivery Plan
+Page 18 of 24
+
+
+===== PAGE 19 =====
+Mobile
+The mobile app is a thin client over the same API. It holds no business rules and keeps as
+little on the device as possible. Its scope is the one in the prompt: My Work, push, review
+and sign, read and train, raise observations offline, view CR and CAPA status.
+Sign-in. Entra ID through the system browser (MSAL or an OIDC library; verify current
+Expo support). Biometrics only unlock a locally stored session. Signing still goes
+through the step-up challenge.
+Storage. Tokens in the OS keychain or keystore. Documents are streamed for viewing
+and not saved. Offline observation drafts and photos are encrypted with a key held in
+secure storage. All of it is wiped on logout or when the server revokes the session.
+Push. Payloads carry only an id and a generic line ("You have an approval waiting").
+The app fetches details after unlock.
+Hardening:
+certificate pinning, or a documented reason not to
+Area
+Design in this plan
+Annex A (verify)
+Malware
+Uploads quarantined until scanned
+clean
+A.8.7
+Network
+WAF, rate limiting, private endpoints
+for DB, storage and Key Vault
+A.8.20, A.8.22
+Suppliers and cloud
+Sub-processor register: Microsoft
+(Azure, M365), DocuSign, Apple and
+Google push services, any AI provider
+A.5.19–A.5.23
+Integrations
+Least-privilege Entra app
+permissions (Sites.Selected, mailbox-
+scoped Mail.Send); secrets in Key
+Vault with rotation; HMAC-verified
+webhooks; every integration call in
+the audit trail; messages carry links,
+not content
+A.5.14, A.5.15,
+A.8.24
+Incidents
+Alerting, runbook, evidence
+preservation from the anchored audit
+log
+A.5.24–A.5.28
+eQMS — Step 1: Architecture & Delivery Plan
+Page 19 of 24
+
+
+===== PAGE 20 =====
+jailbreak and root detection, with the response set by admin (warn, block, or wipe
+local data)
+screenshot blocking on Restricted documents
+Each needs a library or native module. Expo may need a custom development build.
+Verify before committing.
+Distribution: decision needed. Two routes:
+Public App Store and Google Play listings, with sign-in limited to your tenant.
+Private distribution through Intune (company devices only).
+Either way you need Apple and Google developer accounts in the organisation's
+name, not a personal one.
+Delivery plan
+The plan follows the prompt's phases: a usable MVP (Phases 1 to 3) goes live at Gate 2,
+after its security testing, because real quality records enter from that point. Durations
+are not estimated yet; they depend on team size, which is still an open question.
+eQMS — Step 1: Architecture & Delivery Plan
+Page 20 of 24
+
+
+===== PAGE 21 =====
+Each phase ships with migrations, seed data, tests, docs and a change record. Teams and
+SharePoint sit in Phase 6, so the MVP depends on email and in-app notifications only.
+Phase 8, full go-live hardening, ends at Gate 3.
+delivery roadmap · phases and gates, durations not yet estimated
+Gate
+Exit criteria
+Gate 1 · design approved
+Step 1 approved; the five decisions at the end of
+this plan answered; Step 2 screens and Step 3
+threat model signed off; independent code
+reviewer named; every other CONFIRM item has
+an owner and a due phase in the open questions
+sheet
+eQMS — Step 1: Architecture & Delivery Plan
+Page 21 of 24
+
+
+===== PAGE 22 =====
+Testing and coverage targets
+Proposed target: every workflow transition, including reject and send-back paths, has
+an automated end-to-end test, and domain packages hold at least 80% line coverage.
+These numbers are proposals for you to accept or change.
+Gate
+Exit criteria
+Gate 2 · MVP go-live
+All MVP acceptance criteria pass; third-party pen
+test findings at high or critical fixed; restore test
+passed within RTO; audit-tamper test raises an
+alert; leaver test meets the 60-minute and revoke-
+now targets; support owner, on-call cover and a
+tested incident runbook in place; patch SLAs
+agreed; privacy notice published and sub-
+processor register complete; UAT signed by the
+Quality Manager or a named stand-in who is not
+the System Administrator; system added to ISMS
+scope and asset inventory
+Gate 3 · full go-live (end of Phase 8)
+All modules' acceptance criteria pass; second pen
+test; performance test at agreed concurrency;
+ISMS evidence pack complete
+Layer
+Scope
+Candidate tool (verify)
+Target
+Unit
+Domain rules: guards,
+SoD, retention, hash
+chain
+Vitest
+80% lines in domain
+and workflow
+packages
+Integration
+API + Postgres + RLS
+policies, outbox to
+worker
+Vitest with a real
+Postgres container
+Every permission rule
+has an allow and a
+deny test
+End-to-end
+(web)
+Each module lifecycle,
+signature, rejection,
+escalation
+Playwright
+100% of workflow
+transitions
+End-to-end
+(mobile)
+Sign-in, sign, offline
+observation sync
+Maestro or Detox
+Core flows only
+eQMS — Step 1: Architecture & Delivery Plan
+Page 22 of 24
+
+
+===== PAGE 23 =====
+Decisions needed before Step 2
+Build is decided and the working name is VeQMS. Five answers still unblock the design.
+The rest can follow during Phase 1. The full list of 41 questions, with owners, is in the open
+questions sheet.
+Layer
+Scope
+Candidate tool (verify)
+Target
+Security
+SAST, SCA, secrets,
+container scan; DAST
+on staging
+CodeQL, Dependabot,
+gitleaks, Trivy, OWASP
+ZAP
+No unresolved high or
+critical findings at
+release
+Performance
+My Work, document
+view, register search
+k6
+Under 2 s at the
+agreed concurrency
+Resilience
+Integration outage,
+worker crash mid-job,
+restore from backup
+Scripted drills
+Restore within RTO,
+with evidence
+Audit integrity
+Tamper a row and
+confirm the hourly
+check alerts; run
+concurrent saves and
+confirm one unbroken
+chain
+Scripted test
+Alert raised every
+time; no forks under
+load
+Access
+removal
+Disable a user in
+Entra; use revoke-now
+on another
+Scripted test
+Access gone within 60
+minutes; revoke-now
+blocks the next
+request
+Name the independent code reviewer: a person who can read code, since Claude
+cannot review its own work
+Legal entities in scope; confirm 22 users and the number of sites
+Confirm the ISO 27001 ISMS as the main use, or name a quality standard; say whether
+any records need Part 11 or Annex 11
+Accept the signing rule and the 60-minute leaver target
+Accept the lean defaults: RPO 1 hour / RTO 1 business day, 99.5% availability, 25
+concurrent users
+eQMS — Step 1: Architecture & Delivery Plan
+Page 23 of 24
+
+
+===== PAGE 24 =====
+Needed before Step 2 design work: the Katalyze Data hex codes, logo and fonts, with
+permission to use them. Needed before Phase 2: whether IT requires SharePoint Option C.
+Sources
+Checked 12 Nov 2026. Everything else in this plan marked verify still needs a
+documentation check.
+Microsoft: Developer guide to Conditional Access authentication context
+Microsoft Graph: Selected permissions overview (Sites.Selected)
+Microsoft Graph: Get user mailbox settings
+Docusign: Manually authenticating HMAC signatures for Connect
+Microsoft Entra: Check the status of user provisioning (periodic cycles, quarantine)
+Microsoft Q&A: Provisioning interval fixed at 40 minutes (community answer)
+eQMS — Step 1: Architecture & Delivery Plan
+Page 24 of 24
