@@ -20,30 +20,30 @@ No build step and no npm packages. Fonts load from Google Fonts when online; the
 
 1. **Today** → POL-004 → *Review and sign* → *Continue to sign-in* → *Sign in again* → any 6 digits.
    You get a signature with UTC time, `auth_time` and the SHA-256 of v2.0.
-2. Account menu → **Demo · view as Tom Hughes** → it's now his turn (sequential route). Sign → POL-004 becomes
+2. Account menu → **Demo · view as PJ Walters** → it's now their turn (sequential route). Sign → POL-004 becomes
    **Effective**, v1.0 is **Superseded**, training is assigned to *All staff*, and a periodic review is scheduled.
 3. Back as **Victoria**, open POL-003 (you wrote it, and you're also listed as an approver): signing is blocked by
-   segregation of duties and the attempt is logged. Tom can still approve it.
+   segregation of duties and the attempt is logged. PJ can still approve it.
 4. **Training** → *Start* on SOP-012 → read → knowledge check → sign.
 5. **Quality** → CAPA-007 → Root cause (5 Whys / Fishbone), Risk assessment, Evidence (upload shows the malware-scan step).
-6. **Quality** → QE-015 as **Grace Lim** → *Close without CAPA*: blocked until a justification is written and signed.
+6. **Quality** → QE-015 as **Louise Harvey** → *Close without CAPA*: blocked until a justification is written and signed.
 7. Narrow the window (or use a phone): bottom tab bar → **Raise** → tick *simulate being offline* → submit → untick: it syncs.
 8. **Administration → Audit trail** → *Run tamper test*: the hash-chain verifier flags the edited entry.
-9. As **Hannah Weber** (System Administrator): Users → revoke-now; Integrations → switch connectors on/off; Automations → retry the dead-letter queue.
-10. As **Alex Morgan** (auditor): read-only, time-boxed, Restricted records hidden.
+9. As **Lucy Parkin** (System Administrator): Users → revoke-now; Integrations → switch connectors on/off; Automations → retry the dead-letter queue.
+10. As **Fraser Scott** (auditor): read-only, time-boxed, Restricted records hidden.
 
 ## Personas
 
 | Persona | Roles | Clearance |
 |---|---|---|
-| Victoria E. | Quality Manager (stand-in), Approver, Process Owner, Support Owner | Restricted |
-| Sam Okafor | Author, Reviewer | Confidential |
-| Priya Raman | Reviewer, Author | Restricted |
-| Tom Hughes | Approver, Process Owner | Restricted |
-| Grace Lim | Process Owner, Reviewer | Confidential |
-| Daniel Cruz | Employee / Trainee | Internal |
-| Hannah Weber | System Administrator (cannot approve) | Confidential |
-| Alex Morgan | Auditor (read-only, time-boxed) | Confidential |
+| Victoria E. | HR Administrator, Quality Manager, Approver, Process Owner, Support Owner | Restricted |
+| Jim Speir | Author, Reviewer | Confidential |
+| Carrie Foreman | Reviewer, Author | Restricted |
+| PJ Walters | Approver, Process Owner | Restricted |
+| Louise Harvey | Process Owner, Reviewer | Confidential |
+| Daniel Greenwood | Employee / Trainee | Internal |
+| Lucy Parkin | System Administrator (cannot approve) | Confidential |
+| Fraser Scott | Auditor (read-only, time-boxed) | Confidential |
 
 ## What's in it
 
