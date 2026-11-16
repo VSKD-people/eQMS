@@ -1,4 +1,35 @@
-# Deploying the VeQMS prototype with Microsoft Entra ID sign-in
+# Deploying the VeQMS prototype
+
+## Quick option: Vercel (interim)
+
+Use this to get a link quickly. It is not the target platform: the specs settle on Azure, and Vercel
+sign-in is not Entra ID unless you're on a plan that includes SAML SSO.
+
+1. Sign in at vercel.com and choose **Add New → Project**. Import `VSKD-people/eQMS` from GitHub.
+   Vercel may ask you to install its GitHub app on the organisation first.
+2. Set **Root Directory** to `veqms`. Set **Framework Preset** to **Other**. Leave the build command and
+   output directory empty, because there's no build step.
+3. Deploy. `veqms/vercel.json` adds basic security headers and asks search engines not to index the site.
+4. Restrict access under **Project → Settings → Deployment Protection**. **Vercel Authentication**
+   lets only members of your Vercel team open the site. Make sure it covers the production URL as well as
+   preview deployments. Password protection and SAML SSO (for example with Entra ID) depend on your plan.
+
+Check against Vercel's current documentation and pricing:
+
+- which protection options your plan includes, and whether they cover production deployments
+- that the Hobby plan is for personal, non-commercial use, so a company project probably needs Pro
+- whether your plan can import a private repository owned by a GitHub organisation
+
+Notes:
+
+- The site holds only the prototype's built-in sample data. Nothing a user enters leaves their browser.
+- Vercel deploys a preview for every branch push, and production from the default branch.
+- The Azure workflow below also runs on pushes to `main`. It fails harmlessly until its secret is
+  added, or you can disable it in the GitHub Actions tab.
+
+---
+
+# Target option: Azure Static Web Apps with Microsoft Entra ID sign-in
 
 This puts the prototype on a web address that only people in your Microsoft Entra ID tenant can open.
 They sign in with their normal Microsoft 365 account.

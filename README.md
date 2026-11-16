@@ -21,7 +21,7 @@ veqms-prototype/
 ├── .claude/
 │   └── launch.json      lets the Claude desktop app preview the app in its browser pane
 ├── .github/workflows/   deploys veqms/ to Azure Static Web Apps
-└── DEPLOY.md            how to put it online behind Microsoft Entra ID sign-in
+└── DEPLOY.md            how to put it online: Vercel (interim) or Azure with Entra ID sign-in
 ```
 
 `.claude` is a hidden folder. On a Mac, press Cmd+Shift+. in Finder to see it.
