@@ -8,7 +8,7 @@ No database and no backend: sample data lives in the browser.
 ```
 veqms-prototype/
 ├── README.md            this file
-├── REBUILD.md           how to set it up again in another account (start here)
+├── VeQMS_V1.md          how to set it up again in another account (start here)
 ├── CLAUDE.md            hand-over notes Claude reads automatically: architecture, rules, how to test
 ├── veqms/               the app (open index.html through a local server, see below)
 │   ├── index.html
