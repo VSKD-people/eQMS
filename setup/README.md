@@ -1,7 +1,7 @@
 # Set-up kit
 
 Everything needed to recreate the hosting and sign-in for VeQMS in a new account. Each folder covers
-one platform. None of them hold passwords, keys or account IDs: you create those in the new account
+one platform. The git history isn't included: it stays in the GitHub repository, which collaborators can clone. None of them hold passwords, keys or account IDs: you create those in the new account
 and the scripts pass them straight to where they're needed.
 
 | Folder | What it recreates | How |
@@ -9,7 +9,6 @@ and the scripts pass them straight to where they're needed.
 | `vercel/` | The Vercel project and its settings | `project-settings.json` lists every setting; `README.md` gives the dashboard steps; `deploy-cli.sh` is an optional command-line route |
 | `azure-entra/` | The Azure Static Web App and the Entra ID app registration for single sign-on | `README.md` gives the portal steps; `setup.sh` does the same with the Azure CLI |
 | `github-secrets/` | The GitHub Actions secret the Azure deploy needs | `secrets.md` lists it; `set-secrets.sh` sets it with the GitHub CLI |
-| `git-history/` | The repository's full commit history (in the downloadable folder only) | `README.md` explains how to restore it |
 
 You only need one hosting route: Vercel or Azure. If you choose Vercel, you can skip `azure-entra/`
 and `github-secrets/`.
