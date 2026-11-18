@@ -13,6 +13,7 @@ and the hand-over notes. Nothing else is needed, and no accounts, passwords or k
 | `veqms/staticwebapp.config.json` | Azure Static Web Apps settings: Entra ID sign-in on every page | For Azure only |
 | `.github/workflows/deploy-veqms.yml` | GitHub Actions job that deploys to Azure | For Azure only |
 | `specs/` | The six spec documents, with plain-text copies in `specs/text/` | No, reference only |
+| `setup/` | Settings, steps and scripts to recreate Vercel, Azure, Entra ID, GitHub secrets and git history | No, for set-up |
 | `tools/smoke-test.js` | Renders every page as every persona and checks the audit chain | No, for testing |
 | `CLAUDE.md` | Hand-over notes: architecture, code rules, how to test | No, read before changing code |
 | `DEPLOY.md` | Step-by-step deployment to Vercel or Azure | No |
@@ -96,13 +97,26 @@ Disable it in the repository's **Actions** tab, or delete `.github/workflows/dep
 Open this folder in a Claude Code session (desktop app, web or terminal). Claude reads `CLAUDE.md`
 automatically. It covers how the code is organised, the rules to keep and how to test changes.
 
+## Set-up kit (`setup/`)
+
+| Folder | What it recreates |
+|---|---|
+| `setup/vercel/` | Vercel project settings (`project-settings.json`), dashboard steps and an optional CLI deploy script |
+| `setup/azure-entra/` | Azure Static Web App and Entra ID app registration: portal steps and an Azure CLI script |
+| `setup/github-secrets/` | The one GitHub Actions secret the Azure deploy needs: instructions and a set-up script |
+| `setup/git-history/` | Full commit history as a git bundle, plus a readable log (downloadable folder only) |
+
+The scripts haven't been tested against live accounts. Check the commands against each tool's current
+documentation before running them. See `setup/README.md`.
+
 ## What is not in this folder
 
-- **Deployment settings and secrets.** Vercel project settings, Azure resources, Entra app registrations
-  and GitHub secrets belong to the account they were made in. Recreate them using step 4.
+- **Account-held settings and secret values.** Vercel projects, Azure resources, Entra app registrations
+  and GitHub secret values live in the accounts they were made in. `setup/` has the settings, steps and
+  scripts to recreate each one (see the table below).
 - **Demo data changes.** Each browser keeps its own copy of the sample data. It starts fresh in a new
   browser or after **Reset demo data**.
-- **Git history.** This is a snapshot. The full history stays in the original repository.
+- **Git history in the code folders.** The downloadable folder carries it separately in `setup/git-history/`.
 - **Brand templates.** Only the three logo files the app uses are included (`veqms/img/`). The full
   Katalyze Data brand guidelines and templates are held separately.
 

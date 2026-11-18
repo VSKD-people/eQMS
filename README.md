@@ -20,6 +20,7 @@ veqms-prototype/
 │   └── staticwebapp.config.json   Azure Static Web Apps settings (Entra ID sign-in)
 ├── specs/               the six spec documents (build prompt, Steps 1–3, open questions, index)
 │   └── text/            plain-text copies of the PDFs and spreadsheets
+├── setup/               settings and scripts for Vercel, Azure and Entra ID, GitHub secrets, git history
 ├── tools/
 │   └── smoke-test.js    paste into the browser console to check every page renders
 ├── .claude/

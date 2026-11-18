@@ -1,0 +1,24 @@
+{
+  "_about": "Vercel project settings for VeQMS. These are dashboard settings: Vercel stores them per project, not in the repository. Enter them by hand when importing the repository (see README.md).",
+  "project": {
+    "name": "Your choice, for example veqms",
+    "gitRepository": "<new-owner>/<new-repo>",
+    "productionBranch": "main"
+  },
+  "buildAndDeployment": {
+    "frameworkPreset": "Other",
+    "rootDirectory": "veqms",
+    "buildCommand": "(empty, override off)",
+    "outputDirectory": "(empty, override off)",
+    "installCommand": "(empty, override off)"
+  },
+  "environmentVariables": "None. The app is static files and reads no environment variables.",
+  "deploymentProtection": {
+    "vercelAuthentication": "On, covering production as well as previews, so only members of your Vercel team can open the site",
+    "passwordProtection": "Optional, if your plan includes it",
+    "samlSso": "Optional, if your plan includes it (for example with Microsoft Entra ID)"
+  },
+  "inRepository": {
+    "veqms/vercel.json": "Security headers and noindex. Vercel reads this automatically from the root directory."
+  }
+}
