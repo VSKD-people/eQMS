@@ -1,8 +1,10 @@
 # Set-up kit
 
 Everything needed to recreate the hosting and sign-in for VeQMS in a new account. Each folder covers
-one platform. The git history isn't included: it stays in the GitHub repository, which collaborators can clone. None of them hold passwords, keys or account IDs: you create those in the new account
+one platform. None of them hold passwords, keys or account IDs: you create those in the new account
 and the scripts pass them straight to where they're needed.
+
+The git history isn't included. It stays in the GitHub repository, which collaborators can clone.
 
 | Folder | What it recreates | How |
 |---|---|---|
