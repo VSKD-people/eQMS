@@ -55,8 +55,8 @@
         break;
       case 'doc.effective':
         if ((r = active('RULE-09'))) {
-          var n = Q.assignTraining(ctx.record);
-          ran(r, ctx, 'Done', n ? 'Assigned training to ' + Q.plural(n, 'person', 'people') : 'No training rule matches');
+          var n = Q.allocateDoc(ctx.record, 'New version effective');
+          ran(r, ctx, 'Done', n ? 'Allocated the new version to ' + Q.plural(n, 'person', 'people') + '; earlier records kept as superseded' : Q.hasAudience(Q.S.docs[ctx.record]) ? 'Everyone in the audience already has a record for this version' : 'No training audience on this document');
         }
         if ((r = rule('RULE-14'))) {
           if (r.status === 'Active' && Q.integrationOn('sp-pub')) ran(r, ctx, 'Sent', 'Published read-only PDF to SharePoint; archived superseded version');
@@ -79,6 +79,9 @@
           Q.notify({ to: ctx.owner, kind: 'info', channels: ['in-app', 'email'], record: ctx.record, rule: r.id, title: Q.fullName(me()) + ' signed ' + ctx.record, body: 'Meaning: ' + ctx.meaning });
           ran(r, ctx, 'Sent', 'Owner told of signature');
         }
+        break;
+      case 'docusign.completed':
+        if ((r = active('RULE-15'))) ran(r, ctx, 'Done', 'Envelope ' + ctx.envelope + ' completed: signed PDF and certificate stored' + (ctx.training ? '; ' + Q.plural(ctx.training, 'completed training record') + ' for author and reviewers' : ''));
         break;
       case 'security':
         if ((r = active('RULE-13'))) {
@@ -137,7 +140,7 @@
     var d = {
       id: id, docType: o.docType, title: o.title, state: 'Draft', classification: o.classification, owner: o.owner || me(), author: me(),
       process: o.process, template: o.template || null, tags: o.tags || [], created: now(), modified: now(), effective: null,
-      route: o.route || 'sequential', reviewRoute: 'parallel', trainingRule: o.trainingRule || null, sourceFile: o.sourceFile || null,
+      route: 'sequential', reviewRoute: 'parallel', audience: o.audience || { groups: [], roles: [], users: [], days: 14, quiz: false, retrainMonths: null }, sourceFile: o.sourceFile || null,
       periodic: { months: +o.months || 12, notice: 60, approval: true }, reviewDue: o.reviewDue, approvalDue: o.approvalDue,
       reviewers: (o.reviewers || []).map(function (u) { return { u: u, status: 'Not started' }; }),
       approvers: (o.approvers || []).map(function (u) { return { u: u, status: 'Waiting' }; }),
@@ -175,20 +178,21 @@
     return v;
   };
   D.submitForReview = function (d) {
-    if (!d.reviewers.length) { // no reviewers: go straight to approval
-      D.setState(d, 'Review closed', 'Submitted v' + Q.curVer(d).v + ' (no reviewers assigned)');
-      D.startApproval(d); return;
-    }
     d.checkedOut = null;
-    d.reviewers.forEach(function (r) { r.status = 'Pending'; delete r.at; });
     d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
+    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'author' || t.kind === 'resubmit'); });
+    var later = d.approvers.map(function (a) { return a.u; });
+    if (!d.reviewers.length) { // no reviewers: straight to the verification check and DocuSign send
+      D.setState(d, 'Review closed', 'Submitted v' + Q.curVer(d).v + ' (no reviewers assigned)');
+      D.readyToSend(d);
+      Q.save(); return;
+    }
+    d.reviewers.forEach(function (r) { r.status = 'Pending'; delete r.at; });
     d.reviewDue = d.reviewDue && Q.daysFromToday(d.reviewDue) >= 0 ? d.reviewDue : due(5);
     D.setState(d, 'In review', 'Submitted v' + Q.curVer(d).v + ' for review');
-    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'author' || t.kind === 'resubmit'); });
     d.reviewers.forEach(function (r) { assign({ kind: 'review-doc', record: d.id, assignee: r.u, due: d.reviewDue }); });
-    var later = d.approvers.map(function (a) { return a.u; });
-    later.forEach(function (u) { Q.addTask({ kind: 'fyi', record: d.id, assignee: u, due: due(9), fyi: true }); });
-    Q.fire('workflow.entered', { record: d.id, to: later, what: 'approve', body: 'Expected around ' + Q.fmtDay(due(9)) + ', after review.' });
+    later.forEach(function (u) { Q.addTask({ kind: 'fyi', record: d.id, assignee: u, due: due(9), fyi: true, note: 'You sign in DocuSign after review' }); });
+    Q.fire('workflow.entered', { record: d.id, to: later, what: 'sign in DocuSign', body: 'Expected around ' + Q.fmtDay(due(9)) + ', after review.' });
     Q.save();
   };
   D.review = function (d, comment) {
@@ -200,19 +204,14 @@
     Q.closeTasks(function (t) { return t.record === d.id && t.kind === 'review-doc' && t.assignee === me(); });
     if (d.reviewers.every(function (x) { return x.status === 'Reviewed'; })) {
       D.setState(d, 'Review closed', 'Review closed: all ' + d.reviewers.length + ' reviewers done');
-      D.startApproval(d); // next in line is notified automatically, no manual step
+      D.readyToSend(d);
     }
     Q.save();
   };
-  D.startApproval = function (d) {
-    d.approvalDue = due(5);
-    D.setState(d, 'In approval', 'Sent v' + Q.curVer(d).v + ' for approval (' + d.route + ' route)');
-    Q.closeTasks(function (t) { return t.record === d.id && t.kind === 'fyi'; });
-    var first = d.route === 'sequential' ? d.approvers.slice(0, 1) : d.approvers;
-    first.forEach(function (a) { a.status = 'Your turn'; assign({ kind: 'approve-doc', record: d.id, assignee: a.u, due: d.approvalDue, quiet: true, note: d.route === 'sequential' ? 'You are approver ' + (d.approvers.indexOf(a) + 1) + ' of ' + d.approvers.length + ' · sequential route' : 'Parallel route' }); });
-    Q.fire('stage.reached', { record: d.id, to: first.map(function (a) { return a.u; }), what: 'approve', body: Q.recTitle(d.id) + ' v' + Q.curVer(d).v });
-    var later = d.route === 'sequential' ? d.approvers.slice(1) : [];
-    later.forEach(function (a) { Q.addTask({ kind: 'fyi', record: d.id, assignee: a.u, due: due(8), fyi: true, note: 'You approve after ' + Q.fullName(d.approvers[0].u) }); });
+  // Review closed: the owner checks the PDF and sends one DocuSign envelope (see docusign.js).
+  D.readyToSend = function (d) {
+    var who = Q.user(d.owner).status === 'Active' ? d.owner : d.author;
+    assign({ kind: 'send-approval', record: d.id, assignee: who, due: due(2), note: 'Verify the PDF, then send one DocuSign envelope' });
   };
   D.sendBack = function (d, reason) {
     var before = d.state;
@@ -220,36 +219,9 @@
     d.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
     d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
     D.setState(d, 'Draft', 'Sent back to draft from ' + before + '. Reason: ' + reason);
-    Q.closeTasks(function (t) { return t.record === d.id && ['review-doc', 'approve-doc', 'fyi'].indexOf(t.kind) >= 0; });
+    Q.closeTasks(function (t) { return t.record === d.id && ['review-doc', 'send-approval', 'ds-sign', 'fyi'].indexOf(t.kind) >= 0; });
     assign({ kind: 'resubmit', record: d.id, assignee: d.author, due: due(5), note: 'Reason: ' + reason });
     Q.fire('sent.back', { record: d.id, to: told, reason: reason });
-    Q.save();
-  };
-  D.approve = function (d, sig) {
-    var a = d.approvers.find(function (x) { return x.u === me(); });
-    if (!a) return;
-    a.status = 'Signed'; a.at = now(); a.sig = sig.id;
-    Q.curVer(d).signatures.push({ id: sig.id, user: me(), meaning: sig.meaning, at: sig.at, authAt: sig.authAt, hash: sig.hash, statement: sig.statement });
-    Q.closeTasks(function (t) { return t.record === d.id && t.assignee === me() && (t.kind === 'approve-doc' || t.kind === 'fyi'); });
-    var next = d.approvers.find(function (x) { return x.status === 'Waiting'; });
-    if (d.route === 'sequential' && next) {
-      next.status = 'Your turn';
-      Q.closeTasks(function (t) { return t.record === d.id && t.assignee === next.u && t.kind === 'fyi'; });
-      assign({ kind: 'approve-doc', record: d.id, assignee: next.u, due: d.approvalDue || due(3), quiet: true, note: 'You are approver ' + (d.approvers.indexOf(next) + 1) + ' of ' + d.approvers.length + ' · sequential route' });
-      Q.fire('stage.reached', { record: d.id, to: [next.u], what: 'approve', body: Q.fullName(me()) + ' signed. You are next.' });
-      Q.audit('state', 'Document', d.id, 'Approval ' + d.approvers.filter(function (x) { return x.status === 'Signed'; }).length + ' of ' + d.approvers.length + ' signed; next: ' + Q.fullName(next.u));
-    } else if (d.approvers.every(function (x) { return x.status === 'Signed'; })) {
-      var v = Q.curVer(d); v.approvedAt = now();
-      var rule = Q.S.trainingRules.find(function (r) { return r.id === d.trainingRule && r.status === 'Active'; });
-      if (rule && rule.gate) {
-        D.setState(d, 'Pending training', 'All approvals signed; waiting for training under ' + rule.id + ' ' + rule.name);
-        var n = Q.assignTraining(d.id);
-        Q.audit('automation', 'Document', d.id, 'RULE-09 assigned training to ' + Q.plural(n, 'person', 'people'), null, null, { actor: 'system' });
-        if (!n) D.makeEffective(d);
-      } else {
-        D.makeEffective(d);
-      }
-    }
     Q.save();
   };
   D.makeEffective = function (d) {
@@ -257,7 +229,7 @@
     d.versions.forEach(function (x) { if (x !== v && x.state === 'Effective') { x.state = 'Superseded'; } });
     d.effective = now();
     D.setState(d, 'Effective', d.id + ' v' + v.v + ' is Effective' + (d.versions.length > 1 ? '; previous version Superseded' : ''));
-    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'fyi' || t.kind === 'approve-doc'); });
+    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'fyi' || t.kind === 'ds-sign' || t.kind === 'send-approval'); });
     // Schedule the next periodic review
     if (d.periodic) {
       var nextDue = Q.iso(Q.addDays(new Date(), Math.round(d.periodic.months * 30.4)));
@@ -268,7 +240,9 @@
     Q.fire('doc.effective', { record: d.id });
   };
   D.obsolete = function (d, reason) {
-    var v = Q.effVer(d) || Q.curVer(d); v.state = 'Obsolete'; d.obsoleteReason = reason;
+    var v = Q.effVer(d) || Q.curVer(d);
+    Q.S.assignments.filter(function (a) { return a.doc === d.id && !a.completed && !a.closed; }).forEach(function (a) { closeOpen(a, d.id + ' made obsolete'); });
+    v.state = 'Obsolete'; d.obsoleteReason = reason;
     D.setState(d, 'Obsolete', 'Made ' + d.id + ' obsolete (archived, not deleted). Reason: ' + reason);
     Q.save();
   };
@@ -279,59 +253,139 @@
   };
   D.resolve = function (d, cid) { var c = d.comments.find(function (x) { return x.id === cid; }); if (c) { c.resolved = true; Q.audit('comment', 'Document', d.id, 'Resolved a comment'); Q.save(); } };
 
-  // ---------- Training ----------
-  Q.ruleMembers = function (rule) {
-    var ids = [];
-    rule.groups.forEach(function (g) { Q.usersInGroup(g).forEach(function (u) { if (ids.indexOf(u.id) < 0) ids.push(u.id); }); });
-    (rule.users || []).forEach(function (u) { if (ids.indexOf(u) < 0 && Q.user(u).status === 'Active') ids.push(u); });
-    return ids;
+  // ---------- Training: read-and-understood records (not Part 11 signatures) ----------
+  // Each record is attributable (SSO user), tied to one version, dated by the system and locked once
+  // completed. Nobody edits or deletes a completed record; a correction is a new record with a reason.
+  Q.audienceOf = function (d) { return (d && d.audience) || { groups: [], roles: [], users: [], days: 14, quiz: false, retrainMonths: null }; };
+  Q.hasAudience = function (d) { var a = Q.audienceOf(d); return !!(a.groups.length || a.roles.length || a.users.length); };
+  Q.inAudience = function (d, u) {
+    var a = Q.audienceOf(d);
+    if (!u || u.status !== 'Active') return false;
+    return a.groups.some(function (g) { return (u.groups || []).indexOf(g) >= 0; }) || a.roles.some(function (r) { return (u.roles || []).indexOf(r) >= 0; }) || a.users.indexOf(u.id) >= 0;
   };
-  Q.assignTraining = function (docId, onlyRule) {
-    var d = Q.S.docs[docId]; var v = Q.curVer(d); var count = 0;
-    Q.S.trainingRules.filter(function (r) { return r.status === 'Active' && r.docs.indexOf(docId) >= 0 && (!onlyRule || r.id === onlyRule); }).forEach(function (rule) {
-      Q.ruleMembers(rule).forEach(function (uid) {
-        var exists = Q.S.assignments.find(function (a) { return a.user === uid && a.doc === docId && a.ver === v.v && !a.leaver; });
-        if (exists) return;
-        var a = { id: Q.uid('TA'), user: uid, doc: docId, ver: v.v, rule: rule.id, assigned: now(), due: due(rule.days), completed: null };
-        Q.S.assignments.push(a); count++;
-        var t = Q.addTask({ kind: 'training', record: docId, assignee: uid, due: a.due, ref: docId });
-        Q.notify({ to: uid, kind: 'action', channels: ['in-app', 'email', 'push'], record: docId, rule: 'RULE-09', title: 'New training: ' + docId + ' ' + d.title + ' v' + v.v, body: 'Rule: ' + rule.name + ' · ' + Q.relDue(a.due).text });
-        void t;
-      });
+  Q.audienceMembers = function (d) { return Q.S.users.filter(function (u) { return Q.inAudience(d, u); }).map(function (u) { return u.id; }); };
+  Q.audienceText = function (a) {
+    if (!a) return 'Nobody';
+    var parts = [].concat(a.groups, (a.roles || []).map(function (r) { return 'role: ' + Q.ROLE_LABEL[r]; }), (a.users || []).map(Q.fullName));
+    return parts.length ? parts.join(', ') : 'Nobody (no training needed)';
+  };
+  Q.ackStatement = function (docId, ver) { return Q.S.settings.ackStatement.replace('{doc}', docId).replace('{version}', ver); };
+  Q.trCorrections = function (a) { return Q.S.assignments.filter(function (x) { return x.correctionOf === a.id; }); };
+  Q.trStatus = function (a) {
+    if (a.correctionOf && a.noRetrain) return 'Correction';
+    if (Q.trCorrections(a).length) return 'Corrected';
+    var d = Q.S.docs[a.doc], eff = d && Q.effVer(d);
+    if (!eff) return 'Obsolete';
+    if (eff.v !== a.ver) return 'Superseded';
+    if (a.closed) return 'Withdrawn';
+    if (a.completed) return 'Complete';
+    if (a.leaver) return 'Left';
+    return Q.daysFromToday(a.due) < 0 ? 'Overdue' : 'Assigned';
+  };
+  Q.trOpen = function (a) { return !a.completed && !a.closed && !a.leaver && !a.noRetrain && ['Assigned', 'Overdue'].indexOf(Q.trStatus(a)) >= 0; };
+  function trSnap(a) { return { person: Q.fullName(a.user), document: a.doc, title: a.title, version: a.ver, allocatedBy: a.allocatedBy === 'system' ? 'System' : Q.fullName(a.allocatedBy), reason: a.allocReason, assigned: a.assigned, due: a.due, completed: a.completed }; }
+  function trTask(a) {
+    Q.addTask({ kind: 'training', record: a.doc, assignee: a.user, due: a.due, ref: a.id });
+    Q.notify({ to: a.user, kind: 'action', channels: ['in-app', 'email', 'push'], record: a.doc, rule: 'RULE-09', title: 'New training: ' + a.doc + ' ' + a.title + ' v' + a.ver, body: a.allocReason + ' · ' + Q.relDue(a.due).text });
+  }
+  function closeOpen(a, why) {
+    if (a.completed || a.closed) return;
+    var before = { status: Q.trStatus(a) };
+    a.closed = { at: now(), reason: why };
+    Q.audit('training.withdraw', 'Training record', a.id, 'Closed open allocation ' + a.doc + ' v' + a.ver + ' for ' + Q.fullName(a.user) + ': ' + why, before, { status: Q.trStatus(a), reason: why });
+    Q.closeTasks(function (t) { return t.kind === 'training' && t.assignee === a.user && t.record === a.doc && (!t.ref || t.ref === a.id || t.ref === a.doc); });
+  }
+  function allocate(d, uid, o) {
+    var v = Q.effVer(d); if (!v) return null;
+    var has = Q.S.assignments.some(function (a) { return a.user === uid && a.doc === d.id && a.ver === v.v && !a.closed && !a.noRetrain; });
+    if (has) return null;
+    var a = { id: Q.uid('TA'), user: uid, doc: d.id, title: d.title, ver: v.v, allocatedBy: o.by || 'system', allocReason: o.reason, assigned: now(), due: due(Q.audienceOf(d).days || 14), completed: null };
+    Q.S.assignments.push(a);
+    Q.audit('training.allocate', 'Training record', a.id, 'Allocated ' + d.id + ' v' + v.v + ' to ' + Q.fullName(uid) + ' (' + o.reason + ')', null, trSnap(a), o.by === 'system' || !o.by ? { actor: 'system' } : null);
+    trTask(a);
+    return a;
+  }
+  // New effective version: earlier open allocations close as superseded, then the full audience is assigned.
+  Q.allocateDoc = function (docId, reason, by) {
+    var d = Q.S.docs[docId], v = Q.effVer(d); if (!v) return 0;
+    Q.S.assignments.filter(function (a) { return a.doc === docId && a.ver !== v.v && !a.completed && !a.closed; }).forEach(function (a) { closeOpen(a, 'Superseded by v' + v.v); });
+    var n = 0;
+    Q.audienceMembers(d).forEach(function (uid) { if (allocate(d, uid, { reason: reason, by: by })) n++; });
+    return n;
+  };
+  // New starters, group moves and role changes get the current version of everything their audience needs.
+  Q.reconcileUser = function (uid, reason, by) {
+    var u = Q.user(uid), added = 0, closed = 0;
+    Object.keys(Q.S.docs).forEach(function (k) {
+      var d = Q.S.docs[k]; if (!Q.effVer(d)) return;
+      if (Q.inAudience(d, u)) { if (allocate(d, uid, { reason: reason, by: by })) added++; }
+      else Q.S.assignments.filter(function (a) { return a.user === uid && a.doc === k && !a.completed && !a.closed && !a.correctionOf; }).forEach(function (a) { closeOpen(a, reason + ': no longer in the audience'); closed++; });
     });
-    return count;
+    return { added: added, closed: closed };
+  };
+  // Approval envelope completed: author and each reviewer get a completed record for that version.
+  Q.recordApprovalTraining = function (d, ver, env) {
+    var seen = [];
+    env.signers.filter(function (s) { return s.meaning === 'Authored' || s.meaning === 'Reviewed'; }).forEach(function (s) {
+      if (seen.indexOf(s.u) >= 0) return; seen.push(s.u);
+      var a = { id: Q.uid('TA'), user: s.u, doc: d.id, title: d.title, ver: ver, allocatedBy: 'system', allocReason: 'Approval envelope (' + s.meaning.toLowerCase() + ')', assigned: env.sentAt, due: env.completedAt, completed: env.completedAt, envelope: env.id,
+        statement: 'Signed ' + d.id + ', version ' + ver + ' in DocuSign with the meaning “' + s.meaning + '” (envelope ' + env.id + ')' };
+      Q.S.assignments.push(a);
+      Q.audit('training.record', 'Training record', a.id, 'Completed record for ' + Q.fullName(s.u) + ' on ' + d.id + ' v' + ver + ' from DocuSign envelope ' + env.id, null, trSnap(a), { actor: 'system' });
+    });
+    return seen.length;
   };
   Q.completeTraining = function (a, info) {
-    a.completed = now(); a.quiz = info.quiz || null; a.sig = info.sig || null;
+    if (a.user !== me()) { Q.toast('Only ' + Q.fullName(a.user) + ' can confirm this record.', 'warn'); return false; }
+    if (a.completed || !Q.trOpen(a)) return false;
+    var before = { completed: null, status: Q.trStatus(a) };
+    a.completed = now(); a.statement = Q.ackStatement(a.doc, a.ver); a.quiz = info.quiz || null; a.via = 'Microsoft 365 single sign-on';
     Q.closeTasks(function (t) { return t.kind === 'training' && t.record === a.doc && t.assignee === a.user; });
-    Q.audit('training', 'Training record', a.doc, Q.fullName(a.user) + ' completed training on ' + a.doc + ' v' + a.ver + (info.quiz ? ' (quiz ' + info.quiz + ')' : ''), null, { record: a.id });
+    Q.audit('training.complete', 'Training record', a.id, Q.fullName(a.user) + ' confirmed read and understood: ' + a.doc + ' v' + a.ver + (a.quiz ? ' (knowledge check ' + a.quiz + ')' : ''), before, { completed: a.completed, statement: a.statement, status: 'Complete' });
+    Q.save();
+    return true;
+  };
+  Q.correctTraining = function (a, reason, retrain) {
+    if (!Q.can('training.manage') || !a.completed) return null;
     var d = Q.S.docs[a.doc];
-    if (d.state === 'Pending training') {
-      var gating = Q.S.assignments.filter(function (x) { return x.doc === a.doc && x.ver === Q.curVer(d).v && !x.leaver; });
-      if (gating.every(function (x) { return x.completed; })) {
-        Q.notify({ to: d.owner, kind: 'info', channels: ['in-app', 'email'], record: d.id, title: 'Training complete for ' + d.id, body: 'All trainees are done. The document is now Effective.' });
-        wf.doc.makeEffective(d);
-      }
+    var before = { status: Q.trStatus(a) };
+    var c = { id: Q.uid('TA'), user: a.user, doc: a.doc, title: a.title, ver: a.ver, allocatedBy: me(), allocReason: 'Correction', correctionOf: a.id, correctionReason: reason, assigned: now(), due: retrain ? due(Q.audienceOf(d).days || 14) : null, completed: null, noRetrain: !retrain };
+    Q.S.assignments.push(c);
+    Q.audit('training.correct', 'Training record', a.id, 'Correction ' + c.id + ' recorded for ' + Q.fullName(a.user) + ' on ' + a.doc + ' v' + a.ver + '. The original stays. Reason: ' + reason, before, { status: 'Corrected', correction: c.id, retrain: !!retrain });
+    Q.audit('training.allocate', 'Training record', c.id, (retrain ? 'Re-allocated ' : 'Recorded in error, no retraining: ') + a.doc + ' v' + a.ver + ' for ' + Q.fullName(a.user) + ' (correction of ' + a.id + ')', null, trSnap(c));
+    if (retrain) trTask(c);
+    Q.save();
+    return c;
+  };
+  Q.setAudience = function (d, aud) {
+    var before = Q.clone(Q.audienceOf(d));
+    d.audience = aud;
+    Q.audit('training.audience', 'Document', d.id, 'Changed training audience of ' + d.id + ': ' + Q.audienceText(before) + ' → ' + Q.audienceText(aud), { audience: before }, { audience: Q.clone(aud) });
+    var added = 0, closed = 0;
+    if (Q.effVer(d)) {
+      Q.audienceMembers(d).forEach(function (uid) { if (allocate(d, uid, { reason: 'Audience change', by: me() })) added++; });
+      Q.S.assignments.filter(function (a) { return a.doc === d.id && Q.trOpen(a) && !a.correctionOf && !Q.inAudience(d, Q.user(a.user)); }).forEach(function (a) { closeOpen(a, 'Audience change: no longer in the audience'); closed++; });
     }
     Q.save();
+    return { added: added, closed: closed };
   };
-  wf.rule = {
-    create: function (o) {
-      var id = Q.nextId('TR');
-      var r = { id: id, name: o.name, desc: o.desc, groups: o.groups, users: [], docs: o.docs, days: +o.days, retrainMonths: o.retrain ? +o.retrain : null, gate: !!o.gate, quiz: !!o.quiz, version: 1, status: 'Pending approval', approvedBy: null, createdBy: me(), createdAt: now() };
-      Q.S.trainingRules.push(r);
-      Q.audit('create', 'Training rule', id, 'Created training rule ' + id + ' ' + o.name + ' (needs approval before it is active)');
-      var qms = Q.S.users.filter(function (u) { return u.roles.indexOf('qm') >= 0 && u.id !== me(); });
-      (qms.length ? qms : [Q.me()]).forEach(function (u) { assign({ kind: 'rule-approve', record: id, assignee: u.id, due: due(5) }); });
-      Q.save(); return r;
-    },
-    approve: function (r) {
-      r.status = 'Active'; r.approvedBy = me(); r.approvedAt = now();
-      Q.audit('state', 'Training rule', r.id, r.id + ' v' + r.version + ' approved and active');
-      Q.closeTasks(function (t) { return t.record === r.id && t.kind === 'rule-approve'; });
-      var n = 0; r.docs.forEach(function (d) { if (Q.S.docs[d] && Q.S.docs[d].state === 'Effective') n += Q.assignTraining(d, r.id); });
-      Q.save(); return n;
-    }
+  Q.sendReminders = function () {
+    var lead = Math.max.apply(null, Q.S.settings.reminders || [3]);
+    var sent = 0, over = 0;
+    Q.S.assignments.filter(Q.trOpen).forEach(function (a) {
+      var n = Q.daysFromToday(a.due);
+      if (n < 0) {
+        var u = Q.user(a.user);
+        Q.notify({ to: [a.user].concat(u.manager ? [u.manager] : []), kind: 'overdue', mandatory: true, channels: ['in-app', 'email'], record: a.doc, rule: 'RULE-16', title: 'Overdue: ' + a.doc + ' v' + a.ver + ' training for ' + u.name, body: 'Was due ' + Q.fmtShort(a.due) + '.' });
+        over++;
+      } else if (n <= lead) {
+        Q.notify({ to: a.user, kind: 'reminder', channels: ['in-app', 'email'], record: a.doc, rule: 'RULE-16', title: 'Reminder: ' + a.doc + ' v' + a.ver + ' training is due ' + Q.relDue(a.due).text.toLowerCase(), body: 'Read and understood' });
+        sent++;
+      }
+    });
+    Q.audit('training.reminders', 'Training', 'REMINDERS', 'Sent ' + Q.plural(sent, 'reminder') + ' and ' + Q.plural(over, 'overdue notice') + ' (managers copied on overdue)', null, { reminders: sent, overdue: over });
+    Q.save();
+    return { sent: sent, overdue: over };
   };
 
   // ---------- Change requests ----------
@@ -478,9 +532,10 @@
       Q.fire('record.created', { record: id, severity: c.severity, owner: c.owner });
       Q.save(); return c;
     },
-    closeNoCapa: function (qe, justification, sig) {
-      var b = qe.state; qe.state = 'Closed'; qe.closure = { justification: justification, by: me(), at: now(), sigId: sig.id };
-      Q.audit('state', 'Quality event', qe.id, 'Closed ' + qe.id + ' without CAPA (justified and signed ' + sig.id + ')', { state: b }, { state: 'Closed' });
+    closeNoCapa: function (qe, justification, sig, env) {
+      var b = qe.state; qe.state = 'Closed';
+      qe.closure = env ? { justification: justification, by: env.sentBy, at: now(), sigId: env.id, envelope: env.id } : { justification: justification, by: me(), at: now(), sigId: sig.id };
+      Q.audit('state', 'Quality event', qe.id, 'Closed ' + qe.id + ' without CAPA (' + (env ? 'approved through DocuSign envelope ' + env.id : 'justified and signed ' + sig.id) + ')', { state: b }, { state: 'Closed' }, env ? { actor: 'system' } : null);
       Q.closeTasks(function (t) { return t.record === qe.id; });
       Q.save();
     }
@@ -523,10 +578,11 @@
       assign({ kind: 'effectiveness', record: c.id, assignee: c.owner, due: c.effectiveness.due });
       Q.save();
     },
-    close: function (c, result, verdict, sig) {
-      c.effectiveness.result = result; c.effectiveness.verdict = verdict; c.effectiveness.by = me(); c.effectiveness.at = now(); c.closedAt = now(); c.closeSig = sig.id;
+    close: function (c, result, verdict, sig, env) {
+      c.effectiveness.result = result; c.effectiveness.verdict = verdict; c.effectiveness.by = env ? (c.pendingClosure || {}).by || env.sentBy : me(); c.effectiveness.at = env ? (c.pendingClosure || {}).at || now() : now(); c.closedAt = now(); c.closeSig = sig ? sig.id : env.id;
+      if (env) c.closeEnvelope = env.id;
       Q.closeTasks(function (t) { return t.record === c.id; });
-      wf.capa.setState(c, 'Closed', 'Effectiveness verified (' + verdict + ', signature ' + sig.id + '); ' + c.id + ' closed');
+      wf.capa.setState(c, 'Closed', 'Effectiveness verified (' + verdict + (env ? '); closure approved through DocuSign envelope ' + env.id : ', signature ' + sig.id + ')') + '; ' + c.id + ' closed');
       var qe = Q.S.events[c.source]; if (qe && qe.state !== 'Closed') { qe.state = 'Closed'; Q.audit('state', 'Quality event', qe.id, qe.id + ' closed with ' + c.id); }
       Q.save();
     }
@@ -580,6 +636,25 @@
       Q.S.tasks.forEach(function (t) { if (t.assignee === u.id && t.status === 'open') { t.assignee = u.manager || 'u-vic'; t.note = 'Reassigned from leaver ' + u.name; } });
       Q.save();
     },
+    // New starter from Entra ID (SCIM). Training for every document their groups and roles need is allocated at once.
+    provision: function (o) {
+      var base = 'u-' + o.name.toLowerCase().replace(/[^a-z]+/g, '').slice(0, 10), id = base, i = 2;
+      while (Q.S.users.some(function (x) { return x.id === id; })) id = base + (i++);
+      var parts = o.name.trim().split(/\s+/);
+      var u = { id: id, name: o.name.trim(), initials: (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase(), email: o.email || id.slice(2) + '@veqms.example', roles: o.roles && o.roles.length ? o.roles : ['employee'], title: o.title || 'New starter', clearance: 'Internal', status: 'Active', site: o.site || 'London', manager: o.manager || null, groups: ['All staff'].concat((o.groups || []).filter(function (g) { return g !== 'All staff'; })), startedOn: now() };
+      Q.S.users.push(u);
+      Q.audit('access.provision', 'User', u.id, 'New starter provisioned from Entra ID (SCIM): ' + u.name, null, { groups: u.groups.slice(), roles: u.roles.slice() }, { actor: 'system' });
+      var r = Q.reconcileUser(u.id, 'New starter', 'system');
+      Q.save(); return { user: u, added: r.added };
+    },
+    // Group move from Entra ID (SCIM): adds training for new audiences, closes open items that no longer apply.
+    setGroups: function (u, groups) {
+      var b = u.groups.slice();
+      u.groups = groups.filter(function (g, i, a) { return a.indexOf(g) === i; });
+      Q.audit('access.groups', 'User', u.id, 'Group change from Entra ID (SCIM) for ' + u.name + ': ' + (b.join(', ') || 'none') + ' → ' + u.groups.join(', '), { groups: b }, { groups: u.groups.slice() }, { actor: 'system' });
+      var r = Q.reconcileUser(u.id, 'Group change', 'system');
+      Q.save(); return r;
+    },
     requestRole: function (u, role) {
       var needsSecond = ['approver', 'qm', 'admin'].indexOf(role) >= 0 && Q.S.settings.twoPerson !== false;
       if (needsSecond) {
@@ -589,6 +664,7 @@
         var b = u.roles.slice(); u.roles.push(role);
         Q.audit('role.change', 'User', u.id, 'Granted ' + Q.ROLE_LABEL[role] + ' to ' + u.name, { roles: b }, { roles: u.roles.slice() });
         Q.fire('security', { user: u.id, privilege: true, title: 'Role change: ' + u.name + ' is now ' + Q.ROLE_LABEL[role] });
+        Q.reconcileUser(u.id, 'Role change', 'system');
       }
       Q.save(); return needsSecond;
     },
@@ -596,6 +672,7 @@
       var b = u.roles.slice(); u.roles = u.roles.filter(function (r) { return r !== role; });
       Q.audit('role.change', 'User', u.id, 'Removed ' + Q.ROLE_LABEL[role] + ' from ' + u.name, { roles: b }, { roles: u.roles.slice() });
       Q.fire('security', { user: u.id, privilege: true, title: 'Role change: ' + Q.ROLE_LABEL[role] + ' removed from ' + u.name });
+      Q.reconcileUser(u.id, 'Role change', 'system');
       Q.save();
     },
     decideRequest: function (rq, approve) {
@@ -605,6 +682,7 @@
         var b = u.roles.slice(); if (u.roles.indexOf(rq.role) < 0) u.roles.push(rq.role);
         Q.audit('role.change', 'User', u.id, 'Second admin approved ' + Q.ROLE_LABEL[rq.role] + ' for ' + u.name, { roles: b }, { roles: u.roles.slice() });
         Q.fire('security', { user: u.id, privilege: true, title: 'Role change: ' + u.name + ' is now ' + Q.ROLE_LABEL[rq.role] });
+        Q.reconcileUser(u.id, 'Role change', 'system');
       } else Q.audit('role.request', 'User', u.id, 'Declined role request ' + rq.id);
       Q.save();
     }

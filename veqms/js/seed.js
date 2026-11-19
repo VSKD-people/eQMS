@@ -12,10 +12,10 @@
 
   Q.seed = function () {
     var S = {
-      version: 9,
+      version: 10,
       seededAt: new Date().toISOString(),
       session: { userId: 'u-vic', signedInAt: D(0, 8, 2) },
-      counters: { POL: 10, SOP: 21, WI: 4, FRM: 8, REG: 3, PLN: 2, SOA: 2, SPEC: 1, CR: 17, QE: 17, CAPA: 9, OBS: 23, PR: 37, TR: 5, TPL: 9, RULE: 15, SIG: 120, ACT: 60 },
+      counters: { POL: 10, SOP: 21, WI: 4, FRM: 8, REG: 3, PLN: 2, SOA: 2, SPEC: 1, VEN: 1, VP: 1, VR: 0, DS: 0, CR: 17, QE: 17, CAPA: 9, OBS: 23, PR: 37, TR: 5, TPL: 9, RULE: 15, SIG: 120, ACT: 60 },
       seen: {},
       ui: {}
     };
@@ -54,6 +54,9 @@
       { id: 'TPL-CR', name: 'Change request', kind: 'Change request', version: '1.0', state: 'Effective', updated: D(-60), sections: ['Description', 'Reason', 'Expected impact', 'Impacted processes'] },
       { id: 'TPL-CAPA', name: 'CAPA', kind: 'CAPA', version: '1.1', state: 'Effective', updated: D(-45), sections: ['5 Whys', 'Fishbone', 'Risk assessment', 'Effectiveness check'] },
       { id: 'TPL-QE', name: 'Quality event', kind: 'Quality event', version: '1.0', state: 'Effective', updated: D(-90), sections: ['What happened', 'Immediate containment', 'Assessment'] },
+      { id: 'TPL-VEN', name: 'Vendor approval', kind: 'Document', docType: 'Vendor approval', version: '1.0', state: 'Effective', updated: D(-130), sections: ['1. Vendor and service', '2. Assessment', '3. Risks and conditions', '4. Decision'] },
+      { id: 'TPL-VP', name: 'Validation plan', kind: 'Document', docType: 'Validation plan', version: '1.0', state: 'Effective', updated: D(-130), sections: ['1. System and scope', '2. Approach and risk', '3. Deliverables', '4. Acceptance criteria', '5. Roles'] },
+      { id: 'TPL-VR', name: 'Validation report', kind: 'Document', docType: 'Validation report', version: '1.0', state: 'Effective', updated: D(-130), sections: ['1. Summary', '2. Results against the plan', '3. Deviations', '4. Conclusion and release'] },
       { id: 'TPL-POL2', name: 'Policy (short form)', kind: 'Document', docType: 'Policy', version: '0.2', state: 'Draft', updated: D(-3), sections: ['1. Purpose', '2. Policy statements', '3. Review'] }
     ];
 
@@ -104,13 +107,20 @@
     }
     function withSigs(v, list) { v.signatures = list.map(function (s) { s.hash = v.hash; return s; }); return v; }
 
+    // Who must train on each document: groups (incl. All staff), roles and named people.
+    var AUD = {
+      all: function () { return { groups: ['All staff'], roles: [], users: [], days: 14, quiz: true, retrainMonths: 12 }; },
+      it: function () { return { groups: ['IT team'], roles: [], users: [], days: 14, quiz: false, retrainMonths: 12 }; },
+      mgr: function () { return { groups: ['Managers'], roles: ['process'], users: ['u-mia'], days: 21, quiz: false, retrainMonths: null }; },
+      none: function () { return { groups: [], roles: [], users: [], days: 14, quiz: false, retrainMonths: null }; }
+    };
     var docs = {};
     function doc(o) { docs[o.id] = o; return o; }
 
     doc({
       id: 'POL-001', docType: 'Policy', title: 'Information Security Policy', state: 'Effective', classification: 'Internal',
       owner: 'u-vic', author: 'u-vic', process: 'ISMS · Governance', template: 'TPL-POL', tags: ['A.5.1', 'Clause 5.2'],
-      created: D(-700), modified: D(-160), effective: D(-160), route: 'sequential', trainingRule: 'TR-01',
+      created: D(-700), modified: D(-160), effective: D(-160), route: 'sequential', audience: AUD.all(),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-priya', status: 'Reviewed', at: D(-170) }], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-161) }],
       versions: [
@@ -134,7 +144,7 @@
     doc({
       id: 'POL-004', docType: 'Policy', title: 'Access Control Policy', state: 'In approval', classification: 'Internal',
       owner: 'u-sam', author: 'u-sam', process: 'ISMS · Access control', template: 'TPL-POL', tags: ['A.5.15', 'A.8.3'],
-      created: D(-400), modified: D(-6, 15, 42), effective: D(-390), route: 'sequential', trainingRule: 'TR-01', approvalDue: D(-2),
+      created: D(-400), modified: D(-6, 15, 42), effective: D(-390), route: 'sequential', audience: AUD.all(), approvalDue: D(-2),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-priya', status: 'Reviewed', at: D(-11, 10, 5) }, { u: 'u-omar', status: 'Reviewed', at: D(-6, 15, 42) }],
       approvers: [{ u: 'u-vic', status: 'Your turn' }, { u: 'u-tom', status: 'Waiting' }],
@@ -147,22 +157,22 @@
       ]
     });
     doc({
-      id: 'POL-003', docType: 'Policy', title: 'Information Classification Policy', state: 'In approval', classification: 'Internal',
+      id: 'POL-003', docType: 'Policy', title: 'Information Classification Policy', state: 'Review closed', classification: 'Internal',
       owner: 'u-vic', author: 'u-vic', process: 'ISMS · Information handling', template: 'TPL-POL', tags: ['A.5.12', 'A.5.13'],
-      created: D(-300), modified: D(-1, 11, 0), effective: D(-290), route: 'parallel', trainingRule: 'TR-01', approvalDue: D(4),
+      created: D(-300), modified: D(-1, 11, 0), effective: D(-290), route: 'sequential', audience: AUD.all(),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-priya', status: 'Reviewed', at: D(-1, 10, 40) }],
-      approvers: [{ u: 'u-vic', status: 'Your turn' }, { u: 'u-tom', status: 'Your turn' }],
+      approvers: [{ u: 'u-vic', status: 'Waiting' }, { u: 'u-tom', status: 'Waiting' }],
       versions: [
         withSigs(ver('1.0', 'major', 'Effective', 'First issue.', D(-300), 'u-vic', simple('', 'Label information so everyone knows how to handle it.', 'Four classes: Public, Internal, Confidential, Restricted. The owner sets the class when the information is created.'), D(-290)), [sig(30, 'u-tom', 'Approved', D(-290))]),
-        ver('1.1', 'minor', 'In approval', 'Added handling rules for printing and downloads per class.', D(-4), 'u-vic', simple('', 'Label information so everyone knows how to handle it.', 'Four classes: Public, Internal, Confidential, Restricted. Confidential may not be printed. Restricted may be downloaded only by people with Restricted clearance; every attempt is logged.'))
+        ver('1.1', 'minor', 'Review closed', 'Added handling rules for printing and downloads per class.', D(-4), 'u-vic', simple('', 'Label information so everyone knows how to handle it.', 'Four classes: Public, Internal, Confidential, Restricted. Confidential may not be printed. Restricted may be downloaded only by people with Restricted clearance; every attempt is logged.'))
       ],
       comments: []
     });
     doc({
       id: 'POL-009', docType: 'Policy', title: 'Acceptable Use Policy', state: 'Effective', classification: 'Internal',
       owner: 'u-vic', author: 'u-priya', process: 'ISMS · People', template: 'TPL-POL', tags: ['A.5.10'],
-      created: D(-500), modified: D(-60), effective: D(-60), route: 'sequential', trainingRule: 'TR-01',
+      created: D(-500), modified: D(-60), effective: D(-60), route: 'sequential', audience: AUD.all(),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-sam', status: 'Reviewed', at: D(-66) }], approvers: [{ u: 'u-vic', status: 'Signed', at: D(-61) }],
       versions: [
@@ -177,7 +187,7 @@
     doc({
       id: 'SOP-012', docType: 'Procedure', title: 'Backup and Restore Procedure', state: 'Effective', classification: 'Internal',
       owner: 'u-sam', author: 'u-sam', process: 'ISMS · Continuity', template: 'TPL-SOP', tags: ['A.8.13', 'A.5.30'],
-      created: D(-600), modified: D(-16), effective: D(-16), route: 'sequential', trainingRule: 'TR-01',
+      created: D(-600), modified: D(-16), effective: D(-16), route: 'sequential', audience: AUD.all(),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-priya', status: 'Reviewed', at: D(-22) }], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-17) }, { u: 'u-vic', status: 'Signed', at: D(-16) }],
       versions: [sop12v2, sop12v3], comments: []
@@ -185,7 +195,7 @@
     doc({
       id: 'SOP-014', docType: 'Procedure', title: 'Joiner, Mover and Leaver Procedure', state: 'Effective', classification: 'Internal',
       owner: 'u-mia', author: 'u-mia', process: 'ISMS · People', template: 'TPL-SOP', tags: ['A.5.18', 'A.6.5'],
-      created: D(-420), modified: D(-200), effective: D(-200), route: 'sequential', trainingRule: 'TR-03',
+      created: D(-420), modified: D(-200), effective: D(-200), route: 'sequential', audience: AUD.mgr(),
       periodic: { months: 12, notice: 60, approval: true }, reviewers: [], approvers: [{ u: 'u-vic', status: 'Signed', at: D(-200) }],
       versions: [withSigs(ver('1.4', 'minor', 'Effective', 'Added equipment return checklist.', D(-205), 'u-mia', simple('', 'Make sure people get the right access when they join, move or leave.', 'HR records start and leaving dates in the HR system. Managers confirm access needs on day one. Equipment is returned on the last day.'), D(-200)), [sig(60, 'u-vic', 'Approved', D(-200))])],
       comments: []
@@ -193,7 +203,7 @@
     doc({
       id: 'SOP-018', docType: 'Procedure', title: 'Patch Management', state: 'Effective', classification: 'Internal',
       owner: 'u-omar', author: 'u-omar', process: 'ISMS · Vulnerability mgmt', template: 'TPL-SOP', tags: ['A.8.8'],
-      created: D(-380), modified: D(-90), effective: D(-90), route: 'sequential', trainingRule: 'TR-02',
+      created: D(-380), modified: D(-90), effective: D(-90), route: 'sequential', audience: AUD.it(),
       periodic: { months: 12, notice: 60, approval: true }, reviewers: [], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-90) }],
       versions: [withSigs(ver('1.1', 'minor', 'Effective', 'Patch windows moved to Tuesday evenings.', D(-95), 'u-omar', simple('', 'Keep systems patched against known vulnerabilities.', 'Critical patches within 7 days, high within 30 days. Servers are patched on Tuesday evenings. Missed patches are reported to the Head of IT.'), D(-90)), [sig(77, 'u-tom', 'Approved', D(-90))])],
       comments: []
@@ -201,7 +211,7 @@
     doc({
       id: 'SOP-020', docType: 'Procedure', title: 'Supplier Security Review', state: 'In review', classification: 'Internal',
       owner: 'u-grace', author: 'u-grace', process: 'ISMS · Supplier management', template: 'TPL-SOP', tags: ['A.5.19', 'A.5.21'],
-      created: D(-9), modified: D(-3), effective: null, route: 'sequential', reviewRoute: 'parallel', trainingRule: 'TR-03', reviewDue: D(1), expectedApproval: D(9),
+      created: D(-9), modified: D(-3), effective: null, route: 'sequential', reviewRoute: 'parallel', audience: AUD.mgr(), reviewDue: D(1), expectedApproval: D(9),
       periodic: { months: 12, notice: 60, approval: true },
       reviewers: [{ u: 'u-priya', status: 'Pending' }, { u: 'u-sam', status: 'Reviewed', at: D(-2, 11, 15) }],
       approvers: [{ u: 'u-vic', status: 'Waiting' }],
@@ -216,7 +226,7 @@
     doc({
       id: 'REG-001', docType: 'Register', title: 'Information Security Risk Register', state: 'Effective', classification: 'Confidential',
       owner: 'u-vic', author: 'u-vic', process: 'ISMS · Risk', template: 'TPL-REG', tags: ['Clause 6.1.2', 'Clause 8.2'],
-      created: D(-600), modified: D(-35), effective: D(-35), route: 'sequential', trainingRule: null,
+      created: D(-600), modified: D(-35), effective: D(-35), route: 'sequential', audience: AUD.none(),
       periodic: { months: 6, notice: 30, approval: true }, reviewers: [], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-35) }],
       versions: [withSigs(ver('5.0', 'major', 'Effective', 'Added supplier and AI-tool risks; re-scored after the internal audit.', D(-40), 'u-vic', blocks('h', '1. Purpose', 'p', 'Record information security risks, their owners, scores and treatment.', 'h', '2. Top risks', 'p', 'R-03 Ransomware on file server (high, treated by SOP-012 and SOP-018). R-07 Leaver access not removed (medium, treated by POL-004). R-11 Supplier data breach (medium, treated by SOP-020).', 'h', '3. Ownership', 'p', 'Each risk has a named owner who reviews it at least every 6 months.'), D(-35)), [sig(84, 'u-tom', 'Approved', D(-35))])],
       comments: []
@@ -224,7 +234,7 @@
     doc({
       id: 'REG-002', docType: 'Register', title: 'Asset Inventory', state: 'Effective', classification: 'Internal',
       owner: 'u-sam', author: 'u-sam', process: 'ISMS · Asset management', template: 'TPL-REG', tags: ['A.5.9'],
-      created: D(-700), modified: D(-370), effective: D(-370), route: 'sequential', trainingRule: null,
+      created: D(-700), modified: D(-370), effective: D(-370), route: 'sequential', audience: AUD.none(),
       periodic: { months: 12, notice: 60, approval: true }, reviewers: [], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-370) }],
       versions: [withSigs(ver('4.2', 'minor', 'Effective', 'Added the new firewall pair.', D(-372), 'u-sam', blocks('h', '1. Purpose', 'p', 'List the information assets in the ISMS scope and their owners.', 'h', '2. Register', 'p', 'Servers, network devices, laptops, cloud services and key data sets, each with an owner and classification.', 'h', '3. Ownership', 'p', 'IT Operations keeps the register current; owners confirm their entries every year.'), D(-370)), [sig(50, 'u-tom', 'Approved', D(-370))])],
       comments: []
@@ -232,7 +242,7 @@
     doc({
       id: 'SOA-001', docType: 'Statement of Applicability', title: 'Statement of Applicability', state: 'Effective', classification: 'Confidential',
       owner: 'u-vic', author: 'u-vic', process: 'ISMS · Governance', template: 'TPL-REG', tags: ['Clause 6.1.3'],
-      created: D(-500), modified: D(-15), effective: D(-15), route: 'sequential', trainingRule: null,
+      created: D(-500), modified: D(-15), effective: D(-15), route: 'sequential', audience: AUD.none(),
       periodic: { months: 12, notice: 60, approval: true }, reviewers: [], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-15) }],
       versions: [withSigs(ver('2.1', 'minor', 'Effective', 'Marked A.8.30 applicable (AI-assisted development treated as outsourced).', D(-18), 'u-vic', blocks('h', '1. Purpose', 'p', 'State which Annex A controls apply, why, and how they are implemented.', 'h', '2. Summary', 'p', '93 controls considered; 88 applicable; 5 excluded with justification.', 'h', '3. Changes in this version', 'p', 'A.8.30 Outsourced development is now applicable.'), D(-15)), [sig(115, 'u-tom', 'Approved', D(-15))])],
       comments: []
@@ -240,7 +250,7 @@
     doc({
       id: 'PLN-001', docType: 'Plan', title: 'Incident Response Plan', state: 'Effective', classification: 'Restricted',
       owner: 'u-tom', author: 'u-priya', process: 'ISMS · Incident management', template: 'TPL-SOP', tags: ['A.5.24', 'A.5.26'],
-      created: D(-300), modified: D(-120), effective: D(-120), route: 'sequential', trainingRule: null, namedAccess: ['u-sam', 'u-priya', 'u-tom', 'u-vic'],
+      created: D(-300), modified: D(-120), effective: D(-120), route: 'sequential', audience: AUD.none(), namedAccess: ['u-sam', 'u-priya', 'u-tom', 'u-vic'],
       periodic: { months: 12, notice: 60, approval: true }, reviewers: [{ u: 'u-sam', status: 'Reviewed', at: D(-125) }], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-120) }],
       versions: [withSigs(ver('2.0', 'major', 'Effective', 'Added ransomware playbook and out-of-hours call tree.', D(-130), 'u-priya', blocks('h', '1. Purpose', 'p', 'How VeQMS detects, contains and recovers from security incidents.', 'h', '2. Call tree', 'p', '[Restricted: names and personal phone numbers of the incident team.]', 'h', '3. Ransomware playbook', 'p', 'Isolate affected hosts, preserve evidence from the anchored audit log, restore from backup per SOP-012.'), D(-120)), [sig(80, 'u-sam', 'Reviewed', D(-125)), sig(81, 'u-tom', 'Approved', D(-120))])],
       comments: []
@@ -248,7 +258,7 @@
     doc({
       id: 'FRM-007', docType: 'Form', title: 'Access Request Form', state: 'Effective', classification: 'Internal',
       owner: 'u-sam', author: 'u-sam', process: 'ISMS · Access control', template: 'TPL-FRM', tags: ['A.5.18'],
-      created: D(-500), modified: D(-240), effective: D(-240), route: 'sequential', trainingRule: null,
+      created: D(-500), modified: D(-240), effective: D(-240), route: 'sequential', audience: AUD.none(),
       periodic: { months: 24, notice: 60, approval: false }, reviewers: [], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-240) }],
       versions: [withSigs(ver('1.3', 'minor', 'Effective', 'Added system owner field.', D(-245), 'u-sam', blocks('h', '1. Requester', 'p', 'Name, role, manager.', 'h', '2. Request', 'p', 'System, access level, reason, end date if temporary.', 'h', '3. Approval', 'p', 'Manager, then system owner.'), D(-240)), [sig(40, 'u-tom', 'Approved', D(-240))])],
       comments: []
@@ -256,47 +266,149 @@
     doc({
       id: 'WI-003', docType: 'Work instruction', title: 'New Starter Account Setup', state: 'Draft', classification: 'Internal',
       owner: 'u-sam', author: 'u-sam', process: 'ISMS · Access control', template: 'TPL-WI', tags: ['A.5.16'],
-      created: D(-5), modified: D(-1), effective: null, route: 'parallel', trainingRule: 'TR-02', checkedOut: { u: 'u-sam', at: D(-1, 16, 20) },
+      created: D(-5), modified: D(-1), effective: null, route: 'parallel', audience: AUD.it(), checkedOut: { u: 'u-sam', at: D(-1, 16, 20) },
       periodic: { months: 12, notice: 60, approval: false },
       reviewers: [{ u: 'u-priya', status: 'Not started' }, { u: 'u-omar', status: 'Not started' }], approvers: [{ u: 'u-tom', status: 'Waiting' }],
       versions: [ver('0.3', 'minor', 'Draft', 'Working draft.', D(-5), 'u-sam', blocks('h', '1. When to use this', 'p', 'When HR confirms a new starter in the HR system.', 'h', '2. Steps', 'p', 'Create the account from the HR record (SCIM). Add the starter to the groups their manager listed on FRM-007. Enrol MFA on day one.', 'h', '3. Checks', 'p', '[To be written.]'))],
       comments: []
     });
+    doc({
+      id: 'VEN-001', docType: 'Vendor approval', title: 'Offsite Backup Storage Provider', state: 'Effective', classification: 'Confidential',
+      owner: 'u-tom', author: 'u-grace', process: 'ISMS · Supplier management', template: 'TPL-VEN', tags: ['A.5.19', 'A.5.20'],
+      created: D(-50), modified: D(-40), effective: D(-40), route: 'sequential', audience: AUD.none(),
+      periodic: { months: 12, notice: 60, approval: true }, reviewers: [{ u: 'u-sam', status: 'Reviewed', at: D(-43) }], approvers: [{ u: 'u-vic', status: 'Signed', at: D(-40) }],
+      versions: [withSigs(ver('1.0', 'major', 'Effective', 'First approval of the offsite backup storage provider.', D(-50), 'u-grace', blocks('h', '1. Vendor and service', 'p', 'Offsite storage for encrypted backup copies (SOP-012), UK West region.', 'h', '2. Assessment', 'p', 'Supplier questionnaire complete. ISO/IEC 27001 certificate and SOC 2 Type II report reviewed.', 'h', '3. Risks and conditions', 'p', 'Copies are encrypted before they leave our network; the provider holds no keys.', 'h', '4. Decision', 'p', 'Approved for Confidential data. Re-assess every 12 months.'), D(-40)), [sig(116, 'u-sam', 'Reviewed', D(-43, 11)), sig(117, 'u-vic', 'Approved', D(-40, 10, 20))])],
+      comments: []
+    });
+    doc({
+      id: 'VP-001', docType: 'Validation plan', title: 'Validation Plan: VeQMS Electronic Quality Management System', state: 'Review closed', classification: 'Internal',
+      owner: 'u-vic', author: 'u-priya', process: 'ISMS · Governance', template: 'TPL-VP', tags: ['CSV', 'Part 11'],
+      created: D(-12), modified: D(-2, 16, 5), effective: null, route: 'sequential', audience: { groups: ['IT team'], roles: ['qm'], users: [], days: 14, quiz: false, retrainMonths: null },
+      periodic: { months: 24, notice: 60, approval: true },
+      reviewers: [{ u: 'u-omar', status: 'Reviewed', at: D(-2, 16, 5) }], approvers: [{ u: 'u-vic', status: 'Waiting' }],
+      versions: [ver('1.0', 'major', 'Review closed', 'First issue: how we validate the eQMS before go-live, including the DocuSign Part 11 approval route.', D(-12), 'u-priya', blocks(
+        'h', '1. System and scope', 'p', 'The VeQMS web app, its DocuSign approval route and the read-and-understood training records.',
+        'h', '2. Approach and risk', 'p', 'Risk-based: functions that create Part 11 approvals or training records are tested in full; reporting is tested by sample.',
+        'h', '3. Deliverables', 'p', 'This plan, user requirements, test scripts with evidence, a traceability matrix and a validation report.',
+        'h', '4. Acceptance criteria', 'p', 'All high-risk tests pass. Any deviation is raised as a quality event and closed before release.',
+        'h', '5. Roles', 'p', 'The author writes the plan, IT reviews it, and QA approves the plan and the report through DocuSign.'))],
+      comments: []
+    });
     S.docs = docs;
 
-    // ---------------- Training ----------------
-    S.trainingRules = [
-      { id: 'TR-01', name: 'All staff', desc: 'Core ISMS policies everyone reads and accepts.', groups: ['All staff'], users: [], docs: ['POL-001', 'POL-009', 'SOP-012', 'POL-004'], days: 14, retrainMonths: 12, gate: false, quiz: true, version: 3, status: 'Active', approvedBy: 'u-vic', approvedAt: D(-100), createdBy: 'u-vic' },
-      { id: 'TR-02', name: 'IT team', desc: 'Technical procedures for IT operations.', groups: ['IT team'], users: [], docs: ['SOP-018', 'WI-003'], days: 14, retrainMonths: 12, gate: true, quiz: false, version: 2, status: 'Active', approvedBy: 'u-vic', approvedAt: D(-150), createdBy: 'u-vic' },
-      { id: 'TR-03', name: 'Managers', desc: 'Procedures that managers run or sign off.', groups: ['Managers'], users: ['u-mia'], docs: ['SOP-020', 'SOP-014'], days: 21, retrainMonths: null, gate: true, quiz: false, version: 1, status: 'Active', approvedBy: 'u-vic', approvedAt: D(-210), createdBy: 'u-vic' },
-      { id: 'TR-04', name: 'Support team (Manila)', desc: 'Handling customer data on calls and in tickets.', groups: ['Support team'], users: [], docs: ['POL-009', 'FRM-007'], days: 10, retrainMonths: 12, gate: false, quiz: true, version: 1, status: 'Pending approval', approvedBy: null, createdBy: 'u-grace', createdAt: D(-2) }
-    ];
+    // ---------------- Approvals through DocuSign (Part 11) ----------------
+    // Approvals before go-live were made in KSTARRS and are kept as migrated records. From go-live,
+    // every approval is one DocuSign envelope per version: author, then reviewers, then QA approver.
+    var GOLIVE = D(-120, 9, 0);
+    var envs = [];
+    function guid(seed) { var x = Q.sha256('envelope:' + seed); return x.slice(0, 8) + '-' + x.slice(8, 12) + '-4' + x.slice(13, 16) + '-a' + x.slice(17, 20) + '-' + x.slice(20, 32); }
+    function shift(iso, mins) { return new Date(new Date(iso).getTime() + mins * 60000).toISOString(); }
+    function envelopeFor(d, v, o) {
+      o = o || {};
+      var rev = v.signatures.filter(function (x) { return x.meaning === 'Reviewed'; });
+      var apr = v.signatures.filter(function (x) { return x.meaning === 'Approved'; });
+      var first = v.signatures.length ? v.signatures.map(function (x) { return x.at; }).sort()[0] : v.approvedAt;
+      var sentAt = o.sentAt || shift(first, -95);
+      var signers = [{ u: v.createdBy, role: 'Author', meaning: 'Authored', order: 1, status: 'Signed', at: shift(sentAt, 25) }]
+        .concat(rev.map(function (x) { return { u: x.user, role: 'Reviewer', meaning: 'Reviewed', order: 2, status: 'Signed', at: x.at }; }))
+        .concat(apr.map(function (x, i) { return { u: x.user, role: apr.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', meaning: 'Approved', order: 3 + i, status: 'Signed', at: x.at }; }));
+      var id = guid(d.id + v.v + (o.n || ''));
+      var e = {
+        id: id, record: d.id, kind: 'doc', version: v.v, subject: d.id + ' v' + v.v + ' · ' + d.title + ' · Approval', purpose: 'Document approval',
+        status: 'completed', sentBy: o.sentBy || d.owner, sentAt: sentAt, completedAt: v.approvedAt, signers: signers,
+        pdf: { name: d.id + '_v' + v.v + '.pdf', hash: v.hash },
+        signedPdf: { name: d.id + '_v' + v.v + '_signed.pdf', hash: Q.sha256('signed:' + id + v.hash) },
+        certificate: { name: 'Certificate_of_completion_' + id.slice(0, 8) + '.pdf', hash: Q.sha256('certificate:' + id) },
+        verification: { footer: true, version: true, docId: true, dates: true, by: o.sentBy || d.owner, at: shift(sentAt, -3) },
+        events: [{ at: sentAt, type: 'sent', detail: 'Envelope sent to ' + signers.length + ' signers' }].concat(signers.map(function (x) { return { at: x.at, type: 'signed', u: x.u }; }), [{ at: v.approvedAt, type: 'completed', detail: 'Envelope completed. Signed PDF and certificate of completion stored.' }]),
+        correctionOf: o.correctionOf || null
+      };
+      envs.push(e);
+      v.envelope = id; v.signedPdf = e.signedPdf; v.certificate = e.certificate;
+      v.signatures = signers.map(function (x) { return { id: 'DS-' + (++S.counters.DS), user: x.u, meaning: x.meaning, at: x.at, hash: v.hash, source: 'DocuSign', envelope: id, statement: 'Signed in DocuSign with the Part 11 module: signer re-authenticated and chose the meaning “' + x.meaning + '”.' }; });
+      return e;
+    }
+    Object.keys(docs).forEach(function (k) {
+      var d = docs[k];
+      d.versions.forEach(function (v) {
+        if (!v.signatures.length || !v.approvedAt) return;
+        if (v.approvedAt >= GOLIVE) {
+          if (d.id === 'SOA-001') { // a correction after sending costs a second send
+            var bad = envelopeFor(d, v, { n: 'void', sentAt: D(-18, 9, 40) });
+            bad.status = 'voided'; bad.completedAt = null; bad.signedPdf = null; bad.certificate = null; bad.voidedAt = D(-18, 11, 5); bad.voidedBy = 'u-vic';
+            bad.voidReason = 'Footer showed version 2.0 instead of 2.1. Corrected and sent again.';
+            bad.signers.forEach(function (x, i) { x.status = i === 0 ? 'Signed' : 'Waiting'; if (i) delete x.at; });
+            bad.events = [{ at: bad.sentAt, type: 'sent', detail: 'Envelope sent to ' + bad.signers.length + ' signers' }, { at: bad.signers[0].at, type: 'signed', u: bad.signers[0].u }, { at: bad.voidedAt, type: 'voided', u: 'u-vic', detail: bad.voidReason }];
+            var good = envelopeFor(d, v, { sentAt: D(-17, 9, 0), correctionOf: bad.id });
+            void good;
+          } else envelopeFor(d, v);
+        } else {
+          v.signatures.forEach(function (x) { x.source = 'KSTARRS'; x.statement = 'Migrated from KSTARRS (approved before go-live).'; });
+          v.migrated = true;
+        }
+      });
+    });
+    // POL-004 v2.0: envelope out for signature now. Author and reviewers have signed; Victoria is next.
+    (function () {
+      var d = docs['POL-004'], v = d.versions[1];
+      var id = guid('POL-004' + v.v);
+      var sentAt = D(-6, 15, 45);
+      var signers = [
+        { u: 'u-sam', role: 'Author', meaning: 'Authored', order: 1, status: 'Signed', at: D(-6, 16, 2) },
+        { u: 'u-priya', role: 'Reviewer', meaning: 'Reviewed', order: 2, status: 'Signed', at: D(-6, 17, 10) },
+        { u: 'u-omar', role: 'Reviewer', meaning: 'Reviewed', order: 2, status: 'Signed', at: D(-5, 9, 30) },
+        { u: 'u-vic', role: 'QA approver 1', meaning: 'Approved', order: 3, status: 'Sent', sentAt: D(-5, 9, 30) },
+        { u: 'u-tom', role: 'QA approver 2', meaning: 'Approved', order: 4, status: 'Waiting' }
+      ];
+      envs.push({
+        id: id, record: 'POL-004', kind: 'doc', version: '2.0', subject: 'POL-004 v2.0 · Access Control Policy · Approval', purpose: 'Document approval',
+        status: 'sent', sentBy: 'u-sam', sentAt: sentAt, completedAt: null, signers: signers,
+        pdf: { name: 'POL-004_v2.0.pdf', hash: v.hash }, signedPdf: null, certificate: null,
+        verification: { footer: true, version: true, docId: true, dates: true, by: 'u-sam', at: D(-6, 15, 41) },
+        events: [{ at: sentAt, type: 'sent', detail: 'Envelope sent to 5 signers' }, { at: D(-6, 16, 2), type: 'signed', u: 'u-sam' }, { at: D(-6, 17, 10), type: 'signed', u: 'u-priya' }, { at: D(-5, 9, 30), type: 'signed', u: 'u-omar' }, { at: D(-5, 9, 31), type: 'delivered', u: 'u-vic', detail: 'DocuSign emailed the signing link' }],
+        correctionOf: null
+      });
+      v.envelope = id;
+    })();
+    envs.sort(function (a, b) { return a.sentAt < b.sentAt ? -1 : 1; });
+    S.envelopes = envs;
+
+    // ---------------- Training records (read and understood) ----------------
+    // Each record: person, document, title, version, who allocated it, assigned, due, completed.
+    // Completed records are locked. A correction is a new record that points at the original.
     var asg = [];
     var n = 1;
-    function A(user, docId, v, rule, assigned, due, completed, extra) {
-      var o = { id: 'TA-' + (n++), user: user, doc: docId, ver: v, rule: rule, assigned: assigned, due: due, completed: completed || null };
+    function A(user, docId, v, assigned, due, completed, extra) {
+      var o = { id: 'TA-' + (n++), user: user, doc: docId, title: docs[docId].title, ver: v, allocatedBy: 'system', allocReason: 'New version effective', assigned: assigned, due: due, completed: completed || null };
+      if (completed) o.statement = 'I confirm I have read and understood ' + docId + ', version ' + v;
       if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
       asg.push(o); return o;
     }
     var active = S.users.filter(function (u) { return u.status === 'Active' && u.groups.indexOf('All staff') >= 0; });
     var doneSop = { 'u-sam': -14, 'u-priya': -13, 'u-tom': -12, 'u-grace': -9, 'u-omar': -10, 'u-lena': -8, 'u-hannah': -6, 'u-mia': -5 };
     active.forEach(function (u) {
-      A(u.id, 'SOP-012', '3.0', 'TR-01', D(-15), D(-1), doneSop[u.id] != null ? D(doneSop[u.id], 14) : null);
-      A(u.id, 'POL-009', '1.2', 'TR-01', D(-55), D(-41), u.id === 'u-daniel' || u.id === 'u-vic' ? null : D(-45 + (u.initials.charCodeAt(0) % 4), 11));
-      A(u.id, 'POL-001', '3.0', 'TR-01', D(-160), D(-146), D(-150 + (u.initials.charCodeAt(1) % 5), 10));
+      A(u.id, 'POL-004', '1.0', D(-388), D(-374), D(-384 + (u.initials.charCodeAt(0) % 5), 11));
+      A(u.id, 'POL-003', '1.0', D(-288), D(-274), D(-285 + (u.initials.charCodeAt(1) % 6), 15));
+      A(u.id, 'POL-009', '1.1', D(-298), D(-284), D(-290 + (u.initials.charCodeAt(1) % 4), 10)); // superseded by v1.2
+      A(u.id, 'SOP-012', '3.0', D(-15), D(-1), doneSop[u.id] != null ? D(doneSop[u.id], 14) : null);
+      A(u.id, 'POL-009', '1.2', D(-55), D(-41), u.id === 'u-daniel' || u.id === 'u-vic' ? null : D(-45 + (u.initials.charCodeAt(0) % 4), 11));
+      A(u.id, 'POL-001', '3.0', D(-160), D(-146), D(-150 + (u.initials.charCodeAt(1) % 5), 10));
     });
     // Victoria's yearly retraining on POL-009 and Daniel's current set
     asg.forEach(function (a) {
-      if (a.doc === 'POL-009' && a.user === 'u-vic') { a.assigned = D(-9); a.due = D(20); a.reason = 'Yearly retraining'; }
-      if (a.doc === 'POL-009' && a.user === 'u-daniel') { a.assigned = D(-4); a.due = D(10); }
+      if (a.doc === 'POL-009' && a.ver === '1.2' && a.user === 'u-vic') { a.assigned = D(-9); a.due = D(20); a.allocReason = 'Yearly retraining'; }
+      if (a.doc === 'POL-009' && a.ver === '1.2' && a.user === 'u-daniel') { a.assigned = D(-4); a.due = D(10); a.allocReason = 'Group change'; }
       if (a.doc === 'SOP-012' && a.user === 'u-daniel') { a.due = D(-3); }
     });
-    A('u-mark', 'POL-009', '1.1', 'TR-01', D(-310), D(-296), D(-300), { leaver: true });
-    A('u-mark', 'SOP-012', '2.1', 'TR-01', D(-298), D(-284), D(-290), { leaver: true });
+    A('u-mark', 'POL-009', '1.1', D(-310), D(-296), D(-300), { leaver: true });
+    A('u-mark', 'SOP-012', '2.1', D(-298), D(-284), D(-290), { leaver: true });
     ['u-sam', 'u-priya', 'u-tom', 'u-omar', 'u-jake', 'u-hannah'].forEach(function (u, i) {
-      A(u, 'SOP-018', '1.1', 'TR-02', D(-90), D(-76), i === 4 ? null : D(-85 + i, 10));
+      A(u, 'SOP-018', '1.1', D(-90), D(-76), i === 4 ? null : D(-85 + i, 10));
     });
-    ['u-vic', 'u-tom', 'u-grace', 'u-mia'].forEach(function (u, i) { A(u, 'SOP-014', '1.4', 'TR-03', D(-200), D(-179), D(-190 + i)); });
+    ['u-vic', 'u-tom', 'u-grace', 'u-mia'].forEach(function (u, i) { A(u, 'SOP-014', '1.4', D(-200), D(-179), D(-190 + i)); });
+    // A correction: Omar's SOP-018 record was made against the wrong session; the original stays.
+    var wrong = asg.find(function (a) { return a.user === 'u-omar' && a.doc === 'SOP-018'; });
+    A('u-omar', 'SOP-018', '1.1', D(-60, 10), D(-46), D(-58, 15), { allocatedBy: 'u-vic', allocReason: 'Correction', correctionOf: wrong.id, correctionReason: 'Original record was confirmed during a screen-share demo, not a real read. Retrained.' });
     S.assignments = asg;
 
     // ---------------- Change requests ----------------
@@ -382,7 +494,8 @@
       'QE-013': { id: 'QE-013', type: 'Security incident', title: 'Staff clicked a phishing simulation link', desc: '6 of 22 staff clicked the link in the September phishing simulation.', state: 'CAPA raised', severity: 'Low', classification: 'Internal', owner: 'u-priya', process: 'ISMS · Awareness', due: D(-50), created: D(-58), tags: ['A.6.3'], assessment: 'Simulation only; no real compromise.', capa: 'CAPA-005' },
       'QE-014': { id: 'QE-014', type: 'Nonconformance', title: 'Visitor log not completed for one day', desc: 'Visitor log blank on a Friday; reception cover was off sick.', state: 'Closed', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Physical security', due: D(-25), created: D(-28), tags: ['A.7.2'], assessment: 'One-off; cover arrangement now in place.', closure: { justification: 'One-off absence. Backup reception cover added to the office rota; no systemic cause.', by: 'u-grace', at: D(-24, 10, 15), sigId: 'SIG-98' } },
       'QE-015': { id: 'QE-015', type: 'Nonconformance', title: 'Confidential printouts left on the shared printer', desc: 'From OBS-020: payroll printouts left on the 1st floor printer overnight.', state: 'Assessment', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Information handling', due: D(5), created: D(-5), tags: ['A.7.7'], assessment: '', source: 'OBS-020' },
-      'QE-016': { id: 'QE-016', type: 'Audit finding', title: 'Two laptops found without disk encryption', desc: 'Device compliance report shows 2 of 24 laptops without disk encryption.', state: 'CAPA raised', severity: 'High', classification: 'Confidential', owner: 'u-omar', process: 'ISMS · Endpoint', due: D(-1), created: D(-4), tags: ['A.8.1', 'A.8.24'], assessment: 'Both laptops in the office; no loss reported.', capa: 'CAPA-008' }
+      'QE-016': { id: 'QE-016', type: 'Audit finding', title: 'Two laptops found without disk encryption', desc: 'Device compliance report shows 2 of 24 laptops without disk encryption.', state: 'CAPA raised', severity: 'High', classification: 'Confidential', owner: 'u-omar', process: 'ISMS · Endpoint', due: D(-1), created: D(-4), tags: ['A.8.1', 'A.8.24'], assessment: 'Both laptops in the office; no loss reported.', capa: 'CAPA-008' },
+      'QE-017': { id: 'QE-017', type: 'Deviation', title: 'Quarterly restore test ran 9 days late', desc: 'The Q3 restore test under SOP-012 ran 9 days after the scheduled date because the test server was being rebuilt.', state: 'Assessment', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Continuity', due: D(4), created: D(-6), tags: ['SOP-012', 'A.8.13'], assessment: 'One-off delay. The test passed with no data loss and the schedule stays the same. No corrective action needed.', source: null },
     };
     S.capas = {
       'CAPA-007': {
@@ -448,21 +561,21 @@
       ['POL-004', 'CR-012'], ['POL-004', 'CAPA-004'], ['CR-012', 'CAPA-004'], ['CR-012', 'SOP-014'], ['CR-012', 'FRM-007'], ['QE-012', 'CAPA-004'],
       ['CR-015', 'SOP-012'], ['CR-015', 'REG-002'], ['QE-011', 'CAPA-007'], ['CAPA-007', 'SOP-018'], ['QE-013', 'CAPA-005'],
       ['OBS-020', 'QE-015'], ['CR-014', 'POL-001'], ['CR-016', 'SOP-020'], ['CR-010', 'POL-004'], ['CR-009', 'REG-002'], ['QE-016', 'CAPA-008'],
-      ['PR-030', 'CR-012']
+      ['PR-030', 'CR-012'], ['QE-017', 'SOP-012'], ['VEN-001', 'SOP-012']
     ];
 
     // ---------------- Tasks (My Work) ----------------
     S.tasks = [
-      { id: 'T-1', kind: 'approve-doc', record: 'POL-004', assignee: 'u-vic', due: D(-2), created: D(-6, 15, 45), status: 'open', note: 'You are approver 1 of 2 · sequential route' },
+      { id: 'T-1', kind: 'ds-sign', record: 'POL-004', assignee: 'u-vic', due: D(-2), created: D(-5, 9, 31), status: 'open', note: 'QA approver 1 of 2 · author and reviewers have signed' },
       { id: 'T-2', kind: 'training', record: 'SOP-012', assignee: 'u-vic', due: D(-1), created: D(-15), status: 'open', ref: 'SOP-012' },
       { id: 'T-3', kind: 'periodic', record: 'PR-031', assignee: 'u-vic', due: D(2), created: D(-58), status: 'open' },
       { id: 'T-4', kind: 'cr-review', record: 'CR-015', assignee: 'u-vic', due: D(1), created: D(-3), status: 'open' },
       { id: 'T-5', kind: 'capa-action', record: 'CAPA-007', assignee: 'u-vic', due: D(3), created: D(-25), status: 'open', ref: 'CA-2' },
-      { id: 'T-6', kind: 'fyi', record: 'SOP-020', assignee: 'u-vic', due: D(9), created: D(-3), status: 'open', fyi: true },
+      { id: 'T-6', kind: 'fyi', record: 'SOP-020', assignee: 'u-vic', due: D(9), created: D(-3), status: 'open', fyi: true, note: 'You sign in DocuSign after review' },
       { id: 'T-7', kind: 'effectiveness', record: 'CAPA-005', assignee: 'u-vic', due: D(17), created: D(-30), status: 'open' },
       { id: 'T-8', kind: 'training', record: 'POL-009', assignee: 'u-vic', due: D(20), created: D(-9), status: 'open', ref: 'POL-009' },
       { id: 'T-9', kind: 'review-doc', record: 'SOP-020', assignee: 'u-priya', due: D(1), created: D(-3), status: 'open' },
-      { id: 'T-10', kind: 'fyi', record: 'POL-004', assignee: 'u-tom', due: D(4), created: D(-6), status: 'open', fyi: true, note: 'You approve after Victoria E.' },
+      { id: 'T-10', kind: 'fyi', record: 'POL-004', assignee: 'u-tom', due: D(4), created: D(-6), status: 'open', fyi: true, note: 'You sign in DocuSign after Victoria E.' },
       { id: 'T-11', kind: 'cr-approve', record: 'CR-016', assignee: 'u-tom', due: D(2), created: D(-4), status: 'open' },
       { id: 'T-12', kind: 'cr-effectiveness', record: 'CR-010', assignee: 'u-tom', due: D(8), created: D(-36), status: 'open' },
       { id: 'T-13', kind: 'periodic', record: 'PR-036', assignee: 'u-tom', due: D(9), created: D(-51), status: 'open' },
@@ -479,26 +592,28 @@
       { id: 'T-24', kind: 'periodic', record: 'PR-033', assignee: 'u-omar', due: D(20), created: D(-40), status: 'open' },
       { id: 'T-25', kind: 'todo', record: 'ADMIN-DLQ', assignee: 'u-hannah', due: D(0), created: D(-1), status: 'open', title: '2 failed automations need a look', href: '#/admin/automations?tab=failed' },
       { id: 'T-26', kind: 'todo', record: 'ADMIN-AR', assignee: 'u-hannah', due: D(10), created: D(-20), status: 'open', title: 'Quarterly access review report (Q4)', href: '#/admin/users?tab=review' },
-      { id: 'T-27', kind: 'rule-approve', record: 'TR-04', assignee: 'u-vic', due: D(5), created: D(-2), status: 'open' },
       { id: 'T-28', kind: 'training', record: 'SOP-012', assignee: 'u-jake', due: D(-1), created: D(-15), status: 'open', ref: 'SOP-012' },
       { id: 'T-29', kind: 'training', record: 'SOP-012', assignee: 'u-ruth', due: D(-1), created: D(-15), status: 'open', ref: 'SOP-012' },
       { id: 'T-30', kind: 'training', record: 'SOP-018', assignee: 'u-jake', due: D(-76), created: D(-90), status: 'open', ref: 'SOP-018' },
       { id: 'T-31', kind: 'cr-action', record: 'CR-012', assignee: 'u-sam', due: D(12), created: D(-30), status: 'open', ref: 'A-6' },
-      { id: 'T-32', kind: 'approve-doc', record: 'POL-003', assignee: 'u-vic', due: D(4), created: D(-1, 10, 41), status: 'open', note: 'Parallel route · you are also the author' },
-      { id: 'T-33', kind: 'approve-doc', record: 'POL-003', assignee: 'u-tom', due: D(4), created: D(-1, 10, 41), status: 'open', note: 'Parallel route' }
+      { id: 'T-32', kind: 'send-approval', record: 'POL-003', assignee: 'u-vic', due: D(2), created: D(-1, 10, 41), status: 'open', note: 'Review closed · verify the PDF, then send one DocuSign envelope' },
+      { id: 'T-33', kind: 'fyi', record: 'POL-003', assignee: 'u-tom', due: D(4), created: D(-1, 10, 41), status: 'open', fyi: true, note: 'You sign in DocuSign once the envelope is sent' },
+      { id: 'T-34', kind: 'qe-assess', record: 'QE-017', assignee: 'u-grace', due: D(4), created: D(-6), status: 'open' },
+      { id: 'T-35', kind: 'send-approval', record: 'VP-001', assignee: 'u-vic', due: D(3), created: D(-2, 16, 5), status: 'open', note: 'Review closed · QA approval of a validation plan' },
+      { id: 'T-36', kind: 'fyi', record: 'VP-001', assignee: 'u-priya', due: D(3), created: D(-2, 16, 5), status: 'open', fyi: true, note: 'You sign first, as author, once the envelope is sent' }
     ];
 
     // ---------------- Notifications ----------------
     S.notifications = [
-      { id: 'N-1', to: 'u-vic', at: D(-6, 15, 45), kind: 'action', title: 'Your turn to approve POL-004 v2.0', body: 'Review closed with 1 open comment. You are approver 1 of 2.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
-      { id: 'N-2', to: 'u-vic', at: D(0, 7, 0), kind: 'overdue', title: 'Overdue: approve POL-004 v2.0', body: 'Approval was due ' + Q.fmtShort(D(-2)) + '. The record owner has been told.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
+      { id: 'N-1', to: 'u-vic', at: D(-6, 15, 45), kind: 'action', title: 'Your turn to sign POL-004 v2.0 in DocuSign', body: 'DocuSign has emailed you the signing link. The author and both reviewers have signed. You are QA approver 1 of 2.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
+      { id: 'N-2', to: 'u-vic', at: D(0, 7, 0), kind: 'overdue', title: 'Overdue: sign POL-004 v2.0 in DocuSign', body: 'Approval was due ' + Q.fmtShort(D(-2)) + '. The record owner has been told.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-3', to: 'u-vic', at: D(-3, 9, 2), kind: 'action', title: 'CR-015 is ready for your review', body: 'Major change · parallel review · due ' + Q.fmtDay(D(1)), record: 'CR-015', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
-      { id: 'N-4', to: 'u-vic', at: D(-3, 9, 5), kind: 'fyi', title: 'FYI: you’ll be asked to approve SOP-020', body: 'Expected around ' + Q.fmtDay(D(9)) + ', after review.', record: 'SOP-020', read: true, channels: ['in-app'] },
-      { id: 'N-5', to: 'u-vic', at: D(-2, 8, 0), kind: 'reminder', title: 'Reminder: SOP-012 training is due tomorrow', body: 'Read and confirm · Rule: All staff', record: 'SOP-012', read: true, channels: ['in-app', 'email', 'teams'] },
+      { id: 'N-4', to: 'u-vic', at: D(-3, 9, 5), kind: 'fyi', title: 'FYI: you’ll be asked to sign SOP-020 in DocuSign', body: 'Expected around ' + Q.fmtDay(D(9)) + ', after review.', record: 'SOP-020', read: true, channels: ['in-app'] },
+      { id: 'N-5', to: 'u-vic', at: D(-2, 8, 0), kind: 'reminder', title: 'Reminder: SOP-012 training is due tomorrow', body: 'Read and understood · audience: All staff', record: 'SOP-012', read: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-6', to: 'u-vic', at: D(-4, 11, 30), kind: 'info', title: 'High-severity event QE-016 raised', body: 'Two laptops found without disk encryption. CAPA-008 created.', record: 'QE-016', read: true, channels: ['in-app', 'email', 'teams'] },
-      { id: 'N-7', to: 'u-vic', at: D(-2, 10, 12), kind: 'info', title: 'Training rule TR-04 needs your approval', body: 'Louise Harvey created "Support team (Manila)". Rules go live only after approval.', record: 'TR-04', read: false, channels: ['in-app', 'email'] },
+      { id: 'N-7', to: 'u-vic', at: D(-1, 10, 41), kind: 'action', title: 'POL-003 v1.1 is ready to send for DocuSign approval', body: 'Review closed. Check the footer, version, document ID and dates before you send: a correction after sending costs a second send.', record: 'POL-003', read: false, mandatory: true, channels: ['in-app', 'email'] },
       { id: 'N-8', to: 'u-vic', at: D(-5, 18, 2), kind: 'security', title: 'New sign-in from a new device', body: 'Safari on macOS, London. If this was not you, tell IT at once.', record: null, read: true, mandatory: true, channels: ['email'] },
-      { id: 'N-9', to: 'u-tom', at: D(-6, 15, 45), kind: 'fyi', title: 'FYI: you’ll be asked to approve POL-004 v2.0', body: 'You approve after Victoria E. (sequential route).', record: 'POL-004', read: false, channels: ['in-app', 'email'] },
+      { id: 'N-9', to: 'u-tom', at: D(-6, 15, 45), kind: 'fyi', title: 'FYI: you’ll sign POL-004 v2.0 in DocuSign', body: 'You sign after Victoria E. DocuSign emails you when it is your turn.', record: 'POL-004', read: false, channels: ['in-app', 'email'] },
       { id: 'N-10', to: 'u-tom', at: D(-4, 9, 0), kind: 'action', title: 'Your turn to approve the plan for CR-016', body: 'Major change · due ' + Q.fmtDay(D(2)), record: 'CR-016', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
       { id: 'N-11', to: 'u-grace', at: D(-1, 14, 41), kind: 'action', title: 'New observation OBS-021 to review', body: 'Server room door propped open · raised by Ruth Adeyemi', record: 'OBS-021', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
       { id: 'N-12', to: 'u-daniel', at: D(-1, 7, 0), kind: 'overdue', title: 'Overdue: SOP-012 training', body: 'Your manager Louise Harvey has been told. Repeats every 2 days.', record: 'SOP-012', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
@@ -521,15 +636,17 @@
       R('RULE-06', 'Reminder before due date', 'Due date approaching', '3 days and 1 day before', ['Notify task owner'], ['Email', 'Teams'], 'Active', { runs: 340 }),
       R('RULE-07', 'Overdue escalation', 'Due date passed', 'Day 2, then every 2 days', ['Notify task owner', 'Notify their manager'], ['Email', 'Teams'], 'Active', { mandatory: true, runs: 47, version: 2 }),
       R('RULE-08', 'Overdue: Quality Manager step', 'Due date passed', 'After manager escalation', ['Notify Quality Manager'], ['Email', 'Teams'], 'Off', { note: 'Switch on once a Quality Manager is appointed.' }),
-      R('RULE-09', 'New document effective', 'Document became effective', 'Document has a training rule', ['Assign training to everyone in matching rules', 'Notify trainees'], ['Email', 'In-app', 'Push'], 'Active', { runs: 18 }),
+      R('RULE-09', 'New document effective', 'Document became effective', 'Document lists a training audience', ['Assign the new version to the full audience', 'Show earlier records as superseded', 'Notify trainees'], ['Email', 'In-app', 'Push'], 'Active', { runs: 18 }),
+      R('RULE-15', 'Approval envelope completed', 'DocuSign envelope completed', 'Document, CAPA or deviation', ['Store signed PDF and certificate', 'Make the record effective or closed', 'Create completed training records for author and reviewers'], ['In-app', 'Email'], 'Active', { runs: 9 }),
       R('RULE-10', 'Periodic review due', 'Periodic review due', 'At the advance-notice date', ['Create review task', 'Notify document owner'], ['Email', 'Teams'], 'Active', { runs: 22 }),
       R('RULE-11', 'High-severity event or CAPA', 'Record created', 'Quality event or CAPA · severity High', ['Notify Quality Manager and process owner', 'Post to Teams channel #quality-events'], ['Email', 'Teams channel'], 'Active', { runs: 4 }),
       R('RULE-12', 'Signature completed', 'Signature completed', 'In-app or DocuSign', ['Notify record owner'], ['In-app', 'Email'], 'Active', { runs: 88 }),
+      R('RULE-16', 'Training reminders', 'Due date approaching or passed', '3 days and 1 day before; overdue every 2 days', ['Remind the trainee', 'Tell their manager when overdue'], ['Email', 'In-app'], 'Active', { runs: 57 }),
       R('RULE-13', 'Security events', 'Security event', 'New device, MFA change, role change', ['Notify affected user', 'Notify admins of privilege changes'], ['Email'], 'Active', { mandatory: true, runs: 9 }),
       R('RULE-14', 'Publish effective documents to SharePoint', 'Document became effective', 'Classification Public or Internal', ['Publish read-only watermarked PDF', 'Archive superseded version'], ['SharePoint'], 'Pending approval', { createdBy: 'u-hannah', createdAt: D(-1), version: 1, note: 'Phase 2 · Option A publish-only' })
     ];
     S.runs = [
-      { id: 'RUN-1', rule: 'RULE-07', at: D(0, 7, 0), event: 'Due date passed', record: 'POL-004', result: 'Sent', detail: 'Owner + manager notified (day 2)' },
+      { id: 'RUN-1', rule: 'RULE-07', at: D(0, 7, 0), event: 'Due date passed', record: 'POL-004', result: 'Sent', detail: 'DocuSign signer + manager notified (day 2)' },
       { id: 'RUN-2', rule: 'RULE-06', at: D(-2, 8, 0), event: 'Due date approaching', record: 'SOP-012', result: 'Sent', detail: '1-day reminder to Victoria E.' },
       { id: 'RUN-3', rule: 'RULE-11', at: D(-4, 11, 30), event: 'Record created', record: 'QE-016', result: 'Partly failed', detail: 'Email sent; Teams channel post failed (connector off)' },
       { id: 'RUN-4', rule: 'RULE-02', at: D(-3, 9, 2), event: 'Stage reached', record: 'CR-015', result: 'Sent', detail: '2 reviewers notified' },
@@ -548,19 +665,18 @@
       { id: 'teams', name: 'Microsoft Teams bot', mech: 'Azure Bot Service; proactive messages with Adaptive Cards', perms: 'Bot installed only in QMS-related teams', phase: 'Phase 6', on: false, health: 'off', lastOk: null, failures: 2, queue: 2, note: 'Waiting on IT: custom Teams apps allowed?' },
       { id: 'sp-pub', name: 'SharePoint publishing (Option A)', mech: 'Graph drive upload to one publication library; superseded versions to an archive library', perms: 'Sites.Selected, write grant on the QMS site only', phase: 'Phase 2', on: false, health: 'off', lastOk: null, failures: 0, queue: 0 },
       { id: 'sp-imp', name: 'SharePoint import (Option B)', mech: 'One-time Graph read of the legacy library into drafts', perms: 'Sites.Selected read grant on the legacy site, revoked after migration', phase: 'Phase 2', on: false, health: 'off', lastOk: null, failures: 0, queue: 0 },
-      { id: 'docusign', name: 'DocuSign eSignature', mech: 'REST API with JWT grant; Connect webhook verified with HMAC-SHA256', perms: 'Integration user limited to QMS envelopes', phase: 'Phase 6', on: false, health: 'off', lastOk: null, failures: 0, queue: 0 }
+      { id: 'docusign', name: 'DocuSign eSignature (Part 11 module)', mech: 'eSignature REST API with JWT grant; status from Connect webhooks (HMAC-SHA256 verified), with polling as a fallback', perms: 'Integration user limited to QMS envelopes; Part 11 signer re-authentication required', phase: 'Phase 1', on: true, health: 'ok', lastOk: D(0, 9, 50), failures: 0, queue: 0, note: 'Approvals only: controlled documents, CAPAs, deviations, vendor approvals and validation deliverables. Allowance: 500 sends a year.' }
     ];
 
     // ---------------- Workflow definitions (versioned) ----------------
     S.workflows = [
-      { id: 'WF-DOC', name: 'Document lifecycle', module: 'Documents', version: 3, status: 'Active', approvedBy: 'u-vic', states: ['Draft', 'In review', 'Review closed', 'In approval', 'Pending training', 'Effective', 'Superseded', 'Obsolete'], transitions: [
+      { id: 'WF-DOC', name: 'Document lifecycle (DocuSign approval)', module: 'Documents', version: 4, status: 'Active', approvedBy: 'u-vic', states: ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'], transitions: [
         { from: 'Draft', to: 'In review', roles: 'Author', sig: null, sod: '', sla: '—', fields: 'Change summary, reviewers, approvers' },
         { from: 'In review', to: 'Review closed', roles: 'System (all reviewers done)', sig: 'Reviewed', sod: '', sla: '5 days', fields: '' },
         { from: 'In review', to: 'Draft', roles: 'Reviewer', sig: null, sod: '', sla: '', fields: 'Reason' },
-        { from: 'Review closed', to: 'In approval', roles: 'Author', sig: null, sod: '', sla: '', fields: '' },
-        { from: 'In approval', to: 'Pending training', roles: 'Approver (all, in order)', sig: 'Approved', sod: 'Author cannot approve', sla: '5 days', fields: '' },
-        { from: 'In approval', to: 'Draft', roles: 'Approver', sig: null, sod: '', sla: '', fields: 'Reason' },
-        { from: 'Pending training', to: 'Effective', roles: 'System (training rule met)', sig: null, sod: '', sla: 'Rule time allowed', fields: '' },
+        { from: 'Review closed', to: 'In approval', roles: 'Owner, author or QA', sig: null, sod: 'Approver cannot be the author', sla: '', fields: 'Verification check: footer, version, document ID, dates. One DocuSign send' },
+        { from: 'In approval', to: 'Effective', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored, Reviewed, Approved', sod: 'Author cannot approve', sla: '5 days', fields: 'Signed PDF, certificate, envelope ID stored' },
+        { from: 'In approval', to: 'Draft', roles: 'System (envelope declined or voided)', sig: null, sod: '', sla: '', fields: 'Reason' },
         { from: 'Effective', to: 'Superseded', roles: 'System (new version effective)', sig: null, sod: '', sla: '', fields: '' },
         { from: 'Effective', to: 'Obsolete', roles: 'Quality Manager', sig: 'Approved', sod: '', sla: '', fields: 'Reason' }
       ] },
@@ -574,14 +690,15 @@
       { id: 'WF-CAPA', name: 'CAPA', module: 'Quality events and CAPA', version: 2, status: 'Active', approvedBy: 'u-vic', states: ['Planning', 'Execution', 'Effectiveness check', 'Closed'], transitions: [
         { from: 'Planning', to: 'Execution', roles: 'Process owner', sig: 'Approved (actions)', sod: '', sla: '', fields: 'At least one action; route by severity' },
         { from: 'Execution', to: 'Effectiveness check', roles: 'QM (High) or process owner (Low)', sig: 'Approved (completed actions)', sod: 'Action owner cannot approve own action', sla: '', fields: 'Root cause, evidence' },
-        { from: 'Effectiveness check', to: 'Closed', roles: 'Quality Manager', sig: 'Verified', sod: '', sla: '', fields: 'Result, verdict' }
+        { from: 'Effectiveness check', to: 'Closed', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Result, verdict, verification check' }
       ] },
       { id: 'WF-QE', name: 'Quality event', module: 'Quality events and CAPA', version: 1, status: 'Active', approvedBy: 'u-vic', states: ['Open', 'Assessment', 'CAPA raised', 'Closed'], transitions: [
         { from: 'Open', to: 'Assessment', roles: 'Owner', sig: null, sod: '', sla: '2 days', fields: '' },
         { from: 'Assessment', to: 'CAPA raised', roles: 'Owner', sig: null, sod: '', sla: '', fields: 'Assessment, severity' },
-        { from: 'Assessment', to: 'Closed', roles: 'Owner', sig: 'Closed without CAPA', sod: '', sla: '', fields: 'Justification' }
+        { from: 'Assessment', to: 'Closed', roles: 'Owner', sig: 'Closed without CAPA (in-app)', sod: '', sla: '', fields: 'Justification' },
+        { from: 'Assessment', to: 'Closed (deviation)', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Justification, verification check' }
       ] },
-      { id: 'WF-DOC-4', name: 'Document lifecycle (draft v4: add legal review for contracts)', module: 'Documents', version: 4, status: 'Pending approval', approvedBy: null, states: ['Draft', 'In review', 'Legal review', 'Review closed', 'In approval', 'Pending training', 'Effective'], transitions: [] }
+      { id: 'WF-DOC-5', name: 'Document lifecycle (draft v5: add legal review for contracts)', module: 'Documents', version: 5, status: 'Pending approval', approvedBy: null, states: ['Draft', 'In review', 'Legal review', 'Review closed', 'In approval', 'Effective'], transitions: [] }
     ];
 
     // ---------------- Settings ----------------
@@ -589,6 +706,8 @@
       orgName: 'VeQMS',
       statement: 'I sign this record with the meaning “{meaning}”. I understand this electronic signature is the legally binding equivalent of my handwritten signature.',
       meanings: ['Approved', 'Reviewed', 'Authored', 'Verified', 'Completed', 'Closed without CAPA', 'No update needed'],
+      docusign: { allowance: 500, yearStartMonth: 1, goLive: GOLIVE, warnAt: 50 },
+      ackStatement: 'I confirm I have read and understood {doc}, version {version}',
       classes: {
         Public: { download: true, print: true, watermark: false, desc: 'Can be shared outside VeQMS.' },
         Internal: { download: true, print: true, watermark: true, desc: 'Staff only. Downloads carry a viewer watermark.' },
@@ -598,7 +717,7 @@
       escalation: { firstDays: 2, repeatDays: 2, qmStep: false },
       reminders: [3, 1],
       sod: { authorCannotApprove: true, adminCannotApprove: true },
-      regulated: { Documents: false, 'Change requests': false, CAPA: false, 'Quality events': false, Training: false },
+      regulated: { Documents: true, 'Change requests': false, CAPA: true, 'Quality events': true, Training: false },
       ai: { enabled: false, provider: null },
       anchorMinutes: 15,
       lastAnchor: D(0, 9, 45),
@@ -618,7 +737,7 @@
 
     S.prefs = {};
     S.delegations = [{ id: 'DEL-1', from: 'u-tom', to: 'u-priya', start: D(20), end: D(27), scope: 'Review only', reason: 'Annual leave' }];
-    S.savedViews = { 'u-vic': [{ name: 'My approvals', kinds: ['approve-doc', 'cr-approve', 'rule-approve'] }, { name: 'Training only', kinds: ['training'] }] };
+    S.savedViews = { 'u-vic': [{ name: 'My approvals', kinds: ['ds-sign', 'send-approval', 'cr-approve'] }, { name: 'Training only', kinds: ['training'] }] };
     S.drafts = [];
     S.roleRequests = [{ id: 'RR-1', user: 'u-grace', role: 'approver', requestedBy: 'u-hannah', at: D(-1, 16), status: 'Waiting for second admin' }];
     S.notifLog = [];
@@ -631,7 +750,7 @@
   Q.seedHistory = function () {
     return [
       [-400, 9, 0, 'u-sam', 'create', 'Document', 'POL-004', 'Created POL-004 from template TPL-POL'],
-      [-390, 14, 2, 'u-tom', 'sign', 'Document', 'POL-004', 'Signed POL-004 v1.0 · Approved'],
+      [-390, 14, 2, 'u-tom', 'sign', 'Document', 'POL-004', 'Signed POL-004 v1.0 · Approved (KSTARRS, migrated)'],
       [-160, 9, 30, 'u-hannah', 'role.change', 'User', 'u-priya', 'Granted Reviewer to Carrie Foreman'],
       [-70, 11, 0, 'u-grace', 'create', 'Quality event', 'QE-012', 'Raised QE-012 Leaver account left active'],
       [-60, 10, 0, 'u-vic', 'legal-hold', 'Quality event', 'QE-012', 'Placed QE-012 on legal hold'],
@@ -642,17 +761,25 @@
       [-28, 9, 30, 'u-tom', 'create', 'CAPA', 'CAPA-007', 'Created CAPA-007 from QE-011'],
       [-24, 10, 15, 'u-grace', 'sign', 'Quality event', 'QE-014', 'Closed QE-014 without CAPA · signed with justification'],
       [-21, 15, 0, 'u-omar', 'sign', 'CAPA', 'CAPA-007', 'Signed action CA-1 · Completed'],
-      [-17, 16, 40, 'u-tom', 'sign', 'Document', 'SOP-012', 'Signed SOP-012 v3.0 · Approved'],
-      [-16, 11, 2, 'u-vic', 'sign', 'Document', 'SOP-012', 'Signed SOP-012 v3.0 · Approved'],
+      [-18, 9, 40, 'u-vic', 'docusign.send', 'Document', 'SOA-001', 'Verification check passed; sent DocuSign envelope for SOA-001 v2.1'],
+      [-18, 11, 5, 'u-vic', 'docusign.void', 'Document', 'SOA-001', 'Voided envelope for SOA-001 v2.1: footer showed version 2.0 instead of 2.1'],
+      [-17, 9, 0, 'u-vic', 'docusign.send', 'Document', 'SOA-001', 'Corrected and sent a new DocuSign envelope for SOA-001 v2.1 (second send)'],
+      [-17, 16, 40, 'system', 'docusign.signed', 'Document', 'SOP-012', 'DocuSign Connect: PJ Walters signed SOP-012 v3.0 · Approved'],
+      [-16, 11, 2, 'system', 'docusign.signed', 'Document', 'SOP-012', 'DocuSign Connect: Victoria E. signed SOP-012 v3.0 · Approved'],
+      [-16, 11, 3, 'system', 'docusign.completed', 'Document', 'SOP-012', 'Envelope completed; signed PDF and certificate of completion stored against v3.0'],
       [-16, 11, 3, 'system', 'state', 'Document', 'SOP-012', 'SOP-012 v3.0 Effective; v2.1 Superseded'],
-      [-15, 0, 5, 'system', 'automation', 'Document', 'SOP-012', 'RULE-09 assigned SOP-012 training to 13 people'],
+      [-15, 0, 5, 'system', 'automation', 'Document', 'SOP-012', 'RULE-09 assigned SOP-012 v3.0 to the All staff audience (13 people)'],
       [-14, 9, 18, 'u-sam', 'state', 'Document', 'POL-004', 'Submitted v2.0 for review'],
       [-12, 10, 0, 'u-vic', 'create', 'Change request', 'CR-016', 'Created CR-016'],
       [-11, 10, 5, 'u-priya', 'review', 'Document', 'POL-004', 'Marked reviewed'],
       [-9, 14, 0, 'u-grace', 'create', 'Document', 'SOP-020', 'Created SOP-020 from template TPL-SOP'],
       [-8, 9, 0, 'u-tom', 'create', 'Change request', 'CR-015', 'Created CR-015'],
       [-6, 15, 42, 'u-omar', 'review', 'Document', 'POL-004', 'Closed review with 1 comment'],
-      [-6, 15, 45, 'u-sam', 'state', 'Document', 'POL-004', 'Sent v2.0 for approval (sequential: Victoria E., then PJ Walters)'],
+      [-6, 15, 41, 'u-sam', 'docusign.verify', 'Document', 'POL-004', 'Verification check passed for POL-004 v2.0: footer, version, document ID and dates'],
+      [-6, 15, 45, 'u-sam', 'docusign.send', 'Document', 'POL-004', 'Sent DocuSign envelope for POL-004 v2.0 (author, 2 reviewers, 2 QA approvers)'],
+      [-6, 16, 2, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Jim Speir signed POL-004 v2.0 · Authored'],
+      [-6, 17, 10, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Carrie Foreman signed POL-004 v2.0 · Reviewed'],
+      [-5, 9, 30, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Omar Haddad signed POL-004 v2.0 · Reviewed'],
       [-6, 8, 55, 'u-lena', 'create', 'Observation', 'OBS-020', 'Raised OBS-020'],
       [-5, 9, 0, 'u-grace', 'state', 'Observation', 'OBS-020', 'Escalated OBS-020 to QE-015'],
       [-5, 18, 2, 'u-vic', 'login', 'Session', 'u-vic', 'Signed in from a new device (Safari, macOS)'],
@@ -660,14 +787,16 @@
       [-3, 9, 2, 'u-tom', 'state', 'Change request', 'CR-015', 'Submitted CR-015 for review'],
       [-3, 9, 3, 'u-tom', 'link', 'Change request', 'CR-015', 'Linked SOP-012'],
       [-3, 10, 0, 'u-omar', 'create', 'CAPA', 'CAPA-008', 'Created CAPA-008 from QE-016'],
-      [-2, 10, 12, 'u-grace', 'create', 'Training rule', 'TR-04', 'Created training rule TR-04 (pending approval)'],
+      [-6, 11, 0, 'u-grace', 'create', 'Quality event', 'QE-017', 'Raised QE-017 (Deviation, Low)'],
+      [-2, 16, 5, 'u-omar', 'review', 'Document', 'VP-001', 'Marked reviewed; review closed'],
       [-2, 11, 15, 'u-sam', 'review', 'Document', 'SOP-020', 'Marked reviewed'],
       [-1, 14, 40, 'u-ruth', 'create', 'Observation', 'OBS-021', 'Raised OBS-021'],
       [-1, 15, 5, 'u-priya', 'review', 'Change request', 'CR-015', 'Marked reviewed'],
       [-1, 16, 0, 'u-hannah', 'role.request', 'User', 'u-grace', 'Requested Approver role for Louise Harvey (needs a second admin)'],
       [-1, 16, 20, 'u-sam', 'checkout', 'Document', 'WI-003', 'Checked out WI-003'],
       [-1, 9, 10, 'u-aud', 'read', 'Document', 'PLN-001', 'Download attempt blocked: PLN-001 is Restricted'],
-      [0, 7, 0, 'system', 'automation', 'Document', 'POL-004', 'RULE-07 overdue escalation (day 2)'],
+      [-1, 10, 41, 'u-priya', 'review', 'Document', 'POL-003', 'Marked reviewed; review closed'],
+      [0, 7, 0, 'system', 'automation', 'Document', 'POL-004', 'RULE-07 overdue escalation (day 2): DocuSign signer Victoria E.'],
       [0, 8, 2, 'u-vic', 'login', 'Session', 'u-vic', 'Signed in (SSO + MFA)'],
       [0, 8, 30, 'u-omar', 'upload', 'CAPA', 'CAPA-007', 'Uploaded screenshot-console.png (malware scan started)'],
       [0, 9, 12, 'u-ruth', 'create', 'Observation', 'OBS-022', 'Raised OBS-022']

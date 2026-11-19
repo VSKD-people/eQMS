@@ -11,7 +11,7 @@
     var evs = vals(Q.S.events).filter(function (e) { return Q.canSee(e); });
     var capas = vals(Q.S.capas).filter(function (c) { return Q.canSee(c); });
     var reviews = vals(Q.S.reviews).filter(function (r) { return Q.S.docs[r.doc] && Q.canSee(Q.S.docs[r.doc]); });
-    var asg = Q.S.assignments.filter(function (a) { return !a.leaver; });
+    var asg = Q.S.assignments.filter(function (a) { return !a.leaver && ['Complete', 'Assigned', 'Overdue'].indexOf(Q.trStatus(a)) >= 0; });
     var versions = []; docs.forEach(function (d) { d.versions.forEach(function (v) { versions.push({ doc: d.id, title: d.title, v: v.v, kind: v.kind, state: v.state, created: v.created, by: v.createdBy }); }); });
     return { docs: docs, crs: crs, evs: evs, capas: capas, reviews: reviews, asg: asg, versions: versions, days: days };
   }
@@ -105,7 +105,7 @@
   }
   function overview(d) {
     var wk = weekly(d);
-    var avg = [['Draft', 6.2], ['In review', 4.1], ['In approval', 3.4], ['Pending training', 9.8]];
+    var avg = [['Draft', 6.2], ['In review', 4.1], ['Review closed (verify and send)', 0.8], ['In approval (DocuSign)', 3.4]];
     var rAvg = rpt('Average days in each workflow state', [['State', 'Average days', 'Transitions measured']].concat(avg.map(function (a, i) { return [a[0], a[1], [14, 12, 11, 4][i]]; })));
     var rWk = rpt('Training due vs overdue by week', [['Week starting', 'Due', 'Overdue']].concat(wk.weeks.map(function (w) { return [w.label, w.due, w.od]; })));
     var openEv = d.evs.filter(function (e) { return e.state === 'Open' || e.state === 'Assessment'; });
@@ -125,7 +125,7 @@
   function documents(d) {
     var types = {}; d.docs.forEach(function (x) { types[x.docType] = (types[x.docType] || 0) + 1; });
     var states = {}; d.docs.forEach(function (x) { states[x.state] = (states[x.state] || 0) + 1; });
-    var inWf = d.docs.filter(function (x) { return ['In review', 'Review closed', 'In approval', 'Pending training'].indexOf(x.state) >= 0; });
+    var inWf = d.docs.filter(function (x) { return ['In review', 'Review closed', 'In approval'].indexOf(x.state) >= 0; });
     var odAppr = d.docs.filter(function (x) { return x.state === 'In approval' && Q.daysFromToday(x.approvalDue) < 0; });
     var rAll = rpt('Documents register', [['Document', 'Title', 'Type', 'State', 'Version', 'Owner']].concat(d.docs.map(function (x) { return [x.id, x.title, x.docType, x.state, Q.curVer(x).v, Q.fullName(x.owner)]; })));
     var rWf = rpt('Documents in a workflow', [['Document', 'Title', 'State', 'Owner']].concat(inWf.map(function (x) { return [x.id, x.title, x.state, Q.fullName(x.owner)]; })));
@@ -137,12 +137,12 @@
         <div class="card card-pad"><div class="card-head"><h2>Documents by state</h2>${fullLink(rAll)}</div>${hbar(Object.keys(states).map(function (k) { return [k, states[k]]; }))}</div></div>`;
   }
   function training(d) {
-    var rules = Q.S.trainingRules.filter(function (r) { return r.status === 'Active'; });
-    var rows = rules.map(function (r) { var a = d.asg.filter(function (x) { return x.rule === r.id; }); return [r.name, Q.pct(a.filter(function (x) { return x.completed; }).length, a.length)]; });
+    var docsWith = Object.keys(Q.S.docs).map(function (k) { return Q.S.docs[k]; }).filter(function (x) { return Q.effVer(x) && d.asg.some(function (a) { return a.doc === x.id; }); });
+    var rows = docsWith.map(function (x) { var a = d.asg.filter(function (y) { return y.doc === x.id; }); return [x.id + ' v' + Q.effVer(x).v, Q.pct(a.filter(function (y) { return y.completed; }).length, a.length)]; });
     var people = {}; d.asg.filter(function (a) { return !a.completed && Q.daysFromToday(a.due) < 0; }).forEach(function (a) { people[a.user] = (people[a.user] || 0) + 1; });
     var rOd = rpt('Overdue training by person', [['Person', 'Overdue items', 'Manager']].concat(Object.keys(people).map(function (u) { return [Q.fullName(u), people[u], Q.user(u).manager ? Q.fullName(Q.user(u).manager) : '—']; })));
     var wk = weekly(d);
-    return h`${kpiRow(d)}<div class="grid-2 mb-16"><div class="card card-pad"><div class="card-head"><h2>Completion by rule</h2>${fullLink(rpt('Training by rule', [['Rule', '% complete']].concat(rows)))}</div>${hbar(rows.map(function (r) { return [r[0], r[1], 'var(--done)']; }), 100, { unit: '%' })}</div>
+    return h`${kpiRow(d)}<div class="grid-2 mb-16"><div class="card card-pad"><div class="card-head"><h2>Completion by document (current version)</h2>${fullLink(rpt('Training by document', [['Document', '% complete']].concat(rows)))}</div>${hbar(rows.map(function (r) { return [r[0], r[1], 'var(--done)']; }), 100, { unit: '%' })}</div>
       <div class="card card-pad"><div class="card-head"><h2>Overdue by person</h2>${fullLink(rOd)}</div>${Object.keys(people).length ? hbar(Object.keys(people).map(function (u) { return [Q.fullName(u), people[u], 'var(--chart-overdue)']; })) : h`<p class="muted">Nobody is overdue.</p>`}</div></div>
       <div class="card card-pad"><div class="card-head"><h2>Training due vs overdue, by week</h2></div>${wk.svg}<div class="legend mt-8"><span><i style="background:var(--chart-due)"></i>Due</span><span><i style="background:var(--chart-overdue)"></i>Overdue</span></div></div>`;
   }

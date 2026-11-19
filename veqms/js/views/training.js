@@ -1,4 +1,6 @@
-/* Training: My training (read → knowledge check → sign), Organisation view, and versioned Training rules. */
+/* Training (Route 2): read-and-understood acknowledgements in the app. Not Part 11 signatures, but every
+   record is attributable (single sign-on), tied to one version, dated by the system and locked once made.
+   Tabs: My training · Training matrix · Records (individual and per-document reports) · Audiences. */
 (function (Q) {
   'use strict';
   var h = Q.h;
@@ -34,65 +36,78 @@
       { q: 'Is a printed copy controlled?', o: ['Yes', 'No, it is uncontrolled when printed'], a: 1 }
     ];
   }
+  function by(a) { return a.allocatedBy === 'system' ? 'System' : Q.fullName(a.allocatedBy); }
 
-  function myAssignments(uid) {
-    return Q.S.assignments.filter(function (a) { return a.user === (uid || Q.S.session.userId) && !a.leaver; });
-  }
-  function status(a) { return a.completed ? 'Done' : Q.daysFromToday(a.due) < 0 ? 'Overdue' : 'Not started'; }
+  // Shared rows for every training export (PDF and Excel).
+  Q.trainingRows = function (list) {
+    var rows = [['Person', 'Account status', 'Document', 'Title', 'Version', 'Allocated by', 'Reason', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Record status', 'Statement', 'Knowledge check', 'Envelope ID', 'Correction of', 'Correction reason', 'Record ID']];
+    list.slice().sort(Q.by(function (a) { return Q.fullName(a.user) + a.doc + a.assigned; })).forEach(function (a) {
+      var u = Q.user(a.user);
+      rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.title, a.ver, by(a), a.allocReason || '', Q.fmtUtc(a.assigned), a.due ? Q.fmtUtc(a.due) : '', a.completed ? Q.fmtUtc(a.completed) : '', Q.trStatus(a), a.statement || '', a.quiz || '', a.envelope || '', a.correctionOf || '', a.correctionReason || '', a.id]);
+    });
+    return rows;
+  };
 
   Q.views.training = function (p, q) {
-    var tab = q.tab || 'my';
-    var tabs = [['my', 'My training']];
-    if (Q.can('training.org')) tabs.push(['org', 'Organisation']);
-    tabs.push(['rules', 'Training rules']);
-    var content = tab === 'org' && Q.can('training.org') ? orgTab(q) : tab === 'rules' ? rulesTab(q) : myTab(q);
-    if (q.doc && tab === 'my') Q.after(function () { var a = myAssignments().find(function (x) { return x.doc === q.doc && !x.completed; }); if (a) openTraining(a); history.replaceState(null, '', '#/training'); });
-    if (q.rule && tab === 'rules') Q.after(function () { var r = Q.S.trainingRules.find(function (x) { return x.id === q.rule; }); if (r) openRule(r); });
-    return h`<div class="page-head"><div><h1>Training</h1><div class="sub">Read, confirm and sign. Records stay with the person and are never deleted.</div></div>
-      ${Q.can('training.rules') ? h`<button class="btn btn-primary" data-act="new-rule">${Q.icon('plus', 'ico-sm')} New training rule</button>` : ''}</div>
+    var org = Q.can('training.org');
+    var tabs = [['my', 'My training']].concat(org ? [['matrix', 'Training matrix'], ['records', 'Records'], ['audiences', 'Audiences']] : []);
+    var tab = tabs.some(function (t) { return t[0] === q.tab; }) ? q.tab : 'my';
+    var content = tab === 'matrix' ? matrixTab(q) : tab === 'records' ? recordsTab(q) : tab === 'audiences' ? audiencesTab(q) : myTab(q);
+    if (q.doc && tab === 'my') Q.after(function () { var a = mine().find(function (x) { return x.doc === q.doc && Q.trOpen(x); }); if (a) openTraining(a); history.replaceState(null, '', '#/training'); });
+    if (q.rec) Q.after(function () { var a = Q.S.assignments.find(function (x) { return x.id === q.rec; }); if (a && (org || a.user === Q.S.session.userId)) openRecord(a); });
+    return h`<div class="page-head"><div><h1>Training</h1><div class="sub">Read and understood. Records are dated by the system, locked once made, and kept with the person.</div></div>
+      ${tab === 'records' && Q.can('training.manage') && !Q.readOnly() ? h`<button class="btn" data-act="tr-reminders">${Q.icon('bell', 'ico-sm')} Send reminders now</button>` : ''}</div>
       <div class="tabs" role="tablist">${tabs.map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
       ${content}`;
   };
+  function mine(uid) { return Q.S.assignments.filter(function (a) { return a.user === (uid || Q.S.session.userId); }); }
 
+  // ---------- My training ----------
   function myTab() {
-    var mine = myAssignments();
-    var open = mine.filter(function (a) { return !a.completed; }).sort(Q.by('due'));
-    var done = mine.filter(function (a) { return a.completed; }).sort(Q.by('completed', -1));
-    return h`${Q.tip('training', h`<b>My training.</b> Read the document, answer the short knowledge check if the rule asks for one, then sign with a fresh sign-in. That creates your training record.`)}
-      <div class="label mb-8">My assignments · ${open.length}</div>
+    var list = mine();
+    var open = list.filter(Q.trOpen).sort(Q.by('due'));
+    var done = list.filter(function (a) { return !Q.trOpen(a); }).sort(Q.by(function (a) { return a.completed || a.assigned; }, -1));
+    Q.reports['my-record'] = { title: 'Training record: ' + Q.me().name, file: 'training-record-' + Q.S.session.userId, rows: function () { return Q.trainingRows(mine()); } };
+    return h`${Q.tip('training', h`<b>My training.</b> Read the document, answer the short knowledge check if there is one, then confirm you have read and understood that version. You’re signed in through Microsoft 365, so the record is yours alone; the app sets the date and time.`)}
+      <div class="label mb-8">To do · ${open.length}</div>
       ${open.length ? open.map(function (a) {
-        var d = Q.S.docs[a.doc], rule = Q.S.trainingRules.find(function (r) { return r.id === a.rule; });
+        var d = Q.S.docs[a.doc], aud = Q.audienceOf(d);
         var opened = (Q.ui.opened || {})[a.id];
         return h`<div class="card card-pad mb-8"><div class="spread" style="align-items:flex-start;flex-wrap:wrap">
-          <div><div class="tc-kicker row-wrap small muted">Read and confirm · Rule: ${rule ? rule.name : a.rule}${rule && rule.retrainMonths ? ', yearly' : ''} ${Q.dueChip(a.due)}</div>
-            <div style="font-weight:600;margin-top:4px">${a.doc} ${d.title} v${a.ver}</div>
-            <div class="row-wrap mt-8 small"><span class="chip ${opened ? 'chip-done' : 'chip-outline'}">1 Read${opened ? ' · opened ' + Q.fmtShort(opened) : ''}</span>${rule && rule.quiz ? h`<span class="chip chip-outline">2 Knowledge check · ${quizFor(a.doc).length} questions</span>` : ''}<span class="chip chip-outline">${rule && rule.quiz ? '3' : '2'} Sign · fresh sign-in required</span></div></div>
+          <div><div class="tc-kicker row-wrap small muted">Read and understood · ${a.allocReason} · allocated by ${by(a)} ${Q.dueChip(a.due)}</div>
+            <div style="font-weight:600;margin-top:4px">${a.doc} ${a.title} v${a.ver}</div>
+            <div class="row-wrap mt-8 small"><span class="chip ${opened ? 'chip-done' : 'chip-outline'}">1 Read${opened ? ' · opened ' + Q.fmtShort(opened) : ''}</span>${aud.quiz ? h`<span class="chip chip-outline">2 Knowledge check · ${quizFor(a.doc).length} questions</span>` : ''}<span class="chip chip-outline">${aud.quiz ? '3' : '2'} Confirm</span></div></div>
           ${Q.readOnly() ? '' : h`<button class="btn ${opened ? 'btn-primary' : ''}" data-act="train-start" data-id="${a.id}">${opened ? 'Continue' : 'Start'}</button>`}</div></div>`;
-      }) : Q.empty('No training due', 'When a document you’re trained on changes, it shows up here.')}
-      <details class="mt-24"><summary class="btn-link" style="padding:0;display:inline-flex;align-items:center">Completed: ${done.length} records · See history</summary>
-        <div class="mt-16">${Q.table({ id: 'mydone', rows: done.map(function (a) { return Object.assign({ title: Q.S.docs[a.doc].title }, a); }), defaultSort: 'completed', defaultDir: -1,
-          cols: [{ key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} ${a.title} v${a.ver}`; } }, { key: 'rule', label: 'Rule' }, { key: 'completed', label: 'Completed', render: function (a) { return Q.fmtDate(a.completed); } }, { key: 'quiz', label: 'Knowledge check', render: function (a) { return a.quiz || '—'; } }, { key: 'sig', label: 'Signature', render: function (a) { return a.sig || '—'; } }] })}</div></details>`;
+      }) : Q.empty('No training due', 'When a document you must train on changes, the new version shows up here.')}
+      <div class="spread mt-24 mb-8"><div class="label" style="margin:0">My training record · ${done.length}</div>${done.length ? Q.reportButtons('my-record') : ''}</div>
+      ${Q.table({ id: 'mydone', rows: done.map(function (a) { return Object.assign({ st: Q.trStatus(a) }, a); }), defaultSort: 'completed', defaultDir: -1, href: function (a) { return '#/training?rec=' + a.id; }, empty: 'No records yet.',
+        cols: [{ key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} ${a.title} v${a.ver}`; } }, { key: 'allocReason', label: 'Why' }, { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return Q.chip(a.st); } }] })}`;
   }
   Q.act['train-start'] = function (el) { var a = Q.S.assignments.find(function (x) { return x.id === el.getAttribute('data-id'); }); if (a) openTraining(a); };
 
   function openTraining(a) {
-    var d = Q.S.docs[a.doc], rule = Q.S.trainingRules.find(function (r) { return r.id === a.rule; });
+    var d = Q.S.docs[a.doc];
     var v = d.versions.find(function (x) { return x.v === a.ver; }) || Q.effVer(d) || Q.curVer(d);
-    var quiz = rule && rule.quiz ? quizFor(a.doc) : null;
+    var quiz = Q.audienceOf(d).quiz ? quizFor(a.doc) : null;
     var st = { step: 1, answers: {}, wrong: [] };
+    var statement = Q.ackStatement(d.id, v.v);
     Q.ui.opened = Q.ui.opened || {}; if (!Q.ui.opened[a.id]) { Q.ui.opened[a.id] = new Date().toISOString(); Q.audit('read', 'Document', a.doc, 'Opened ' + a.doc + ' v' + a.ver + ' for training'); Q.save(); }
     function body() {
-      var steps = h`<div class="sign-steps" style="grid-template-columns:repeat(${quiz ? 3 : 2},1fr)"><div class="${st.step === 1 ? 'on' : 'ok'}">1 Read</div>${quiz ? h`<div class="${st.step === 2 ? 'on' : st.step > 2 ? 'ok' : ''}">2 Knowledge check</div>` : ''}<div class="${st.step === 3 ? 'on' : ''}">${quiz ? '3' : '2'} Sign</div></div>`;
+      var steps = h`<div class="sign-steps" style="grid-template-columns:repeat(${quiz ? 3 : 2},1fr)"><div class="${st.step === 1 ? 'on' : 'ok'}">1 Read</div>${quiz ? h`<div class="${st.step === 2 ? 'on' : st.step > 2 ? 'ok' : ''}">2 Knowledge check</div>` : ''}<div class="${st.step === 3 ? 'on' : ''}">${quiz ? '3' : '2'} Confirm</div></div>`;
       if (st.step === 1) return h`${steps}<div class="viewer" style="max-height:52vh"><div class="page" style="min-height:0">${h`<h2>${d.id} ${d.title}</h2><div class="doc-meta"><span>Version ${v.v}</span><span>${d.classification.toUpperCase()}</span></div>`}${v.content.map(function (b) { return b.t === 'h' ? h`<h3>${b.x}</h3>` : h`<p>${b.x}</p>`; })}</div></div>
-        <label class="check mt-16"><input type="checkbox" name="read" ${st.read ? 'checked' : ''}> I have read and understood ${d.id} v${v.v}</label>`;
+        <label class="check mt-16"><input type="checkbox" name="read" ${st.read ? 'checked' : ''}> I have read all of ${d.id} v${v.v}</label>`;
       if (st.step === 2) return h`${steps}<p class="small muted">Answer all ${quiz.length} questions. You can try again if one is wrong.</p>${quiz.map(function (x, i) {
         return h`<fieldset class="quiz-q ${st.wrong.indexOf(i) >= 0 ? 'wrong' : ''}"><legend style="font-size:15px">${i + 1}. ${x.q}</legend>${x.o.map(function (o, j) { return h`<label class="check"><input type="radio" name="q${i}" value="${j}" ${st.answers[i] === j ? 'checked' : ''}> ${o}</label>`; })}${st.wrong.indexOf(i) >= 0 ? h`<div class="err">Not quite. Check section ${i + 2} of the document.</div>` : ''}</fieldset>`;
       })}`;
-      return h`${steps}<div class="callout ok"><strong>Ready to sign</strong><p class="small" style="margin:4px 0 0">${quiz ? 'Knowledge check passed (' + quiz.length + ' of ' + quiz.length + '). ' : ''}Signing creates your training record for ${d.id} v${v.v}.</p></div>`;
+      var me = Q.me();
+      return h`${steps}${quiz ? h`<div class="callout ok mb-16"><strong>Knowledge check passed</strong><p class="small" style="margin:4px 0 0">${quiz.length} of ${quiz.length} correct.</p></div>` : ''}
+        <dl class="dl mb-16"><div><dt>Signed in as</dt><dd>${me.name}</dd></div><div><dt>Account</dt><dd>${me.email} · Microsoft 365 single sign-on</dd></div><div><dt>Document</dt><dd>${d.id} ${d.title}</dd></div><div><dt>Version</dt><dd>${v.v}</dd></div></dl>
+        <label class="check statement" style="align-items:flex-start;padding:14px 16px"><input type="checkbox" name="confirm" style="margin-top:3px"> <span style="font-weight:600">${statement}</span></label>
+        <p class="small muted mt-16">The app records the date and time when you confirm; nobody can type or change them. Once confirmed, the record is locked: it can’t be edited or deleted, by anyone. Only you can confirm your own record.</p>`;
     }
     Q.drawer.open({
-      wide: true, kicker: 'Read and confirm · Rule: ' + (rule ? rule.name : ''), title: d.id + ' ' + d.title + ' v' + v.v, body: body,
-      foot: function () { return h`<button class="btn btn-primary" type="submit">${st.step === 1 ? (quiz ? 'Continue to knowledge check' : 'Continue to sign') : st.step === 2 ? 'Check answers' : 'Sign training record'}</button><button class="btn" type="button" data-act="drawer-close">Save and close</button>`; },
+      wide: true, kicker: 'Read and understood · ' + a.allocReason, title: d.id + ' ' + d.title + ' v' + v.v, body: body,
+      foot: function () { return h`<button class="btn btn-primary" type="submit">${st.step === 1 ? (quiz ? 'Continue to knowledge check' : 'Continue') : st.step === 2 ? 'Check answers' : 'Confirm read and understood'}</button><button class="btn" type="button" data-act="drawer-close">Save and close</button>`; },
       submit: function (f) {
         if (st.step === 1) { if (!f.read) { Q.toast('Tick the box to confirm you have read it.', 'warn'); return; } st.read = true; st.step = quiz ? 2 : 3; Q.drawer.paint(); Q.drawer.focusFirst(); return; }
         if (st.step === 2) {
@@ -100,91 +115,137 @@
           if (st.wrong.length) { Q.drawer.paint(); return; }
           st.step = 3; Q.drawer.paint(); return;
         }
-        Q.drawer.close();
-        Q.sign({ items: [{ id: d.id, version: v.v, hash: v.hash }], meaning: 'Read and understood', meanings: ['Read and understood'], title: 'Sign training: ' + d.id + ' v' + v.v,
-          onSigned: function (sigs) { Q.completeTraining(a, { quiz: quiz ? quiz.length + '/' + quiz.length : null, sig: sigs[0].id }); Q.toast('Training recorded for ' + d.id); } });
+        if (!f.confirm) { Q.toast('Tick the statement to confirm.', 'warn'); return; }
+        if (Q.completeTraining(a, { quiz: quiz ? quiz.length + '/' + quiz.length : null })) { Q.drawer.close(); Q.toast('Recorded: ' + statement); Q.refresh(); }
       }
     });
   }
 
-  function orgTab(q) {
-    var rows = Q.S.assignments.slice();
-    if (q.rule) rows = rows.filter(function (a) { return a.rule === q.rule; });
-    if (q.st) rows = rows.filter(function (a) { return status(a) === q.st; });
-    var cur = rows.filter(function (a) { return !a.leaver; });
-    var done = cur.filter(function (a) { return a.completed; });
-    var avg = done.length ? Math.round(done.reduce(function (s, a) { return s + (new Date(a.completed) - new Date(a.assigned)) / Q.DAY; }, 0) / done.length) : 0;
-    var overdue = cur.filter(function (a) { return status(a) === 'Overdue'; }).length;
-    var data = rows.map(function (a) { var u = Q.user(a.user); return Object.assign({ name: u.name + (a.leaver ? ' · left' : ''), docLabel: a.doc + ' v' + a.ver, st: a.leaver && a.completed ? 'Done · kept' : status(a) }, a); });
-    return h`<div class="spread mb-16" style="flex-wrap:wrap"><h2>Organisation training</h2><div class="btn-row"><button class="btn" data-act="train-export">Export CSV</button><button class="btn" data-act="train-pdf">Export PDF</button></div></div>
-      <div class="grid-3 mb-16">
-        <div class="card kpi"><div class="kpi-label">Complete</div><div class="kpi-value">${Q.pct(done.length, cur.length)}%</div><div class="progress"><div style="width:${Q.pct(done.length, cur.length)}%"></div></div></div>
-        <div class="card kpi"><div class="kpi-label">Average completion time</div><div class="kpi-value">${avg} days</div><div class="kpi-sub">from assignment to signature</div></div>
-        <div class="card kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:${overdue ? 'var(--overdue)' : 'inherit'}">${overdue}</div><div class="kpi-sub">escalated to managers on day 2, then every 2 days</div></div></div>
-      <div class="toolbar"><select class="select" data-change="qfilter" data-key="rule" aria-label="Rule"><option value="">All rules</option>${Q.S.trainingRules.map(function (r) { return h`<option value="${r.id}" ${q.rule === r.id ? 'selected' : ''}>${r.name}</option>`; })}</select>
-        <select class="select" data-change="qfilter" data-key="st" aria-label="Status"><option value="">Any status</option>${['Overdue', 'Not started', 'Done'].map(function (s) { return h`<option ${q.st === s ? 'selected' : ''}>${s}</option>`; })}</select></div>
-      ${Q.table({ id: 'orgtr', rows: data, defaultSort: 'due', caption: 'Training records',
-        cols: [{ key: 'name', label: 'User' }, { key: 'docLabel', label: 'Document' }, { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return Q.fmtShort(a.due); } }, { key: 'completed', label: 'Completed', render: function (a) { return a.completed ? Q.fmtShort(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return Q.chip(a.st, a.st === 'Done · kept' ? 'chip-done' : null); } }] })}
-      <p class="small muted mt-8">Leavers’ records stay and are never deleted. A new major version of a document assigns training automatically to everyone in its rules.</p>`;
-  }
-  function orgRows() {
-    var rows = [['User', 'Status', 'Document', 'Version', 'Rule', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Knowledge check', 'Signature']];
-    Q.S.assignments.forEach(function (a) { var u = Q.user(a.user); rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.ver, a.rule, a.assigned, a.due, a.completed || '', a.quiz || '', a.sig || '']); });
+  // ---------- Training matrix: person by document ----------
+  function matrixDocs() { return Object.keys(Q.S.docs).map(function (k) { return Q.S.docs[k]; }).filter(function (d) { return Q.effVer(d) && (Q.hasAudience(d) || Q.S.assignments.some(function (a) { return a.doc === d.id; })); }).sort(Q.by('id')); }
+  Q.trCell = function (u, d) {
+    var cur = Q.effVer(d), recs = Q.S.assignments.filter(function (a) { return a.user === u.id && a.doc === d.id && !a.noRetrain && !a.closed; }).sort(Q.by('assigned', -1));
+    var curRec = recs.find(function (a) { return a.ver === cur.v && Q.trStatus(a) !== 'Corrected'; });
+    if (curRec) return { status: Q.trStatus(curRec), rec: curRec, trained: curRec.completed ? curRec.ver : null, current: cur.v };
+    var older = recs.filter(function (a) { return a.completed && a.ver !== cur.v; }).sort(Q.by(function (a) { return a.completed; }, -1))[0];
+    if (Q.inAudience(d, u)) return { status: older ? 'Superseded' : 'Not allocated', rec: older || null, trained: older ? older.ver : null, current: cur.v };
+    if (older) return { status: 'Not required', rec: older, trained: older.ver, current: cur.v };
+    return null;
+  };
+  function matrixPeople(q) { return Q.activeUsers().filter(function (u) { return u.roles.indexOf('auditor') < 0 && (!q.g || u.groups.indexOf(q.g) >= 0); }).sort(Q.by('name')); }
+  function matrixRows(q) {
+    var rows = [['Person', 'Groups', 'Document', 'Title', 'Current version', 'Version trained', 'Status', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)']];
+    matrixPeople(q).forEach(function (u) { matrixDocs().forEach(function (d) { var c = Q.trCell(u, d); if (!c) return; var r = c.rec || {}; rows.push([u.name, u.groups.join('; '), d.id, d.title, c.current, c.trained || '', c.status, r.assigned ? Q.fmtUtc(r.assigned) : '', r.due ? Q.fmtUtc(r.due) : '', r.completed ? Q.fmtUtc(r.completed) : '']); }); });
     return rows;
   }
-  Q.act['train-export'] = function () { Q.exportCsv('training-records.csv', orgRows(), 'organisation training records'); };
-  Q.act['train-pdf'] = function () {
-    var r = orgRows();
-    Q.printHtml('Training records', '<h1>Organisation training records</h1><p>Generated ' + Q.fmtUtc(new Date().toISOString()) + ' by ' + Q.esc(Q.me().name) + '</p><table><tr>' + r[0].map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr>' + r.slice(1).map(function (row) { return '<tr>' + row.map(function (c) { return '<td>' + Q.esc(String(c).replace('T', ' ').replace(/\.\d+Z$/, 'Z')) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>', 'training records PDF');
+  function matrixTab(q) {
+    var docs = matrixDocs(), people = matrixPeople(q);
+    Q.reports.matrix = { title: 'Training matrix' + (q.g ? ': ' + q.g : ''), file: 'training-matrix', rows: function () { return matrixRows(q); }, intro: 'Person by document: version trained, current version, status and dates.' };
+    var CLS = { 'Complete': 'chip-done', 'Overdue': 'chip-overdue', 'Assigned': 'chip-turn', 'Superseded': 'chip-due', 'Not allocated': 'chip-overdue', 'Not required': 'chip-outline' };
+    var cell = function (u, d) {
+      var c = Q.trCell(u, d);
+      if (!c) return h`<td class="muted" title="Not in the audience">·</td>`;
+      var r = c.rec;
+      var tip = u.name + ' · ' + d.id + ' · current v' + c.current + (c.trained ? ' · trained on v' + c.trained : '') + (r && r.completed ? ' on ' + Q.fmtDate(r.completed) : '') + (r && !r.completed && r.due ? ' · due ' + Q.fmtDate(r.due) : '') + ' · ' + c.status;
+      var label = c.status === 'Complete' ? 'v' + c.trained : c.status === 'Assigned' ? 'Due ' + Q.fmtShort(r.due) : c.status === 'Overdue' ? 'Overdue' : c.status === 'Superseded' ? 'v' + c.trained + ' → v' + c.current : c.status === 'Not required' ? 'v' + c.trained : 'Not allocated';
+      return h`<td><button class="chip ${CLS[c.status] || ''}" style="border:0;cursor:pointer" title="${tip}" aria-label="${tip}" ${Q.raw(r ? 'data-act="go" data-href="' + Q.esc('#/training?tab=matrix' + (q.g ? '&g=' + q.g : '') + '&rec=' + r.id) + '"' : '')}>${label}</button></td>`;
+    };
+    return h`<div class="toolbar"><select class="select" data-change="qfilter" data-key="g" aria-label="Group"><option value="">Everyone</option>${Q.S.groups.map(function (g) { return h`<option ${q.g === g.name ? 'selected' : ''}>${g.name}</option>`; })}</select>
+        <span class="legend small"><span><i style="background:var(--done-bg)"></i>Trained on current</span><span><i style="background:var(--due-bg)"></i>Trained on an earlier version</span><span><i style="background:var(--overdue-bg)"></i>Overdue or not allocated</span></span>
+        <span style="margin-left:auto">${Q.reportButtons('matrix')}</span></div>
+      <div class="table-wrap"><table class="t"><caption class="sr-only">Training matrix, person by document</caption><thead><tr><th scope="col">Person</th>${docs.map(function (d) { return h`<th scope="col" title="${d.title}"><a href="#/documents/${d.id}?tab=training">${d.id}</a><div class="small muted" style="font-weight:400;text-transform:none;letter-spacing:0">v${Q.effVer(d).v}</div></th>`; })}</tr></thead>
+        <tbody>${people.map(function (u) { return h`<tr><th scope="row" style="white-space:nowrap;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink)"><a href="#/training?tab=records&u=${u.id}">${u.name}</a><div class="small muted" style="font-weight:400">${u.title}</div></th>${docs.map(function (d) { return cell(u, d); })}</tr>`; })}</tbody></table></div>
+      <p class="small muted mt-8">“·” means the person isn’t in that document’s audience. Select a cell to open the record. “Not allocated” means someone in the audience has no record for the current version: check their start date or group.</p>`;
+  }
+
+  // ---------- Records: everything, or one person, or one document ----------
+  function recordsTab(q) {
+    var rows = Q.S.assignments.slice();
+    var u = q.u ? Q.user(q.u) : null, d = q.d ? Q.S.docs[q.d] : null;
+    if (u) rows = rows.filter(function (a) { return a.user === u.id; });
+    if (d) rows = rows.filter(function (a) { return a.doc === d.id; });
+    if (!q.all) rows = rows.filter(function (a) { return ['Superseded', 'Withdrawn', 'Corrected', 'Correction', 'Obsolete'].indexOf(Q.trStatus(a)) < 0; });
+    if (q.st) rows = rows.filter(function (a) { return Q.trStatus(a) === q.st; });
+    var live = Q.S.assignments.filter(function (a) { return ['Complete', 'Assigned', 'Overdue'].indexOf(Q.trStatus(a)) >= 0 && !a.leaver; });
+    var done = live.filter(function (a) { return a.completed; });
+    var overdue = live.filter(function (a) { return Q.trStatus(a) === 'Overdue'; }).length;
+    var title = u ? 'Training records: ' + u.name : d ? 'Training status: ' + d.id + ' ' + d.title : 'Training records';
+    Q.reports.records = { title: title, file: u ? 'training-records-' + u.id : d ? 'training-status-' + d.id : 'training-records', rows: function () { return Q.trainingRows(rows); }, intro: (q.all ? 'All records, including superseded, withdrawn and corrected.' : 'Current records.') + (d ? ' Current version: v' + (Q.effVer(d) || {}).v + '.' : '') };
+    var people = Q.S.users.filter(function (x) { return x.roles.indexOf('auditor') < 0; }).sort(Q.by('name'));
+    var docs = Object.keys(Q.S.docs).filter(function (k) { return Q.S.assignments.some(function (a) { return a.doc === k; }); }).sort();
+    return h`${u || d ? '' : h`<div class="grid-3 mb-16">
+        <div class="card kpi"><div class="kpi-label">Complete (current versions)</div><div class="kpi-value">${Q.pct(done.length, live.length)}%</div><div class="progress"><div style="width:${Q.pct(done.length, live.length)}%"></div></div></div>
+        <div class="card kpi"><div class="kpi-label">Open</div><div class="kpi-value">${live.length - done.length}</div><div class="kpi-sub">reminders ${Q.S.settings.reminders.join(' and ')} days before due</div></div>
+        <div class="card kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:${overdue ? 'var(--overdue)' : 'inherit'}">${overdue}</div><div class="kpi-sub">trainee and manager told every ${Q.S.settings.escalation.repeatDays} days</div></div></div>`}
+      ${u || d ? h`<div class="card card-pad mb-16"><div class="spread" style="flex-wrap:wrap"><div><div class="label">${u ? 'Individual training record' : 'Training status of one document'}</div><h2 style="margin:4px 0 0">${title}</h2>
+          <div class="small muted">${u ? u.title + ' · ' + u.groups.join(', ') + (u.status !== 'Active' ? ' · ' + u.status : '') : 'Current version v' + ((Q.effVer(d) || {}).v || '—') + ' · audience: ' + Q.audienceText(Q.audienceOf(d))}</div></div>
+          <a class="btn" href="#/training?tab=records">Show everyone</a></div></div>` : ''}
+      <div class="toolbar">
+        <select class="select" data-change="qfilter" data-key="u" aria-label="Person"><option value="">Everyone</option>${people.map(function (x) { return h`<option value="${x.id}" ${q.u === x.id ? 'selected' : ''}>${x.name}${x.status !== 'Active' ? ' (' + x.status.toLowerCase() + ')' : ''}</option>`; })}</select>
+        <select class="select" data-change="qfilter" data-key="d" aria-label="Document"><option value="">All documents</option>${docs.map(function (k) { return h`<option value="${k}" ${q.d === k ? 'selected' : ''}>${k} ${Q.S.docs[k].title}</option>`; })}</select>
+        <select class="select" data-change="qfilter" data-key="st" aria-label="Status"><option value="">Any status</option>${['Complete', 'Assigned', 'Overdue', 'Superseded', 'Corrected', 'Correction', 'Withdrawn', 'Left'].map(function (s) { return h`<option ${q.st === s ? 'selected' : ''}>${s}</option>`; })}</select>
+        <label class="check small"><input type="checkbox" data-change="tr-all" ${q.all ? 'checked' : ''}> Include superseded, withdrawn and corrected</label>
+        <span style="margin-left:auto">${Q.reportButtons('records')}</span></div>
+      ${Q.table({ id: 'trrec', rows: rows.map(function (a) { var x = Q.user(a.user); return Object.assign({ name: x.name + (a.leaver ? ' · left' : ''), st: Q.trStatus(a) }, a); }), defaultSort: 'due', caption: title,
+        href: function (a) { return '#/training?tab=records' + (q.u ? '&u=' + q.u : '') + (q.d ? '&d=' + q.d : '') + (q.all ? '&all=1' : '') + (q.st ? '&st=' + q.st : '') + '&rec=' + a.id; },
+        cols: [{ key: 'name', label: 'Person' }, { key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} v${a.ver}`; } }, { key: 'allocReason', label: 'Allocated', render: function (a) { return h`<span class="small">${a.allocReason} · ${by(a)}</span>`; } },
+          { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return a.due ? Q.fmtShort(a.due) : '—'; } },
+          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return h`${Q.chip(a.st)}${a.envelope ? h` <span class="small muted">· DocuSign</span>` : ''}`; } }] })}
+      <p class="small muted mt-8">Completed records can’t be edited or deleted by anyone, administrators included. A correction is a new record with a reason; the original stays. Leavers’ records are kept.</p>`;
+  }
+  Q.on['tr-all'] = function (el) { Q.setQuery({ all: el.checked ? '1' : '' }); };
+  Q.act['tr-reminders'] = function () { var r = Q.sendReminders(); Q.toast('Sent ' + Q.plural(r.sent, 'reminder') + ' and ' + Q.plural(r.overdue, 'overdue notice') + ' · logged'); Q.refresh(); };
+
+  function fmtVals(o) {
+    if (!o) return '—';
+    return Object.keys(o).map(function (k) { var v = o[k]; if (v && typeof v === 'object') v = Array.isArray(v) ? v.join(', ') : v.groups ? Q.audienceText(v) : JSON.stringify(v); return k + ': ' + (/^\d{4}-\d\d-\d\dT/.test(String(v)) ? Q.fmtUtc(v) : (v === null || v === '' ? '—' : v)); }).join(' · ');
+  }
+  function openRecord(a) {
+    var d = Q.S.docs[a.doc], status = Q.trStatus(a), corr = Q.trCorrections(a);
+    var hist = Q.history(a.id);
+    var canCorrect = Q.can('training.manage') && !Q.readOnly() && a.completed && !corr.length;
+    Q.drawer.open({
+      wide: true, kicker: 'Training record · ' + a.id, title: a.doc + ' v' + a.ver + ' · ' + Q.fullName(a.user),
+      onClose: function () { if (Q.current.query.rec) Q.setQuery({ rec: '' }); },
+      body: h`<div class="row-wrap mb-16">${Q.chip(status)}${a.completed ? h`<span class="chip chip-outline">${Q.icon('lock', 'ico-sm')} Locked</span>` : ''}${a.envelope ? Q.chip('From DocuSign approval', 'chip-outline') : ''}</div>
+        <dl class="dl mb-16"><div><dt>Person</dt><dd>${Q.fullName(a.user)}${a.leaver ? ' (left)' : ''}</dd></div><div><dt>Document</dt><dd>${Q.recLink(a.doc, { short: true })} · v${a.ver}</dd></div>
+          <div style="grid-column:1/-1"><dt>Title</dt><dd>${a.title}</dd></div>
+          <div><dt>Allocated by</dt><dd>${by(a)}</dd></div><div><dt>Reason</dt><dd>${a.allocReason}</dd></div>
+          <div><dt>Assigned (UTC)</dt><dd>${Q.fmtUtc(a.assigned)}</dd></div><div><dt>Due (UTC)</dt><dd>${a.due ? Q.fmtUtc(a.due) : '—'}</dd></div>
+          <div><dt>Completed (UTC)</dt><dd>${a.completed ? Q.fmtUtc(a.completed) : '—'}</dd></div><div><dt>Knowledge check</dt><dd>${a.quiz || '—'}</dd></div>
+          ${a.statement ? h`<div style="grid-column:1/-1"><dt>Statement</dt><dd>${a.statement}</dd></div>` : ''}
+          ${a.via ? h`<div><dt>Identity</dt><dd>${a.via}</dd></div>` : ''}
+          ${a.envelope ? h`<div style="grid-column:1/-1"><dt>DocuSign envelope</dt><dd><button type="button" class="btn-link mono" style="padding:0;min-height:0" data-act="ds-env" data-id="${a.envelope}">${a.envelope}</button></dd></div>` : ''}
+          ${a.correctionOf ? h`<div style="grid-column:1/-1"><dt>Correction of</dt><dd><a href="#/training?tab=records&all=1&rec=${a.correctionOf}">${a.correctionOf}</a> · ${a.correctionReason}${a.noRetrain ? ' (recorded in error, no retraining)' : ''}</dd></div>` : ''}
+          ${corr.length ? h`<div style="grid-column:1/-1"><dt>Corrected by</dt><dd>${corr.map(function (c) { return h`<a href="#/training?tab=records&all=1&rec=${c.id}">${c.id}</a> · ${c.correctionReason} `; })}</dd></div>` : ''}
+          ${a.closed ? h`<div style="grid-column:1/-1"><dt>Closed</dt><dd>${Q.fmtUtc(a.closed.at)} · ${a.closed.reason}</dd></div>` : ''}</dl>
+        <div class="label mb-8">Audit trail for this record (old → new values)</div>
+        ${hist.length ? h`<div class="table-wrap"><table class="t"><thead><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Old values</th><th>New values</th></tr></thead><tbody>${hist.map(function (e) { return h`<tr><td class="nowrap small">${Q.fmtUtc(e.at)}</td><td class="small">${e.actor === 'system' ? 'System' : Q.fullName(e.actor)}</td><td class="small">${e.summary}</td><td class="small">${fmtVals(e.before)}</td><td class="small">${fmtVals(e.after)}</td></tr>`; })}</tbody></table></div>` : h`<p class="small muted">${a.id.indexOf('TA-') === 0 && /^TA-\d+$/.test(a.id) ? 'Sample record created with the demo data; changes from now on are logged here.' : 'No entries yet.'}</p>`}
+        <p class="small muted mt-16">Dates and times are set by the system. Completed records can’t be edited or deleted by anyone, administrators included.</p>`,
+      foot: h`${canCorrect ? h`<button class="btn" type="button" data-act="tr-correct" data-id="${a.id}">Record a correction</button>` : ''}${Q.trOpen(a) && a.user === Q.S.session.userId && !Q.readOnly() ? h`<button class="btn btn-primary" type="button" data-act="train-start" data-id="${a.id}">Start training</button>` : ''}<button class="btn" type="button" data-act="drawer-close">Close</button>`
+    });
+    void d;
+  }
+  Q.openTrainingRecord = openRecord;
+  Q.act['tr-correct'] = function (el) {
+    var a = Q.S.assignments.find(function (x) { return x.id === el.getAttribute('data-id'); });
+    Q.drawer.open({ kicker: 'Training record · ' + a.id, title: 'Record a correction', submitLabel: 'Record correction',
+      body: h`<div class="callout plain mb-16"><b style="color:var(--ink)">The original record stays exactly as it is.</b><p class="small" style="margin:4px 0 0">A correction is a new record that points at ${a.id} (${Q.fullName(a.user)}, ${a.doc} v${a.ver}, completed ${Q.fmtUtc(a.completed)}). Both are kept and both appear in the audit trail.</p></div>
+        <fieldset class="mb-16"><legend>What should happen</legend><div class="radio-cards">
+          <label class="radio-card"><input type="radio" name="mode" value="retrain" checked><span><b>Retrain</b><br><span class="small muted">Allocate ${a.doc} v${a.ver} again. The person confirms it as a new record.</span></span></label>
+          <label class="radio-card"><input type="radio" name="mode" value="void"><span><b>Recorded in error</b><br><span class="small muted">No retraining. The correction record explains why the original doesn’t count.</span></span></label></div></fieldset>
+        <div class="field"><label for="trcr">Reason (required)</label><textarea class="textarea" id="trcr" name="reason" placeholder="e.g. Confirmed during a demo, not a real read"></textarea></div>`,
+      submit: function (f, form) { if (!f.reason || f.reason.length < 10) return Q.fieldError(form, 'reason', 'Give a reason of at least a few words.'); var c = Q.correctTraining(a, f.reason, f.mode === 'retrain'); Q.drawer.close(); Q.toast(c ? 'Correction ' + c.id + ' recorded · original kept' : 'Not allowed', c ? '' : 'warn'); Q.refresh(); } });
   };
 
-  function rulesTab() {
-    return h`${Q.tip('rules', h`<b>Training rules</b> say who must train on which documents, and by when. Rules are versioned and only go live after a Quality Manager approves them, because they change how controlled processes run.`)}
-      ${Q.table({ id: 'rules', rows: Q.S.trainingRules, defaultSort: 'id', href: function (r) { return '#/training?tab=rules&rule=' + r.id; },
-        cols: [{ key: 'id', label: 'ID', cls: 'id' }, { key: 'name', label: 'Name' }, { key: 'groups', label: 'Applies to', sort: false, render: function (r) { return r.groups.concat((r.users || []).map(Q.fullName)).join(', '); } },
-          { key: 'docs', label: 'Documents', sort: false, render: function (r) { return h`<span class="small">${r.docs.join(', ')}</span>`; } }, { key: 'days', label: 'Time allowed', render: function (r) { return r.days + ' days'; } },
-          { key: 'retrainMonths', label: 'Retraining', render: function (r) { return r.retrainMonths ? 'Every ' + r.retrainMonths + ' months' : '—'; } }, { key: 'gate', label: 'Holds document', render: function (r) { return r.gate ? 'Yes' : 'No'; } },
-          { key: 'version', label: 'Version', render: function (r) { return 'v' + r.version; } }, { key: 'status', label: 'Status', render: function (r) { return Q.stateChip(r.status); } }] })}`;
+  // ---------- Audiences ----------
+  function audiencesTab() {
+    var docs = Object.keys(Q.S.docs).map(function (k) { return Q.S.docs[k]; }).filter(function (d) { return d.state !== 'Obsolete'; }).sort(Q.by('id'));
+    var can = Q.can('training.manage') && !Q.readOnly();
+    return h`${Q.tip('audiences', h`<b>Audiences.</b> Each document lists who must train on it: groups (including All staff), roles and named people. When a new version becomes effective, the whole audience is allocated it. New starters and people who change group or role get the current version automatically.`)}
+      ${Q.table({ id: 'aud', rows: docs.map(function (d) { var eff = Q.effVer(d); var live = eff ? Q.S.assignments.filter(function (a) { return a.doc === d.id && a.ver === eff.v && ['Complete', 'Assigned', 'Overdue'].indexOf(Q.trStatus(a)) >= 0 && !a.leaver; }) : []; return Object.assign({ aud: Q.audienceText(Q.audienceOf(d)), n: Q.audienceMembers(d).length, effV: eff ? eff.v : '', pct: Q.pct(live.filter(function (a) { return a.completed; }).length, live.length), has: Q.hasAudience(d) }, d); }), defaultSort: 'id', href: function (d) { return '#/documents/' + d.id + '?tab=training'; },
+        cols: [{ key: 'id', label: 'Document', cls: 'id' }, { key: 'title', label: 'Title' }, { key: 'aud', label: 'Who must train', render: function (d) { return h`<span class="small ${d.has ? '' : 'muted'}">${d.aud}</span>`; } }, { key: 'n', label: 'People' },
+          { key: 'effV', label: 'Effective', render: function (d) { return d.effV ? 'v' + d.effV : '—'; } }, { key: 'pct', label: 'Complete', render: function (d) { return d.has && d.effV ? d.pct + '%' : '—'; } },
+          { key: 'edit', label: '', sort: false, render: function (d) { return can ? h`<button class="btn btn-sm" data-act="doc-audience" data-id="${d.id}">Change</button>` : ''; } }] })}`;
   }
-  function openRule(r) {
-    var canApprove = r.status === 'Pending approval' && Q.hasRole('qm') && !Q.readOnly();
-    var mem = Q.ruleMembers(r);
-    Q.drawer.open({
-      kicker: 'Training rule · ' + r.id + ' v' + r.version, title: r.name, foot: canApprove ? h`<button class="btn btn-primary" type="submit">Approve and activate</button><button class="btn" type="button" data-act="drawer-close">Close</button>` : h`<button class="btn" type="button" data-act="drawer-close">Close</button>`,
-      onClose: function () { if (Q.current.query.rule) Q.setQuery({ rule: '' }); },
-      body: h`<div class="row-wrap mb-16">${Q.stateChip(r.status)}<span class="small muted">${r.approvedBy ? 'Approved by ' + Q.fullName(r.approvedBy) + ' on ' + Q.fmtDate(r.approvedAt) : 'Created by ' + Q.fullName(r.createdBy) + (r.createdAt ? ' on ' + Q.fmtDate(r.createdAt) : '')}</span></div>
-        <p>${r.desc}</p>
-        <dl class="dl mb-16"><div><dt>Applies to</dt><dd>${r.groups.concat((r.users || []).map(Q.fullName)).join(', ')} (${mem.length} people)</dd></div><div><dt>Time allowed</dt><dd>${r.days} days</dd></div>
-          <div><dt>Retraining</dt><dd>${r.retrainMonths ? 'Every ' + r.retrainMonths + ' months' : 'None'}</dd></div><div><dt>Knowledge check</dt><dd>${r.quiz ? 'Yes' : 'No'}</dd></div>
-          <div style="grid-column:1/-1"><dt>Holds documents in Pending training</dt><dd>${r.gate ? 'Yes: a document stays in Pending training until everyone has completed' : 'No: training is assigned when the document becomes effective'}</dd></div></dl>
-        <div class="label mb-8">Required documents</div><div class="stack-sm">${r.docs.map(function (d) { return h`<div>${Q.recLink(d)}</div>`; })}</div>
-        ${canApprove ? h`<div class="callout mt-24"><strong>Approving activates the rule</strong><p class="small" style="margin:4px 0 0">Training is assigned to ${mem.length} people for each effective document listed. Your approval is signed.</p></div>` : ''}`,
-      submit: function () {
-        Q.drawer.close();
-        Q.sign({ items: [{ id: r.id, version: String(r.version), hash: Q.sha256(Q.canon(r)) }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve training rule ' + r.id,
-          onSigned: function () { var n = Q.wf.rule.approve(r); Q.toast(r.id + ' is active · ' + Q.plural(n, 'assignment') + ' created'); } });
-      }
-    });
-  }
-  Q.act['new-rule'] = function () {
-    var docs = Object.keys(Q.S.docs).filter(function (id) { return ['Obsolete'].indexOf(Q.S.docs[id].state) < 0; });
-    Q.drawer.open({
-      kicker: 'Training', title: 'New training rule', submitLabel: 'Submit for approval',
-      body: h`<div class="form-grid"><div class="field full"><label for="rn">Name</label><input class="input" id="rn" name="name" placeholder="e.g. New starters"></div>
-        <div class="field full"><label for="rdsc">Description</label><textarea class="textarea" id="rdsc" name="desc" style="min-height:64px"></textarea></div>
-        <fieldset class="full"><legend>Applies to groups</legend><div class="grid-2" style="gap:0 16px">${Q.S.groups.map(function (g) { return h`<label class="check"><input type="checkbox" data-multi name="groups" value="${g.name}"> ${g.name}</label>`; })}</div></fieldset>
-        <fieldset class="full"><legend>Required documents</legend><div class="grid-2" style="gap:0 16px">${docs.map(function (id) { return h`<label class="check"><input type="checkbox" data-multi name="docs" value="${id}"> ${id} ${Q.S.docs[id].title}</label>`; })}</div></fieldset>
-        <div class="field"><label for="rdays">Time allowed (days)</label><input class="input" id="rdays" name="days" type="number" min="1" value="14"></div>
-        <div class="field"><label for="rret">Retrain every (months, optional)</label><input class="input" id="rret" name="retrain" type="number" min="1" placeholder="e.g. 12"></div>
-        <label class="check full"><input type="checkbox" name="gate"> Hold new versions in Pending training until everyone completes</label>
-        <label class="check full"><input type="checkbox" name="quiz" checked> Include a knowledge check</label></div>
-        <p class="small muted mt-16">The rule is saved as v1 and stays inactive until a Quality Manager approves it.</p>`,
-      submit: function (f, form) {
-        if (!f.name) return Q.fieldError(form, 'name', 'Give the rule a name.');
-        if (!f.groups.length) return Q.toast('Pick at least one group.', 'warn');
-        if (!f.docs.length) return Q.toast('Pick at least one document.', 'warn');
-        var r = Q.wf.rule.create(f); Q.drawer.close(); Q.toast(r.id + ' submitted for approval'); Q.go('#/training?tab=rules');
-      }
-    });
-  };
 })(window.Q);

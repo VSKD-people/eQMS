@@ -8,16 +8,22 @@ No database and no backend: sample data lives in the browser.
 ```
 veqms-prototype/
 ├── README.md            this file
+├── VeQMS_V1.md          how to set it up again in another account (start here)
 ├── CLAUDE.md            hand-over notes Claude reads automatically: architecture, rules, how to test
 ├── veqms/               the app (open index.html through a local server, see below)
 │   ├── index.html
 │   ├── README.md        10-minute walkthrough and the demo users
 │   ├── css/app.css
-│   └── js/              core, seed data, store, workflow engine, UI, signing, views/
+│   ├── img/             Katalyze Data logos
+│   ├── js/              core, seed data, store, workflow engine, UI, signing, views/
+│   ├── vercel.json      Vercel settings
+│   └── staticwebapp.config.json   Azure Static Web Apps settings (Entra ID sign-in)
 ├── specs/               the six spec documents (build prompt, Steps 1–3, open questions, index)
 │   └── text/            plain-text copies of the PDFs and spreadsheets
+├── setup/               settings and scripts for Vercel, Azure and Entra ID, and GitHub secrets
 ├── tools/
-│   └── smoke-test.js    paste into the browser console to check every page renders
+│   ├── smoke-test.js    paste into the browser console to check every page renders
+│   └── e2e-test.js      end-to-end test of DocuSign approvals and training records (Node + Playwright)
 ├── .claude/
 │   └── launch.json      lets the Claude desktop app preview the app in its browser pane
 ├── .github/workflows/   deploys veqms/ to Azure Static Web Apps

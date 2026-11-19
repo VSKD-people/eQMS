@@ -51,10 +51,11 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 | `js/core.js` | `Q.h` safe HTML templating, date helpers, `Q.sha256`, `Q.canon`, CSV, icons |
 | `js/seed.js` | `Q.seed()`: all sample data. Dates are relative to today |
 | `js/store.js` | Load/save, users and roles, `Q.can` permissions, classification (`Q.canSee`, `Q.canDownload`), hash-chained `Q.audit`, notifications, tasks |
-| `js/engine.js` | Workflow engine `Q.wf.*` (doc, cr, obs, qe, capa, review, rule, user), automation rules `Q.fire`, signatures, segregation of duties `Q.sodBlock` |
+| `js/engine.js` | Workflow engine `Q.wf.*` (doc, cr, obs, qe, capa, review, user), automation rules `Q.fire`, signatures, segregation of duties `Q.sodBlock`, training: audiences, allocation, `Q.completeTraining`, `Q.correctTraining`, `Q.trStatus` |
+| `js/docusign.js` | Approvals through DocuSign `Q.ds.*`: `plan` (signers, order, problems), `cantSend`, `send` (verification check, one envelope = one send), `sign`, `decline`, `void`, completion (signed PDF, certificate, envelope ID), allowance `used`/`remaining` |
 | `js/ui.js` | Router, shell, drawers, menus, Ctrl/Cmd+K palette, shared components, tour |
 | `js/sign.js` | E-signature drawer `Q.sign` (Confirm → sign in again → Recorded) |
-| `js/views/*.js` | One file per module: today, documents, training, changes, reviews, quality, analytics, admin, misc |
+| `js/views/*.js` | One file per module: today, documents, training, changes, reviews, quality, analytics, admin, misc, approvals (send drawer, simulated DocuSign signing, envelope details, register) |
 | `js/app.js` | Route table and boot. Loads last |
 
 ## Rules to keep
@@ -65,12 +66,17 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
   `data-input` call `Q.on[name]`. Drawer forms submit through `data-submit`.
 - **State changes go through the engine.** Views call `Q.wf.*`; they never edit records directly. The engine
   writes the audit entry (`Q.audit`, hash-chained) and fires automation (`Q.fire`).
-- **Signatures are insert-only.** Create them with `Q.makeSignature` via the `Q.sign` drawer. Check `Q.sodBlock`
-  before letting anyone sign.
+- **Two signing routes.** Approvals of controlled documents (incl. vendor approvals and validation plans and
+  reports), CAPA closures and deviation closures go through DocuSign: call `Q.ds.openSend` / `Q.ds.send`, never
+  change those records' state by hand; the envelope completing does it. Other signatures stay in the app: create
+  them with `Q.makeSignature` via the `Q.sign` drawer, and check `Q.sodBlock` first. Signatures are insert-only.
+- **Training records are locked once completed.** Only the trainee confirms (`Q.completeTraining`); dates come from
+  the system; corrections are new records (`Q.correctTraining`). Change audiences with `Q.setAudience` so the change
+  is logged with old and new values.
 - **Permissions.** Gate actions with `Q.can(perm)` (roles map in `store.js`), and records with `Q.canSee` and
   `Q.canDownload`. The System Administrator can't approve; the auditor is read-only.
 - **Sample data version.** After changing the shape of the data in `seed.js`, bump `version` in `seed.js` and
-  the matching check in `Q.load` in `store.js` (both are `9`). Old browsers then reseed instead of breaking.
+  the matching check in `Q.load` in `store.js` (both are `10`). Old browsers then reseed instead of breaking.
 - **New script files** need a `<script>` tag in `index.html`, before `js/app.js`.
 - **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The Katalyze Data brand
   is applied: pink `#E2186F` fills (`--accent-fill`), purple `#940080` text accents (`--accent`), navy `#002B49` ink,
@@ -82,9 +88,11 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 1. Syntax: open the page and check the browser console for errors.
 2. Smoke test: paste `tools/smoke-test.js` into the browser console (or run it with a browser tool).
    It renders every page, tab and record as every active persona, then checks the audit chain.
-   The last run on this build: 13 personas, 3,315 renders, 0 errors, chain valid.
-3. Walk the scenarios in `veqms/README.md` ("Try these in order"). Each one was tested end to end.
-4. Reset the demo data afterwards (account menu → Reset demo data).
+   The last run on this build: 13 personas, 3,822 renders, 0 errors, chain valid.
+3. End-to-end test (optional, needs Node and Playwright): `node tools/e2e-test.js` with the app served on port 4173.
+   It drives the DocuSign route and the training records through the UI as each persona: 56 checks.
+4. Walk the scenarios in `veqms/README.md` ("Try these in order"). Each one was tested end to end.
+5. Reset the demo data afterwards (account menu → Reset demo data).
 
 Untested so far: opening `index.html` straight from disk, Safari, Firefox, and screen readers.
 
@@ -96,8 +104,18 @@ Lucy Parkin (System Administrator), Fraser Scott (auditor). Full table in `veqms
 
 ## What's simulated
 
-Microsoft sign-in and step-up re-authentication (any 6 digits work), Teams, SharePoint, DocuSign, email,
-malware scanning, Office-to-PDF conversion and server-side PDFs. Integrations are switches and logs only.
+Microsoft sign-in and step-up re-authentication (any 6 digits work), DocuSign (envelopes, the signing page,
+Connect status, signed PDFs and certificates), Teams, SharePoint, email, malware scanning, Office-to-PDF conversion
+and server-side PDFs. Other integrations are switches and logs only.
+
+## Signatures and training (added after the first build)
+
+The app replaces KSTARRS. Approvals use DocuSign with the Part 11 module; read-and-understood training stays in
+the app (not Part 11). This answers open questions 5 and 29 in the spec; both were still open.
+- One envelope per version holds every signer, in order: author, reviewers, QA approver. One cycle = one send.
+- Sends are counted against `settings.docusign.allowance` (500) per allowance year (`yearStartMonth`).
+- Each document has an `audience` (groups, roles, users, days, quiz). Training rules no longer exist.
+- Approvals before `settings.docusign.goLive` are marked as migrated from KSTARRS.
 
 ## Sensible next steps
 
