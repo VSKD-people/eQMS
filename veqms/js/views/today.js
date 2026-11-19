@@ -32,10 +32,8 @@
     opts = opts || {};
     var m = Q.taskMeta(t);
     var r = Q.rec(t.record);
-    var signable = t.kind === 'approve-doc' && !opts.created;
     var chip = t.fyi ? Q.dueChip(t.due, { expected: true }) : Q.dueChip(t.due);
     return h`<div class="task-card ${selected ? 'selected' : ''}" data-act="pick-task" data-id="${t.id}" role="button" tabindex="0" aria-pressed="${!!selected}" aria-label="${m.label}: ${Q.taskTitle(t)}">
-      ${signable ? h`<input type="checkbox" class="tc-check" data-change="batch" data-id="${t.id}" aria-label="Select for Sign all" ${(Q.ui.batch || []).indexOf(t.id) >= 0 ? 'checked' : ''}>` : ''}
       <div class="tc-body">
         <div class="tc-kicker"><span>${m.label}</span>${chip}${r && r.classification && r.classification !== 'Internal' ? Q.cls(r.classification) : (selected && r && r.classification ? Q.cls(r.classification) : '')}${opts.created ? h`<span>· waiting on ${Q.fullName(t.assignee)}</span>` : ''}</div>
         <div class="tc-title">${Q.taskTitle(t)}</div>
@@ -55,7 +53,6 @@
     if (sel) Q.ui.selTask = sel.id;
     var created = q.who === 'created';
     var views = Q.S.savedViews[me.id] || [];
-    var batch = (Q.ui.batch || []).filter(function (id) { return list.some(function (t) { return t.id === id; }); });
 
     function section(label, arr, cls) {
       if (!arr.length) return '';
@@ -83,8 +80,7 @@
           <button class="btn btn-sm desktop-only" data-act="views-menu" aria-haspopup="menu" style="min-height:40px">${q.view ? 'Saved view: ' + q.view : 'Saved views'} ${Q.icon('chevronDown', 'ico-sm')}</button>
         </div>
       </div>
-      ${Q.tip('today', h`<b>Today</b> shows everything assigned to you, grouped by urgency. Select a card to see the record and act on it. On a computer, tick approvals to sign several at once with one fresh sign-in.`)}
-      ${batch.length ? h`<div class="callout spread mb-16"><span><strong>${batch.length} approval${batch.length > 1 ? 's' : ''} selected.</strong> One fresh sign-in covers the batch; each record gets its own signature.</span><span class="btn-row"><button class="btn btn-primary" data-act="sign-all">Sign all (${batch.length})</button><button class="btn" data-act="batch-clear">Clear</button></span></div>` : ''}
+      ${Q.tip('today', h`<b>Today</b> shows everything assigned to you, grouped by urgency. Select a card to see the record and act on it. Approvals open in DocuSign; read-and-understood training is confirmed here.`)}
       <div class="split-today">
         <div>${body}<p class="small muted mt-16">Sample records, for layout only.</p></div>
         <div class="selected-wrap">${sel && !created ? Q.selectedPanel(sel) : sel ? Q.selectedPanel(sel, true) : ''}</div>
@@ -96,10 +92,11 @@
     var inner;
     if (k === 'doc') {
       var d = r, v = Q.curVer(d);
-      var states = ['Draft', 'In review', 'Review closed', 'In approval', 'Pending training', 'Effective'];
+      var states = Q.DOC_STATES;
       var si = states.indexOf(d.state);
-      var rule = Q.S.trainingRules.find(function (x) { return x.id === d.trainingRule; });
       var revDone = d.reviewers.filter(function (x) { return x.status === 'Reviewed'; }).length;
+      var env = Q.ds.active(d.id);
+      var plan = t.kind === 'send-approval' && d.state === 'Review closed' ? Q.ds.plan(d.id) : null;
       inner = h`
         <h2>${d.id} ${d.title} v${v.v}</h2>
         ${t.note ? h`<div class="small muted" style="margin-top:2px">${t.note}</div>` : ''}
@@ -109,8 +106,10 @@
         <div style="font-weight:600;margin-bottom:4px" class="small">Change summary</div>
         <p class="small">${v.summary}</p>
         <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(d.owner)}</dd></div><div><dt>Reviewers</dt><dd>${revDone} of ${d.reviewers.length} done</dd></div>
-          <div><dt>Training on effective</dt><dd>${rule ? 'Rule: ' + rule.name : 'None'}</dd></div><div><dt>Classification</dt><dd>${d.classification}</dd></div></dl>
-        ${t.kind === 'approve-doc' && Q.sodBlock(d, 'doc') ? h`<div class="callout warn mt-16"><strong>Segregation of duties</strong><p class="small" style="margin:4px 0 0">${Q.sodBlock(d, 'doc')} Ask a System Administrator to replace you as approver.</p></div>` : ''}`;
+          <div><dt>Training audience</dt><dd>${Q.audienceText(Q.audienceOf(d))}</dd></div><div><dt>Classification</dt><dd>${d.classification}</dd></div>
+          ${env ? h`<div style="grid-column:1/-1"><dt>DocuSign</dt><dd>${Q.ds.signedCount(env)} of ${env.signers.length} signed · ${Q.ds.myTurn(env) ? 'your turn' : 'waiting on ' + env.signers.filter(function (x) { return x.status === 'Sent'; }).map(function (x) { return Q.fullName(x.u); }).join(', ')}</dd></div>` : ''}</dl>
+        ${plan && plan.problems.length ? h`<div class="callout warn mt-16"><strong>Fix before sending</strong><p class="small" style="margin:4px 0 0">${plan.problems[0]}</p></div>` : ''}
+        ${t.kind === 'send-approval' ? h`<p class="small muted mt-16">Sending uses 1 of ${Q.ds.remaining()} DocuSign sends left this year.</p>` : ''}`;
     } else if (k === 'review') {
       var doc = Q.S.docs[r.doc];
       inner = h`<h2>Periodic review · ${doc.id}</h2><p class="small muted" style="margin-top:2px">${doc.title} v${(Q.effVer(doc) || Q.curVer(doc)).v}</p>
@@ -148,7 +147,8 @@
   });
   Q.taskGo = function (t) {
     switch (t.kind) {
-      case 'approve-doc': Q.signDoc(t.record); break;
+      case 'ds-sign': Q.ds.openSigning(Q.ds.byId(t.ref) || Q.ds.active(t.record)); break;
+      case 'send-approval': Q.ds.openSend(t.record); break;
       case 'training': Q.go('#/training?doc=' + t.record); break;
       case 'capa-action': case 'capa-plan': Q.go('#/quality/' + t.record + '?tab=actions'); break;
       case 'effectiveness': Q.go('#/quality/' + t.record + '?tab=effectiveness'); break;
@@ -160,23 +160,6 @@
   Q.act['task-go'] = function (el) {
     var t = Q.S.tasks.find(function (x) { return x.id === el.getAttribute('data-id'); });
     if (t) Q.taskGo(t);
-  };
-  Q.on.batch = function (el) {
-    var id = el.getAttribute('data-id');
-    Q.ui.batch = Q.ui.batch || [];
-    if (el.checked) { if (Q.ui.batch.indexOf(id) < 0) Q.ui.batch.push(id); } else Q.ui.batch = Q.ui.batch.filter(function (x) { return x !== id; });
-    Q.render({ keepScroll: true });
-  };
-  Q.act['batch-clear'] = function () { Q.ui.batch = []; Q.render({ keepScroll: true }); };
-  Q.act['sign-all'] = function () {
-    var tasks = (Q.ui.batch || []).map(function (id) { return Q.S.tasks.find(function (t) { return t.id === id && t.status === 'open'; }); }).filter(Boolean);
-    var blocked = [];
-    var items = tasks.map(function (t) { return Q.S.docs[t.record]; }).filter(function (d) { var b = Q.sodBlock(d, 'doc'); if (b) blocked.push(d.id); return !b; })
-      .map(function (d) { var v = Q.curVer(d); return { id: d.id, version: v.v, hash: v.hash, label: d.id + ' ' + d.title + ' v' + v.v }; });
-    if (blocked.length) Q.toast('Left out ' + blocked.join(', ') + ': segregation of duties', 'warn');
-    if (!items.length) return;
-    Q.sign({ items: items, meaning: 'Approved', meanings: ['Approved'], title: 'Sign ' + items.length + ' approvals',
-      onSigned: function (sigs) { sigs.forEach(function (s) { Q.wf.doc.approve(Q.S.docs[s.record], s); }); Q.ui.batch = []; Q.toast(sigs.length + ' approvals signed'); } });
   };
   Q.act['views-menu'] = function (el) {
     var views = Q.S.savedViews[Q.S.session.userId] || [];
@@ -201,18 +184,6 @@
     });
   };
 
-  // Shared: approve a document (SoD check, then e-signature)
-  Q.signDoc = function (id) {
-    var d = Q.S.docs[id];
-    var a = d.approvers.find(function (x) { return x.u === Q.S.session.userId; });
-    if (!a || a.status !== 'Your turn') { Q.toast(a ? 'It isn’t your turn to approve yet.' : 'You aren’t an approver on this document.', 'warn'); return; }
-    var block = Q.sodBlock(d, 'doc');
-    if (block) { Q.toast(block, 'warn'); Q.audit('sod.block', 'Document', id, 'Signature blocked by segregation of duties for ' + Q.fullName(Q.S.session.userId)); Q.save(); return; }
-    var v = Q.curVer(d);
-    Q.sign({ items: [{ id: d.id, version: v.v, hash: v.hash }], meaning: 'Approved', meanings: ['Approved'],
-      onSigned: function (sigs) { Q.wf.doc.approve(d, sigs[0]); Q.toast('Signed ' + d.id + ' v' + v.v); } });
-  };
-
   // ---------- Mobile: task list and task detail ----------
   Q.views.tasks = function (p, q) {
     var list = myTasks(q);
@@ -224,15 +195,15 @@
     var t = Q.S.tasks.find(function (x) { return x.id === p.id; });
     if (!t) return Q.views.notFound();
     var m = Q.taskMeta(t), r = Q.rec(t.record), k = Q.kindOf(t.record);
-    var signable = t.kind === 'approve-doc' && t.status === 'open';
+    var signable = t.kind === 'ds-sign' && t.status === 'open';
     var v = k === 'doc' ? Q.curVer(r) : null;
     return h`<a class="btn-link" href="#/today" style="padding:0">${Q.icon('back', 'ico-sm')} Today</a>
       <div class="mt-8"><div class="small muted">${m.label}${t.fyi ? '' : ' · '}${t.fyi ? '' : Q.dueChip(t.due)}</div><h1 style="margin-top:6px">${Q.taskTitle(t)}</h1>${t.note ? h`<p class="muted small">${t.note}</p>` : ''}</div>
       ${k === 'doc' ? h`<a class="card card-pad spread mt-16" href="#/documents/${r.id}" style="text-decoration:none;color:inherit"><span><b>Read the document</b><br><span class="small muted">${r.id} v${v.v} · ${v.content.length > 8 ? '2' : '1'} pages</span></span>${Q.icon('chevron')}</a>
         <div class="card card-pad mt-16"><div class="label mb-8">Change summary</div><p class="small" style="margin:0">${v.summary}</p></div>` : h`<div class="mt-16">${Q.selectedPanel(t)}</div>`}
-      ${signable ? h`<div class="card card-pad mt-16"><div class="label mb-8">Meaning of your signature</div><p class="small" style="margin:0">${Q.statementFor('Approved')}</p></div>
-        <div class="callout mt-16"><strong>You’ll sign in again</strong><p class="small" style="margin:4px 0 0">Face or fingerprint unlock opens the app but never counts as a signature.</p></div>
-        <div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">Continue to sign-in</button><button class="btn" data-act="doc-sendback" data-id="${r.id}">Send back with a reason</button></div>` :
+      ${signable ? h`<div class="card card-pad mt-16"><div class="label mb-8">Signing in DocuSign</div><p class="small" style="margin:0">${t.note || ''}. DocuSign asks you to sign in again and records the meaning with your signature.</p></div>
+        <div class="callout mt-16"><strong>Face or fingerprint unlock doesn’t count as a signature</strong><p class="small" style="margin:4px 0 0">You decline in DocuSign if something needs to change; the record returns with your reason.</p></div>
+        <div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">Open in DocuSign</button></div>` :
         t.status === 'open' && !t.fyi ? h`<div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">${m.action}</button></div>` : ''}`;
   };
 })(window.Q);

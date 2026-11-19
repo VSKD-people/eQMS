@@ -22,7 +22,8 @@ veqms-prototype/
 │   └── text/            plain-text copies of the PDFs and spreadsheets
 ├── setup/               settings and scripts for Vercel, Azure and Entra ID, and GitHub secrets
 ├── tools/
-│   └── smoke-test.js    paste into the browser console to check every page renders
+│   ├── smoke-test.js    paste into the browser console to check every page renders
+│   └── e2e-test.js      end-to-end test of DocuSign approvals and training records (Node + Playwright)
 ├── .claude/
 │   └── launch.json      lets the Claude desktop app preview the app in its browser pane
 ├── .github/workflows/   deploys veqms/ to Azure Static Web Apps

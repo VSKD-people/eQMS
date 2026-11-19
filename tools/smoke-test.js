@@ -5,7 +5,7 @@
   checks the audit hash chain, then puts you back on the page and persona you started with.
   It doesn't change any records. Opening a Restricted document adds one "read" audit entry,
   which the app logs on purpose.
-  Last run on this build: 13 personas, 3,315 renders, 0 errors, audit chain valid.
+  Last run on this build: 13 personas, 3,822 renders, 0 errors, audit chain valid.
 */
 (function () {
   var Q = window.Q;
@@ -24,7 +24,9 @@
   function withTabs(base, tabs) { return tabs.map(function (t) { return base + '?tab=' + t; }); }
   var pages = [].concat(
     ['/today', '/today?f=overdue', '/today?f=upcoming', '/tasks', '/documents'],
-    withTabs('/training', ['my', 'org', 'rules']),
+    withTabs('/training', ['my', 'matrix', 'records', 'audiences']),
+    ['/training?tab=records&u=u-vic', '/training?tab=records&d=SOP-012&all=1', '/training?tab=matrix&g=IT%20team'],
+    ['/approvals', '/approvals?tab=register', '/approvals?year=all&st=voided'],
     ['/changes', '/changes?view=board'],
     withTabs('/reviews', ['mine', 'org']),
     withTabs('/quality', ['observations', 'events', 'capa']),
@@ -38,7 +40,7 @@
     ['/admin/audit', '/admin/integrations', '/admin/templates', '/admin/workflows', '/admin/settings']
   );
   var TABS = {
-    doc: ['document', 'compare', 'comments', 'history', 'training'],
+    doc: ['document', 'compare', 'comments', 'history', 'approval', 'training'],
     cr: ['overview', 'items', 'actions', 'attachments', 'related', 'effectiveness'],
     capa: ['overview', 'actions', 'rootcause', 'risk', 'evidence', 'effectiveness']
   };

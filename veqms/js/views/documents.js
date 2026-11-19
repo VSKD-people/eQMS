@@ -2,13 +2,15 @@
 (function (Q) {
   'use strict';
   var h = Q.h;
-  var DOC_STATES = ['Draft', 'In review', 'Review closed', 'In approval', 'Pending training', 'Effective'];
+  var DOC_STATES = ['Draft', 'In review', 'Review closed', 'In approval', 'Effective'];
+  Q.DOC_STATES = DOC_STATES;
   Q.DOC_TYPES = [
     { type: 'Policy', prefix: 'POL' }, { type: 'Procedure', prefix: 'SOP' }, { type: 'Work instruction', prefix: 'WI' }, { type: 'Form', prefix: 'FRM' },
-    { type: 'Register', prefix: 'REG' }, { type: 'Plan', prefix: 'PLN' }, { type: 'Specification', prefix: 'SPEC' }, { type: 'Statement of Applicability', prefix: 'SOA' }
+    { type: 'Register', prefix: 'REG' }, { type: 'Plan', prefix: 'PLN' }, { type: 'Specification', prefix: 'SPEC' }, { type: 'Statement of Applicability', prefix: 'SOA' },
+    { type: 'Vendor approval', prefix: 'VEN' }, { type: 'Validation plan', prefix: 'VP' }, { type: 'Validation report', prefix: 'VR' }
   ];
   Q.PROCESSES = ['ISMS · Governance', 'ISMS · Access control', 'ISMS · Continuity', 'ISMS · Risk', 'ISMS · People', 'ISMS · Supplier management', 'ISMS · Vulnerability mgmt', 'ISMS · Incident management', 'ISMS · Asset management', 'ISMS · Physical security', 'ISMS · Information handling', 'ISMS · Endpoint', 'ISMS · Awareness', 'ISMS · Cryptography'];
-  var WATERMARK = { 'Draft': 'DRAFT', 'In review': 'FOR REVIEW', 'Review closed': 'FOR APPROVAL', 'In approval': 'FOR APPROVAL', 'Pending training': 'FOR TRAINING', 'Superseded': 'SUPERSEDED', 'Obsolete': 'OBSOLETE' };
+  var WATERMARK = { 'Draft': 'DRAFT', 'In review': 'FOR REVIEW', 'Review closed': 'FOR APPROVAL', 'In approval': 'FOR APPROVAL', 'Superseded': 'SUPERSEDED', 'Obsolete': 'OBSOLETE' };
 
   // ---------- Register ----------
   Q.views.documents = function (p, q) {
@@ -23,11 +25,11 @@
       if (q.owner === 'me' && d.owner !== Q.S.session.userId) return false;
       return true;
     }).map(function (d) { return Object.assign({}, d, { ver: Q.curVer(d).v, ownerName: Q.fullName(d.owner) }); });
-    var states = ['Draft', 'In review', 'In approval', 'Pending training', 'Effective', 'Superseded', 'Obsolete'];
+    var states = ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'];
     return h`
       <div class="page-head"><div><h1>Documents</h1><div class="sub">Controlled documents register · ${Q.plural(rows.length, 'document')}${hidden ? ' · ' + hidden + ' hidden by classification' : ''}</div></div>
         <div class="btn-row"><button class="btn" data-act="docs-export">${Q.icon('download', 'ico-sm')} Export CSV</button>${Q.can('doc.create') ? h`<button class="btn btn-primary" data-act="new-doc">${Q.icon('plus', 'ico-sm')} New document</button>` : ''}</div></div>
-      ${Q.tip('documents', h`<b>Document Control.</b> Every document moves Draft → In review → In approval → (Pending training) → Effective. Open one to read it, compare versions, comment, or sign.`)}
+      ${Q.tip('documents', h`<b>Document Control.</b> Every document moves Draft → In review → Review closed → In approval (one DocuSign envelope) → Effective. Open one to read it, compare versions, comment, or check its approval.`)}
       <div class="toolbar" role="search">
         <input class="input search" type="search" placeholder="Search ID, title or tag" value="${q.q || ''}" data-input="docs-search" aria-label="Search documents">
         <select class="select" data-change="qfilter" data-key="type" aria-label="Type"><option value="">All types</option>${Q.DOC_TYPES.map(function (t) { return h`<option ${q.type === t.type ? 'selected' : ''}>${t.type}</option>`; })}</select>
@@ -76,11 +78,10 @@
     var tab = q.tab || 'document';
     var openComments = d.comments.filter(function (c) { return !c.resolved; }).length;
     var reviewer = d.reviewers.find(function (r) { return r.u === me; });
-    var approver = d.approvers.find(function (a) { return a.u === me; });
-    var signedN = d.approvers.filter(function (a) { return a.status === 'Signed'; }).length;
-    var labels = { 'In approval': 'In approval · ' + signedN + ' of ' + d.approvers.length + ' signed', 'Pending training': 'Pending training' };
-    var rule = Q.S.trainingRules.find(function (r) { return r.id === d.trainingRule; });
-    var gateSkipped = d.state === 'Effective' && rule && !rule.gate;
+    var env = Q.ds.active(d.id);
+    var labels = { 'Review closed': 'Review closed · verify and send', 'In approval': env ? 'DocuSign · ' + Q.ds.signedCount(env) + ' of ' + env.signers.length + ' signed' : 'In approval' };
+    var sendBlock = d.state === 'Review closed' ? Q.ds.cantSend(d.id) : 'n/a';
+    var sendPlan = d.state === 'Review closed' && !sendBlock ? Q.ds.plan(d.id) : null;
 
     // Actions in the header (one primary)
     var acts = [];
@@ -92,18 +93,21 @@
         acts.push(h`<button class="btn btn-primary" data-act="doc-submit" data-id="${d.id}">Submit for review</button>`);
       }
       if (d.state === 'In review' && reviewer && reviewer.status === 'Pending') acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="doc-review" data-id="${d.id}">Mark reviewed</button>`);
-      if (d.state === 'In approval' && approver && approver.status === 'Your turn') acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="doc-sign" data-id="${d.id}">Review and sign</button>`);
+      if (d.state === 'Review closed' && !sendBlock) acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="ds-send" data-id="${d.id}">${Q.icon('sign', 'ico-sm')} Verify and send to DocuSign</button>`);
+      if (d.state === 'In approval' && env && Q.ds.myTurn(env)) acts.push(h`<button class="btn btn-primary" data-act="ds-open-sign" data-id="${env.id}">${Q.icon('sign', 'ico-sm')} Sign in DocuSign</button>`);
+      if (d.state === 'In approval' && env && Q.ds.canVoid(env)) acts.push(h`<button class="btn" data-act="ds-void" data-id="${env.id}">Void envelope</button>`);
       if ((d.state === 'Effective') && (d.owner === me || d.author === me || Q.hasRole('qm'))) acts.push(h`<button class="btn" data-act="doc-newver" data-id="${d.id}">New version</button>`);
       if (d.state === 'Effective' && Q.hasRole('qm')) acts.push(h`<button class="btn btn-danger" data-act="doc-obsolete" data-id="${d.id}">Make obsolete</button>`);
     }
     acts.push(h`<button class="btn" data-act="doc-download" data-id="${d.id}" data-v="${verSel.v}">${Q.icon('download', 'ico-sm')} PDF</button>`);
 
-    var tabs = [['document', 'Document'], ['compare', 'Compare versions'], ['comments', 'Comments · ' + d.comments.length], ['history', 'Version history'], ['training', 'Training']];
+    var tabs = [['document', 'Document'], ['compare', 'Compare versions'], ['comments', 'Comments · ' + d.comments.length], ['history', 'Version history'], ['approval', 'Approval · DocuSign'], ['training', 'Training']];
     var content;
     if (tab === 'compare') content = compareTab(d, q);
     else if (tab === 'comments') content = commentsTab(d, q);
     else if (tab === 'history') content = historyTab(d);
-    else if (tab === 'training') content = trainingTab(d);
+    else if (tab === 'training') content = trainingTab(d, q);
+    else if (tab === 'approval') content = approvalTab(d);
     else content = viewer(d, verSel, q);
 
     var effMonths = d.periodic ? 'Every ' + d.periodic.months + ' months' : 'Not scheduled';
@@ -118,8 +122,9 @@
         </div>
         <div class="btn-row">${acts}</div>
       </div>
-      ${approver && approver.status === 'Your turn' && Q.sodBlock(d, 'doc') ? h`<div class="callout warn mb-16"><strong>Segregation of duties.</strong> ${Q.sodBlock(d, 'doc')}</div>` : ''}
-      ${d.state !== 'Obsolete' ? h`<div class="card mb-16">${Q.stepper(DOC_STATES, d.state, labels, { allDone: d.state === 'Effective' })}${gateSkipped ? h`<div class="small muted" style="padding:0 16px 10px">Training rule ${rule.name} doesn’t hold the document in Pending training; training was assigned when it became effective.</div>` : ''}</div>` : h`<div class="callout warn mb-16"><strong>Obsolete.</strong> ${d.obsoleteReason || ''} Archived, not deleted; it stays in the register and audit trail.</div>`}
+      ${sendPlan && sendPlan.problems.length ? h`<div class="callout warn mb-16"><strong>Check before sending to DocuSign.</strong>${sendPlan.problems.map(function (x) { return h` ${x}`; })}</div>` : ''}
+      ${d.state === 'Review closed' && sendBlock && sendBlock !== 'n/a' && !Q.readOnly() && (d.owner === me || d.author === me) ? h`<div class="callout warn mb-16"><strong>Can’t send yet.</strong> ${sendBlock}</div>` : ''}
+      ${d.state !== 'Obsolete' ? h`<div class="card mb-16">${Q.stepper(DOC_STATES, d.state, labels, { allDone: d.state === 'Effective' })}</div>` : h`<div class="callout warn mb-16"><strong>Obsolete.</strong> ${d.obsoleteReason || ''} Archived, not deleted; it stays in the register and audit trail.</div>`}
       <div class="split">
         <div style="min-width:0">
           <div class="tabs" role="tablist">${tabs.map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
@@ -132,18 +137,20 @@
             ${d.state === 'In approval' ? h`<div><dt>Approval due</dt><dd class="${Q.daysFromToday(d.approvalDue) < 0 ? 'st-overdue' : ''}" style="font-weight:${Q.daysFromToday(d.approvalDue) < 0 ? 600 : 400}">${Q.fmtShort(d.approvalDue)}${Q.daysFromToday(d.approvalDue) < 0 ? ' · overdue' : ''}</dd></div>` : d.state === 'In review' ? h`<div><dt>Review due</dt><dd>${Q.fmtShort(d.reviewDue)}</dd></div>` : h`<div><dt>Effective date</dt><dd>${Q.fmtDate(d.effective)}</dd></div>`}
             <div><dt>Periodic review</dt><dd>${effMonths}${nextReview ? h`<br><a class="small" href="#/reviews/${nextReview.id}">Next: ${Q.fmtShort(nextReview.due)}</a>` : ''}</dd></div>
             <div><dt>Tags</dt><dd>${d.tags.join(', ') || '—'}</dd></div>
-            <div><dt>Approval stamp</dt><dd>${v.approvedAt ? Q.fmtDate(v.approvedAt) : '—'}</dd></div>
+            <div><dt>Approved</dt><dd>${v.approvedAt ? Q.fmtDate(v.approvedAt) + (v.envelope ? ' · DocuSign' : v.migrated ? ' · KSTARRS' : '') : '—'}</dd></div>
+            <div><dt>Training audience</dt><dd>${Q.audienceText(Q.audienceOf(d))}</dd></div>
             <div><dt>Last review closed</dt><dd>${(function () { var rs = d.reviewers.filter(function (r) { return r.at; }).map(function (r) { return r.at; }).sort(); return rs.length ? Q.fmtShort(rs[rs.length - 1]) : '—'; })()}</dd></div>
           </dl></div>
           <div class="card ctx-card"><span class="label">People</span>
             ${Q.peopleRow(d.author, 'Author', d.state === 'Draft' ? 'Drafting' : 'Submitted', 'st-wait')}
             ${d.reviewers.map(function (r, i) { return Q.peopleRow(r.u, 'Reviewer', r.status === 'Pending' ? (r.u === me ? 'Your turn' : 'Reviewing') : r.status, r.status === 'Reviewed' ? 'st-done' : r.status === 'Pending' ? 'st-turn' : 'st-wait'); })}
             ${d.approvers.map(function (a, i) {
-              var st = a.status === 'Waiting' && d.state !== 'Draft' && d.state !== 'Effective' ? 'Waiting · FYI sent' : a.status === 'Your turn' && a.u !== me ? 'Signing now' : a.status;
-              return Q.peopleRow(a.u, d.approvers.length > 1 ? 'Approver ' + (i + 1) : 'Approver', st, a.status === 'Signed' ? 'st-done' : a.status === 'Your turn' ? 'st-turn' : 'st-wait');
+              var st = a.status === 'Waiting' && d.state !== 'Draft' && d.state !== 'Effective' ? 'Waiting · FYI sent' : a.status === 'Your turn' && a.u !== me ? 'Signing in DocuSign' : a.status;
+              return Q.peopleRow(a.u, d.approvers.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', st, a.status === 'Signed' ? 'st-done' : a.status === 'Your turn' ? 'st-turn' : 'st-wait');
             })}
-            <div class="small muted mt-8">${d.route === 'sequential' ? 'Sequential approval' : 'Parallel approval'} · ${d.reviewRoute === 'sequential' ? 'sequential' : 'parallel'} review</div>
+            <div class="small muted mt-8">${d.reviewRoute === 'sequential' ? 'Sequential' : 'Parallel'} review · DocuSign signing order: author, reviewers, then QA approver</div>
           </div>
+          ${Q.ds.recordCard(d.id)}
           ${Q.linkedCard(d.id)}
           ${Q.activityCard(d.id)}
         </aside>
@@ -178,10 +185,10 @@
     };
     var manifest = sigs.length ? h`<div class="page" style="transform:scale(${zoom / 100})">
       ${wm ? h`<div class="watermark" aria-hidden="true">${wm}</div>` : ''}
-      <h2>Signature manifest</h2><div class="doc-meta"><span>${d.id} ${d.title} · v${v.v}</span><span>Content SHA-256 below</span></div>
+      <h2>Signature manifest</h2><div class="doc-meta"><span>${d.id} ${d.title} · v${v.v}</span><span>${v.envelope ? 'DocuSign envelope ' + v.envelope.slice(0, 8) + '…' : v.migrated ? 'Migrated from KSTARRS' : 'Content SHA-256 below'}</span></div>
       <p>Each row is rendered from the stored signature record, not typed. Signatures cannot be edited or detached from this version.</p>
       <table class="manifest-table"><thead><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr></thead><tbody>
-      ${sigs.map(function (s) { return h`<tr><td>${Q.fullName(s.user)}</td><td>${s.meaning}</td><td>${Q.fmtUtc(s.at)}</td><td>${s.id}</td></tr>`; })}</tbody></table>
+      ${sigs.map(function (s) { return h`<tr><td>${Q.fullName(s.user)}</td><td>${s.meaning}</td><td>${Q.fmtUtc(s.at)}</td><td>${s.source === 'DocuSign' ? 'DocuSign · ' + s.id : s.source === 'KSTARRS' ? 'KSTARRS · ' + s.id : s.id}</td></tr>`; })}</tbody></table>
       <h3>Signature statement</h3><p>${sigs[0].statement || Q.statementFor('Approved')}</p>
       <h3>Content fingerprint (SHA-256)</h3><p style="font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all">${v.hash}</p>
       <div class="footer-line">Viewed by ${me.name} on ${Q.fmtDate(new Date())}. · Page ${totalPages} of ${totalPages}</div></div>` : '';
@@ -259,28 +266,64 @@
         { key: 'createdBy', label: 'Author', render: function (x) { return Q.fullName(x.createdBy); } },
         { key: 'approvedAt', label: 'Approved', render: function (x) { return x.approvedAt ? Q.fmtDate(x.approvedAt) : '—'; } },
         { key: 'sig', label: 'Signatures', sort: false, render: function (x) { return x.signatures.length ? x.signatures.map(function (s) { return Q.user(s.user).initials; }).join(', ') : '—'; } },
+        { key: 'envelope', label: 'Approval record', sort: false, render: function (x) { return x.envelope ? h`<button class="btn-link" style="padding:0;min-height:0;font-size:13px" data-act="ds-env" data-id="${x.envelope}">DocuSign ${x.envelope.slice(0, 8)}…</button>` : x.migrated ? h`<span class="small muted">KSTARRS (migrated)</span>` : '—'; } },
         { key: 'hash', label: 'SHA-256', sort: false, render: function (x) { return h`<span class="mono" title="${x.hash}">${x.hash.slice(0, 12)}…</span>`; } },
         { key: 'go', label: '', sort: false, render: function (x) { return h`<button class="btn btn-sm" data-act="tab" data-key="v" data-tab="${x.v}">View</button>`; } }
       ]
     });
   }
-  function trainingTab(d) {
-    var rules = Q.S.trainingRules.filter(function (r) { return r.docs.indexOf(d.id) >= 0; });
-    var ver = (d.state === 'Pending training' ? Q.curVer(d) : Q.effVer(d) || Q.curVer(d)).v;
-    var asg = Q.S.assignments.filter(function (a) { return a.doc === d.id && a.ver === ver; });
-    var done = asg.filter(function (a) { return a.completed; }).length;
-    return h`<div class="grid-3 mb-16">
-        <div class="card kpi"><div class="kpi-label">Training rules</div><div class="kpi-value" style="font-size:20px;line-height:28px">${rules.length ? rules.map(function (r) { return r.name; }).join(', ') : 'None'}</div><div class="kpi-sub">${rules.some(function (r) { return r.gate; }) ? 'Holds the document in Pending training' : 'Assigned when it becomes effective'}</div></div>
-        <div class="card kpi"><div class="kpi-label">Complete for v${ver}</div><div class="kpi-value">${Q.pct(done, asg.length)}%</div><div class="progress"><div style="width:${Q.pct(done, asg.length)}%"></div></div></div>
-        <div class="card kpi"><div class="kpi-label">Overdue</div><div class="kpi-value">${asg.filter(function (a) { return !a.completed && Q.daysFromToday(a.due) < 0; }).length}</div><div class="kpi-sub">of ${asg.length} assigned</div></div></div>
-      ${Q.table({ id: 'dt-' + d.id, rows: asg.map(function (a) { return Object.assign({ name: Q.fullName(a.user) }, a); }), defaultSort: 'name', empty: 'No training assigned for this version.',
-        cols: [{ key: 'name', label: 'Person', render: function (a) { return h`${a.name}${a.leaver ? h` <span class="muted small">· left</span>` : ''}`; } }, { key: 'rule', label: 'Rule' }, { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return Q.fmtShort(a.due); } }, { key: 'completed', label: 'Completed', render: function (a) { return a.completed ? Q.fmtShort(a.completed) : '—'; } },
-          { key: 'st', label: 'Status', sort: false, render: function (a) { return a.completed ? Q.chip(a.leaver ? 'Done · kept' : 'Done', 'chip-done') : Q.daysFromToday(a.due) < 0 ? Q.chip('Overdue', 'chip-overdue') : Q.chip('Not started', 'chip-outline'); } }] })}`;
+  function approvalTab(d) {
+    var envs = Q.ds.forRecord(d.id);
+    var migrated = d.versions.filter(function (v) { return v.migrated; });
+    return h`${envs.length ? Q.table({ id: 'denv-' + d.id, rows: envs, defaultSort: 'sentAt', defaultDir: -1,
+        cols: [{ key: 'version', label: 'Version', render: function (e) { return 'v' + e.version; } }, { key: 'sentAt', label: 'Sent', render: function (e) { return Q.fmtDateTime(e.sentAt); } }, { key: 'sentBy', label: 'Sent by', render: function (e) { return Q.fullName(e.sentBy); } },
+          { key: 'status', label: 'Status', render: function (e) { return h`${Q.ds.statusChip(e)}${e.correctionOf ? h` <span class="chip chip-due">Correction</span>` : ''}`; } }, { key: 'signed', label: 'Signed', sort: false, render: function (e) { return Q.ds.signedCount(e) + ' of ' + e.signers.length; } },
+          { key: 'files', label: 'Stored files', sort: false, render: function (e) { return e.signedPdf ? h`<span class="row-wrap"><button class="btn btn-sm" data-act="ds-signed" data-id="${e.id}">Signed PDF</button><button class="btn btn-sm" data-act="ds-cert" data-id="${e.id}">Certificate</button></span>` : h`<span class="small muted">${e.status === 'sent' ? 'When completed' : e.declineReason || e.voidReason || '—'}</span>`; } },
+          { key: 'id', label: '', sort: false, render: function (e) { return h`<button class="btn btn-sm" data-act="ds-env" data-id="${e.id}">Details</button>`; } }] }) : Q.empty('No DocuSign envelopes yet', d.state === 'Review closed' ? 'Verify the PDF and send it to DocuSign.' : 'An envelope is sent once review closes.')}
+      ${migrated.length ? h`<p class="small muted mt-16">${migrated.map(function (v) { return 'v' + v.v; }).join(', ')} ${migrated.length > 1 ? 'were' : 'was'} approved in KSTARRS before go-live. Those signatures are kept as migrated records on the version history.</p>` : ''}`;
   }
+
+  function trainingTab(d, q) {
+    var aud = Q.audienceOf(d);
+    var eff = Q.effVer(d);
+    var all = Q.S.assignments.filter(function (a) { return a.doc === d.id; });
+    var cur = eff ? all.filter(function (a) { return a.ver === eff.v && !a.closed && !a.noRetrain; }) : [];
+    var live = cur.filter(function (a) { return ['Corrected'].indexOf(Q.trStatus(a)) < 0 && !a.leaver; });
+    var done = live.filter(function (a) { return a.completed; }).length;
+    var rows = (q.all ? all : cur).map(function (a) { return Object.assign({ name: Q.fullName(a.user), st: Q.trStatus(a) }, a); });
+    var canEdit = !Q.readOnly() && (Q.can('training.manage') || d.owner === Q.S.session.userId);
+    Q.reports['docstatus-' + d.id] = { title: 'Training status: ' + d.id + ' ' + d.title, file: 'training-status-' + d.id, rows: function () { return Q.trainingRows(all); }, intro: 'Current version: ' + (eff ? 'v' + eff.v : 'none effective') + '. Audience: ' + Q.audienceText(aud) + '.' };
+    return h`<div class="grid-3 mb-16">
+        <div class="card kpi"><div class="spread"><span class="kpi-label">Who must train</span>${canEdit ? h`<button class="btn-link" style="min-height:28px;font-size:13px;padding:0" data-act="doc-audience" data-id="${d.id}">Change</button>` : ''}</div><div style="font-weight:600;margin-top:6px">${Q.audienceText(aud)}</div><div class="kpi-sub">${Q.plural(Q.audienceMembers(d).length, 'person', 'people')} · ${aud.days} days to complete${aud.quiz ? ' · knowledge check' : ''}</div></div>
+        <div class="card kpi"><div class="kpi-label">Complete for ${eff ? 'v' + eff.v : 'the effective version'}</div><div class="kpi-value">${Q.pct(done, live.length)}%</div><div class="progress"><div style="width:${Q.pct(done, live.length)}%"></div></div></div>
+        <div class="card kpi"><div class="kpi-label">Overdue</div><div class="kpi-value">${live.filter(function (a) { return Q.trStatus(a) === 'Overdue'; }).length}</div><div class="kpi-sub">of ${live.length} on this version</div></div></div>
+      <div class="spread mb-8" style="flex-wrap:wrap"><label class="check small"><input type="checkbox" data-change="doc-tr-all" ${q.all ? 'checked' : ''}> Show earlier versions, withdrawn and corrected records</label>${Q.reportButtons('docstatus-' + d.id)}</div>
+      ${Q.table({ id: 'dt-' + d.id, rows: rows, defaultSort: 'name', empty: eff ? 'No training allocated for this version.' : 'Training is allocated when a version becomes effective.', href: function (a) { return '#/training?tab=records&rec=' + a.id; },
+        cols: [{ key: 'name', label: 'Person', render: function (a) { return h`${a.name}${a.leaver ? h` <span class="muted small">· left</span>` : ''}`; } }, { key: 'ver', label: 'Version', render: function (a) { return 'v' + a.ver; } },
+          { key: 'allocReason', label: 'Allocated', render: function (a) { return h`<span class="small">${a.allocReason} · ${a.allocatedBy === 'system' ? 'System' : Q.fullName(a.allocatedBy)}</span>`; } },
+          { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return a.due ? Q.fmtShort(a.due) : '—'; } },
+          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return Q.chip(a.st); } }] })}
+      <p class="small muted mt-8">Records are dated by the system and locked once completed. Earlier versions’ records are kept and shown as superseded.</p>`;
+  }
+  Q.on['doc-tr-all'] = function (el) { Q.setQuery({ all: el.checked ? '1' : '' }); };
+  Q.audienceFields = function (aud) {
+    aud = aud || { groups: [], roles: [], users: [], days: 14, quiz: false };
+    return h`<fieldset class="full mb-16"><legend>Groups</legend><div class="grid-2" style="gap:0 16px">${Q.S.groups.map(function (g) { return h`<label class="check"><input type="checkbox" data-multi name="groups" value="${g.name}" ${aud.groups.indexOf(g.name) >= 0 ? 'checked' : ''}> ${g.name}</label>`; })}</div></fieldset>
+      <fieldset class="full mb-16"><legend>Roles</legend><div class="grid-2" style="gap:0 16px">${Object.keys(Q.ROLE_LABEL).filter(function (r) { return r !== 'auditor'; }).map(function (r) { return h`<label class="check"><input type="checkbox" data-multi name="roles" value="${r}" ${aud.roles.indexOf(r) >= 0 ? 'checked' : ''}> ${Q.ROLE_LABEL[r]}</label>`; })}</div></fieldset>
+      <details class="full mb-16" ${aud.users.length ? 'open' : ''}><summary class="btn-link" style="padding:0">Named people (${aud.users.length})</summary><div class="grid-2 mt-8" style="gap:0 16px">${Q.activeUsers().filter(function (u) { return u.roles.indexOf('auditor') < 0; }).map(function (u) { return h`<label class="check"><input type="checkbox" data-multi name="users" value="${u.id}" ${aud.users.indexOf(u.id) >= 0 ? 'checked' : ''}> ${u.name}</label>`; })}</div></details>
+      <div class="form-grid"><div class="field"><label for="aud-days">Days to complete</label><input class="input" type="number" min="1" id="aud-days" name="days" value="${aud.days}"></div>
+        <label class="check" style="align-self:end"><input type="checkbox" name="quiz" ${aud.quiz ? 'checked' : ''}> Include a knowledge check</label></div>`;
+  };
+  Q.audienceFrom = function (f, prev) { return { groups: f.groups || [], roles: f.roles || [], users: f.users || [], days: Math.max(1, +f.days || 14), quiz: !!f.quiz, retrainMonths: prev ? prev.retrainMonths || null : null }; };
+  Q.act['doc-audience'] = function (el) {
+    var d = Q.S.docs[el.getAttribute('data-id')];
+    Q.drawer.open({ kicker: d.id + ' · training', title: 'Who must train on ' + d.id, submitLabel: 'Save audience',
+      body: h`${Q.audienceFields(Q.audienceOf(d))}<p class="small muted mt-16">Saving applies to ${Q.effVer(d) ? 'v' + Q.effVer(d).v + ' now: new people are allocated it, and open allocations for people no longer in the audience close' : 'the next version when it becomes effective'}. The change is logged with the old and new audience.</p>`,
+      submit: function (f) { var r = Q.setAudience(d, Q.audienceFrom(f, Q.audienceOf(d))); Q.drawer.close(); Q.toast('Audience saved · ' + Q.plural(r.added, 'new allocation') + (r.closed ? ' · ' + r.closed + ' closed' : '')); Q.refresh(); } });
+  };
 
   // ---------- Document actions ----------
   function D(el) { return Q.S.docs[el.getAttribute('data-id')]; }
-  Q.act['doc-sign'] = function (el) { Q.signDoc(el.getAttribute('data-id')); };
   Q.act['doc-checkout'] = function (el) { var d = D(el); Q.wf.doc.checkOut(d); Q.toast('Checked out. Nobody else can edit until you check in.'); Q.refresh(); };
   Q.act['doc-cancel-co'] = function (el) { var d = D(el); Q.wf.doc.cancelCheckout(d); Q.toast('Check-out cancelled'); Q.refresh(); };
   function toText(content) { return content.map(function (b) { return b.t === 'h' ? '## ' + b.x : b.x; }).join('\n\n'); }
@@ -311,18 +354,18 @@
       kicker: d.id + ' v' + v.v, title: 'Submit for review', submitLabel: 'Submit for review',
       body: h`<div class="statement mb-16"><div class="small muted">Change summary</div><div>${v.summary}</div></div>
         <fieldset class="mb-16"><legend>Reviewers (review in parallel)</legend>${users.filter(function (u) { return u.roles.indexOf('reviewer') >= 0 || u.roles.indexOf('author') >= 0; }).map(function (u) { return h`<label class="check"><input type="checkbox" data-multi name="reviewers" value="${u.id}" ${d.reviewers.some(function (r) { return r.u === u.id; }) ? 'checked' : ''}> ${u.name} <span class="muted small">· ${u.title}</span></label>`; })}</fieldset>
-        <div class="form-grid mb-16"><div class="field"><label for="a1">Approver 1</label><select class="select" id="a1" name="a1">${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[0] && d.approvers[0].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
-          <div class="field"><label for="a2">Approver 2 (optional)</label><select class="select" id="a2" name="a2"><option value="">None</option>${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[1] && d.approvers[1].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
-          <div class="field full"><label>Approval route</label><div class="seg"><label class="check" style="padding:0 10px;min-height:36px"><input type="radio" name="route" value="sequential" ${d.route !== 'parallel' ? 'checked' : ''}> Sequential (1, then 2)</label><label class="check" style="padding:0 10px;min-height:36px"><input type="radio" name="route" value="parallel" ${d.route === 'parallel' ? 'checked' : ''}> Parallel</label></div></div>
+        <div class="form-grid mb-16"><div class="field"><label for="a1">QA approver</label><select class="select" id="a1" name="a1">${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[0] && d.approvers[0].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
+          <div class="field"><label for="a2">Second QA approver (optional)</label><select class="select" id="a2" name="a2"><option value="">None</option>${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[1] && d.approvers[1].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
           <div class="field"><label for="rd">Review due</label><input class="input" type="date" id="rd" name="reviewDue" value="${Q.dayIso(5).slice(0, 10)}"></div></div>
-        <div class="callout"><strong>What happens next</strong><p class="small" style="margin:4px 0 0">Reviewers are notified now (email, Teams, in-app, push). Approvers get an FYI with the expected date, then an action notification when it’s their turn. When the last reviewer finishes, approvers are notified automatically.</p></div>`,
+        <div class="callout"><strong>What happens next</strong><p class="small" style="margin:4px 0 0">Reviewers comment and mark the document reviewed here. When review closes, the owner checks the PDF and sends one DocuSign envelope: you sign first as author, then the reviewers, then the QA approver. The document becomes effective when the envelope completes.</p></div>`,
       submit: function (f, form) {
         if (f.a2 && f.a2 === f.a1) return Q.fieldError(form, 'a2', 'Choose two different approvers.');
+        if ((f.reviewers || []).indexOf(f.a1) >= 0 || (f.a2 && (f.reviewers || []).indexOf(f.a2) >= 0)) return Q.toast('A QA approver can’t also be a reviewer.', 'warn');
         d.reviewers = (f.reviewers || []).map(function (u) { return { u: u, status: 'Not started' }; });
         d.approvers = [f.a1].concat(f.a2 ? [f.a2] : []).map(function (u) { return { u: u, status: 'Waiting' }; });
-        d.route = f.route || 'sequential';
+        d.route = 'sequential';
         d.reviewDue = f.reviewDue ? new Date(f.reviewDue + 'T17:00:00').toISOString() : Q.dayIso(5);
-        Q.wf.doc.submitForReview(d); Q.drawer.close(); Q.toast(d.reviewers.length ? 'Submitted. ' + Q.plural(d.reviewers.length, 'reviewer') + ' notified.' : 'Submitted straight to approval'); Q.refresh();
+        Q.wf.doc.submitForReview(d); Q.drawer.close(); Q.toast(d.reviewers.length ? 'Submitted. ' + Q.plural(d.reviewers.length, 'reviewer') + ' notified.' : 'Submitted. Review closed: verify the PDF and send it to DocuSign.'); Q.refresh();
       }
     });
   };
@@ -349,8 +392,8 @@
     Q.drawer.open({
       kicker: d.id + ' · v' + v.v + ' effective', title: 'Start a new version', submitLabel: 'Start draft',
       body: h`<fieldset class="mb-16"><legend>Kind of change</legend><div class="radio-cards">
-          <label class="radio-card"><input type="radio" name="kind" value="major" checked><span><b>Major</b><br><span class="small muted">Changes what people must do. Retrains everyone in the matching rules.</span></span></label>
-          <label class="radio-card"><input type="radio" name="kind" value="minor"><span><b>Minor</b><br><span class="small muted">Wording, layout or corrections only. No retraining.</span></span></label></div></fieldset>
+          <label class="radio-card"><input type="radio" name="kind" value="major" checked><span><b>Major</b><br><span class="small muted">Changes what people must do. Everyone in the training audience is allocated the new version.</span></span></label>
+          <label class="radio-card"><input type="radio" name="kind" value="minor"><span><b>Minor</b><br><span class="small muted">Wording, layout or corrections only. Still approved through DocuSign; the audience is allocated the new version.</span></span></label></div></fieldset>
         <div class="field"><label for="ns">Why are you changing it? (required)</label><textarea class="textarea" id="ns" name="summary"></textarea></div>
         <p class="small muted mt-16">v${v.v} stays Effective until the new version is approved.</p>`,
       submit: function (f, form) { if (!f.summary) return Q.fieldError(form, 'summary', 'Say why the document is changing.'); var nv = Q.wf.doc.newVersion(d, f.kind, f.summary); Q.drawer.close(); Q.toast('Draft v' + nv.v + ' started and checked out to you'); Q.refresh(); }
@@ -363,14 +406,15 @@
       validate: function (f) { return f.reason ? null : { field: 'reason', msg: 'Give a reason.' }; },
       onSigned: function (s, f) { Q.wf.doc.obsolete(d, f.reason); Q.toast(d.id + ' is obsolete'); } });
   };
-  function docHtml(d, v) {
-    var me = Q.me(); var wm = WATERMARK[v.state];
+  function docHtml(d, v, bare) { // bare: the PDF that goes into the DocuSign envelope
+    var me = Q.me(); var wm = bare ? null : WATERMARK[v.state];
     var body = '<h1>' + Q.esc(d.id + ' ' + d.title) + '</h1><p><b>Version ' + v.v + '</b> · ' + Q.esc(v.state) + ' · ' + Q.esc(d.classification.toUpperCase()) + ' · Owner: ' + Q.esc(Q.fullName(d.owner)) + '</p>' + (wm ? '<div class="wm">' + wm + '</div>' : '') +
       v.content.map(function (b) { return b.t === 'h' ? '<h2>' + Q.esc(b.x) + '</h2>' : '<p>' + Q.esc(b.x) + '</p>'; }).join('');
-    if (v.signatures.length) body += '<h2 style="page-break-before:always">Signature manifest</h2><table><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr>' + v.signatures.map(function (s) { return '<tr><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + Q.esc(s.meaning) + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + s.id + '</td></tr>'; }).join('') + '</table><p>' + Q.esc(v.signatures[0].statement || Q.statementFor('Approved')) + '</p><p>Content SHA-256: <span class="mono">' + v.hash + '</span></p>';
-    body += '<div class="foot">Downloaded by ' + Q.esc(me.name) + ' on ' + Q.fmtDate(new Date()) + ' (' + Q.fmtUtc(new Date().toISOString()) + '). Uncontrolled when printed.</div>';
+    if (v.signatures.length && !bare) body += '<h2 style="page-break-before:always">Signature manifest</h2>' + (v.envelope ? '<p>Approved through DocuSign · envelope <span class="mono">' + v.envelope + '</span></p>' : v.migrated ? '<p>Approved in KSTARRS before go-live (migrated record).</p>' : '') + '<table><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr>' + v.signatures.map(function (s) { return '<tr><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + Q.esc(s.meaning) + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + (s.source ? s.source + ' · ' : '') + s.id + '</td></tr>'; }).join('') + '</table><p>' + Q.esc(v.signatures[0].statement || Q.statementFor('Approved')) + '</p><p>Content SHA-256: <span class="mono">' + v.hash + '</span></p>';
+    body += bare ? '<div class="foot">' + Q.esc(d.id) + ' · version ' + Q.esc(v.v) + ' · Page 1 of 1</div>' : '<div class="foot">Downloaded by ' + Q.esc(me.name) + ' on ' + Q.fmtDate(new Date()) + ' (' + Q.fmtUtc(new Date().toISOString()) + '). Uncontrolled when printed.</div>';
     return body;
   }
+  Q.docHtml = docHtml;
   Q.act['doc-download'] = function (el) {
     var d = D(el); var v = d.versions.find(function (x) { return x.v === el.getAttribute('data-v'); }) || Q.curVer(d);
     if (!Q.canDownload(d)) {
@@ -405,10 +449,10 @@
           ${st.source === 'upload' ? h`<div class="field full"><label for="nf">File</label><input class="input" type="file" id="nf" name="file" accept=".docx,.pdf,.xlsx"></div>` : ''}
           <div class="field"><label for="no">Owner</label><select class="select" id="no" name="owner">${users.map(function (u) { return h`<option value="${u.id}" ${u.id === Q.S.session.userId ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
           <div class="field"><label for="np">Quality process</label><select class="select" id="np" name="process">${Q.PROCESSES.map(function (p) { return h`<option>${p}</option>`; })}</select></div>
-          <div class="field"><label for="ntr">Training rule</label><select class="select" id="ntr" name="trainingRule"><option value="">None</option>${Q.S.trainingRules.filter(function (r) { return r.status === 'Active'; }).map(function (r) { return h`<option value="${r.id}">${r.name}</option>`; })}</select></div>
           <div class="field"><label for="nm">Periodic review</label><select class="select" id="nm" name="months"><option value="12">Every 12 months</option><option value="6">Every 6 months</option><option value="24">Every 24 months</option></select></div>
           <div class="field full"><label for="ntg">Tags</label><input class="input" id="ntg" name="tags" placeholder="e.g. A.7.7, Clause 7.5"><div class="help">Separate with commas.</div></div>
-        </div>`;
+        </div>
+        <div class="label mt-24 mb-8">Who must train on it (read and understood)</div>${Q.audienceFields({ groups: [], roles: [], users: [], days: 14, quiz: false })}`;
     }
     Q.on['nd-src'] = function (el) { st.source = el.value; Q.drawer.paint(); };
     Q.on['nd-type'] = function (el) { st.type = el.value; var n = document.getElementById('nd-no'); if (n) n.textContent = nextNo(); };
@@ -420,7 +464,7 @@
         var prefix = Q.DOC_TYPES.find(function (t) { return t.type === f.type; }).prefix;
         var content = null;
         if (st.source === 'upload') content = [{ t: 'h', x: 'Imported from ' + f.file[0].name }, { t: 'p', x: '[Converted to PDF on our server after a clean malware scan. Text extraction appears here in production.]' }];
-        var d = Q.wf.doc.create({ prefix: prefix, docType: f.type, title: f.title, classification: f.classification, owner: f.owner, process: f.process, template: st.source === 'template' ? f.template : null, sourceFile: st.source === 'upload' ? f.file[0].name : null, trainingRule: f.trainingRule || null, months: f.months, tags: f.tags ? f.tags.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [], content: content });
+        var d = Q.wf.doc.create({ prefix: prefix, docType: f.type, title: f.title, classification: f.classification, owner: f.owner, process: f.process, template: st.source === 'template' ? f.template : null, sourceFile: st.source === 'upload' ? f.file[0].name : null, audience: Q.audienceFrom(f), months: f.months, tags: f.tags ? f.tags.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [], content: content });
         Q.drawer.close(); Q.toast(d.id + ' created and checked out to you'); Q.go('#/documents/' + d.id);
       }
     });

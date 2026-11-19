@@ -105,7 +105,7 @@ Then open the site address. You should be sent to the Microsoft login and land o
 - In a private browser window, the site goes straight to the Microsoft login.
 - An account from outside your tenant is refused.
 - Once you're signed in, run `tools/smoke-test.js` in the browser console. The expected result is
-  13 personas, 3,315 renders, 0 errors and a valid audit chain.
+  13 personas, 3,822 renders, 0 errors and a valid audit chain.
 
 ## Things to verify
 

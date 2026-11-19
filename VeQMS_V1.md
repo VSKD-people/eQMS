@@ -89,7 +89,9 @@ Disable it in the repository's **Actions** tab, or delete `.github/workflows/dep
 
 1. Open the site. You should land on **Today** with the guided tour.
 2. Open the browser console (F12), paste in the contents of `tools/smoke-test.js` and press Enter.
-   The expected result is 13 personas, 3,315 renders, 0 errors and a valid audit chain.
+   The expected result is 13 personas, 3,822 renders, 0 errors and a valid audit chain.
+   Optional, if you have Node.js and Playwright: `node tools/e2e-test.js` runs 56 end-to-end checks of the
+   DocuSign approval route and the training records.
 3. Walk the scenarios in `veqms/README.md` under "Try these in order".
 
 ## 6. Carry on with Claude

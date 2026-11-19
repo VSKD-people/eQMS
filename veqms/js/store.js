@@ -8,7 +8,7 @@
   Q.load = function () {
     var s = null;
     try { var raw = localStorage.getItem(KEY); if (raw) s = JSON.parse(raw); } catch (e) { s = null; }
-    if (!s || s.version !== 9) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
+    if (!s || s.version !== 10) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
   };
   Q.save = function () { try { localStorage.setItem(KEY, JSON.stringify(Q.S)); } catch (e) { /* storage blocked: demo still runs in memory */ } };
   Q.reset = function () { Q.S = Q.seed(); Q.seedAudit(); Q.save(); };
@@ -34,8 +34,9 @@
     'qe.create': ['process', 'qm', 'reviewer', 'author'],
     'capa.manage': ['process', 'qm'],
     'obs.raise': ['admin', 'qm', 'author', 'reviewer', 'approver', 'process', 'employee'],
-    'training.rules': ['qm'],
+    'training.manage': ['qm'],
     'training.org': ['qm', 'auditor', 'process', 'admin'],
+    'approvals.view': ['qm', 'auditor', 'process', 'admin', 'approver', 'author', 'reviewer'],
     'reviews.org': ['qm', 'auditor', 'process', 'admin'],
     'analytics': ['qm', 'process', 'auditor', 'approver', 'admin'],
     'admin.users': ['admin'],
@@ -90,7 +91,6 @@
     if (Q.S.capas[id]) return 'capa';
     if (Q.S.obs[id]) return 'obs';
     if (Q.S.reviews[id]) return 'review';
-    if (/^TR-/.test(id)) return 'rule';
     return null;
   };
   Q.rec = function (id) {
@@ -101,24 +101,21 @@
     if (k === 'capa') return Q.S.capas[id];
     if (k === 'obs') return Q.S.obs[id];
     if (k === 'review') return Q.S.reviews[id];
-    if (k === 'rule') return Q.S.trainingRules.find(function (r) { return r.id === id; });
     return null;
   };
-  Q.KIND_LABEL = { doc: 'Document', cr: 'Change request', qe: 'Quality event', capa: 'CAPA', obs: 'Observation', review: 'Periodic review', rule: 'Training rule' };
+  Q.KIND_LABEL = { doc: 'Document', cr: 'Change request', qe: 'Quality event', capa: 'CAPA', obs: 'Observation', review: 'Periodic review' };
   Q.curVer = function (d) { return d.versions[d.versions.length - 1]; };
   Q.effVer = function (d) { for (var i = d.versions.length - 1; i >= 0; i--) if (d.versions[i].state === 'Effective') return d.versions[i]; return null; };
   Q.recTitle = function (id) {
     var r = Q.rec(id), k = Q.kindOf(id);
     if (!r) return id;
     if (k === 'review') { var d = Q.S.docs[r.doc]; return 'Periodic review of ' + r.doc + (d ? ' ' + d.title : ''); }
-    if (k === 'rule') return r.name;
     return r.title;
   };
   Q.recLabel = function (id) { // "POL-004 Access Control Policy v2.0"
     var r = Q.rec(id), k = Q.kindOf(id);
     if (k === 'doc') return id + ' ' + r.title + ' v' + Q.curVer(r).v;
     if (k === 'review') return Q.recTitle(id);
-    if (k === 'rule') return id + ' ' + r.name;
     return id + ' ' + Q.recTitle(id);
   };
   Q.recHref = function (id) {
@@ -127,7 +124,6 @@
     if (k === 'cr') return '#/changes/' + id;
     if (k === 'qe' || k === 'capa' || k === 'obs') return '#/quality/' + id;
     if (k === 'review') return '#/reviews/' + id;
-    if (k === 'rule') return '#/training?tab=rules&rule=' + id;
     return '#/today';
   };
   Q.recClass = function (id) { var r = Q.rec(id); if (!r) return 'Internal'; if (Q.kindOf(id) === 'review') return (Q.S.docs[r.doc] || {}).classification || 'Internal'; return r.classification || 'Internal'; };
@@ -236,12 +232,12 @@
 
   // ---------- Tasks ----------
   Q.TASK_META = {
-    'approve-doc': { label: 'Approve · Document', action: 'Review and sign' },
+    'ds-sign': { label: 'Sign in DocuSign', action: 'Open in DocuSign' },
     'review-doc': { label: 'Review · Document', action: 'Start review' },
     'author': { label: 'Draft · Document', action: 'Continue draft' },
     'resubmit': { label: 'Sent back · Document', action: 'Revise draft' },
-    'send-approval': { label: 'Review closed · Document', action: 'Send for approval' },
-    'training': { label: 'Complete training', action: 'Start training' },
+    'send-approval': { label: 'Verify and send · DocuSign', action: 'Verify and send' },
+    'training': { label: 'Read and understood', action: 'Start training' },
     'periodic': { label: 'Periodic review', action: 'Start review' },
     'cr-review': { label: 'Review · Change request', action: 'Review' },
     'cr-approve': { label: 'Approve · Change request', action: 'Review and sign' },
@@ -252,10 +248,9 @@
     'capa-plan': { label: 'Plan · CAPA', action: 'Plan actions' },
     'capa-approve': { label: 'Approve · CAPA', action: 'Review and sign' },
     'effectiveness': { label: 'Effectiveness check', action: 'Open' },
-    'fyi': { label: 'FYI · You approve after review', action: 'View' },
+    'fyi': { label: 'FYI · You sign in DocuSign later', action: 'View' },
     'obs-review': { label: 'Initial review · Observation', action: 'Review' },
     'qe-assess': { label: 'Assess · Quality event', action: 'Assess' },
-    'rule-approve': { label: 'Approve · Training rule', action: 'Review and sign' },
     'todo': { label: 'To-do', action: 'Open' }
   };
   Q.taskMeta = function (t) {
@@ -266,7 +261,7 @@
     }
     if (t.kind === 'fyi') {
       var r = Q.rec(t.record);
-      return { label: 'FYI · You approve after ' + (r && r.state === 'In approval' ? 'the current approver' : 'review'), action: 'View' };
+      return { label: 'FYI · You sign in DocuSign ' + (r && r.state === 'In approval' ? 'after the current signer' : 'later'), action: 'View' };
     }
     return m;
   };
@@ -276,13 +271,12 @@
     if (t.kind === 'capa-action') { var c = Q.S.capas[t.record], ca = c && c.actions.find(function (x) { return x.id === t.ref; }); return t.record + ' · ' + (ca ? ca.title : Q.recTitle(t.record)); }
     if (t.kind === 'periodic') { var r = Q.S.reviews[t.record]; return r ? r.doc + ' ' + Q.S.docs[r.doc].title : t.record; }
     if (t.kind === 'training') { var d = Q.S.docs[t.record]; return t.record + ' ' + d.title + ' v' + (Q.effVer(d) || Q.curVer(d)).v; }
-    if (t.kind === 'rule-approve') { var rule = Q.rec(t.record); return t.record + ' ' + (rule ? rule.name : ''); }
+    if (t.kind === 'ds-sign') { var env = Q.ds && (Q.ds.byId(t.ref) || Q.ds.active(t.record)); return env ? env.subject : Q.recLabel(t.record); }
     return Q.recLabel(t.record);
   };
   Q.taskHref = function (t) {
     if (t.href) return t.href;
     if (t.kind === 'training') return '#/training?doc=' + t.record;
-    if (t.kind === 'rule-approve') return '#/training?tab=rules&rule=' + t.record;
     return Q.recHref(t.record);
   };
   Q.openTasks = function (uid) { uid = uid || Q.S.session.userId; return Q.S.tasks.filter(function (t) { return t.assignee === uid && t.status === 'open'; }); };

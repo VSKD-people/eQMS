@@ -14,6 +14,7 @@
   Q.route('/reviews/:id', V.review);
   Q.route('/quality', V.quality);
   Q.route('/quality/:id', V.qualityRecord);
+  Q.route('/approvals', V.approvals);
   Q.route('/analytics', V.analytics);
   Q.route('/admin', function (p, q) { return V.admin({}, q); });
   Q.route('/admin/:section', V.admin);

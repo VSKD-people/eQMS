@@ -48,5 +48,5 @@ The same steps by hand are in the Azure section of `DEPLOY.md` at the top of the
 
 1. In a private browser window, the site goes straight to the Microsoft sign-in.
 2. An account from outside your tenant is refused.
-3. Once signed in, `tools/smoke-test.js` in the browser console gives 13 personas, 3,315 renders,
+3. Once signed in, `tools/smoke-test.js` in the browser console gives 13 personas, 3,822 renders,
    0 errors and a valid audit chain.

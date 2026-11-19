@@ -49,7 +49,8 @@
       if (q.user) Q.after(function () { var u = Q.user(q.user); if (u && u.roles) openUser(u); });
     }
     return h`<div class="spread mb-8" style="flex-wrap:wrap">${subTabs([['users', 'Users'], ['requests', 'Role requests · ' + Q.S.roleRequests.filter(function (r) { return r.status === 'Waiting for second admin'; }).length], ['review', 'Access review'], ['delegations', 'Delegations']], tab)}
-      <span class="small muted">Users and groups come from Microsoft Entra ID through SCIM. Leavers lose access within ${Q.S.settings.leaverTarget} minutes; revoke-now ends it at once.</span></div>${body}`;
+      ${tab === 'users' && Q.hasRole('admin') ? h`<button class="btn" data-act="u-new">${Q.icon('plus', 'ico-sm')} Simulate a new starter (SCIM)</button>` : ''}</div>
+      <p class="small muted">Users and groups come from Microsoft Entra ID through SCIM. Leavers lose access within ${Q.S.settings.leaverTarget} minutes; revoke-now ends it at once. New starters and group or role changes get the current version of every document their audience needs.</p>${body}`;
   }
   function openUser(u) {
     var isAdmin = Q.hasRole('admin');
@@ -59,7 +60,7 @@
         ${u.status !== 'Active' ? h`<div class="callout plain mb-16"><b style="color:var(--ink)">${u.status === 'Left' ? 'Leaver' : 'Access revoked'}</b><p class="small" style="margin:4px 0 0">Past signatures and training records stay attached to the records and are never deleted.</p></div>` : ''}
         <fieldset class="mb-16"><legend>Roles</legend>${Object.keys(Q.ROLE_LABEL).map(function (r) { var priv = ['approver', 'qm', 'admin'].indexOf(r) >= 0; return h`<label class="check"><input type="checkbox" data-multi name="roles" value="${r}" ${u.roles.indexOf(r) >= 0 ? 'checked' : ''} ${isAdmin && u.status === 'Active' ? '' : 'disabled'}> ${Q.ROLE_LABEL[r]}${priv ? h` <span class="small muted">· needs a second admin</span>` : ''}</label>`; })}</fieldset>
         <div class="field mb-16"><label for="ucl">Information clearance</label><select class="select" id="ucl" name="clearance" ${isAdmin && u.status === 'Active' ? '' : 'disabled'}>${Q.CLASSES.map(function (c) { return h`<option ${u.clearance === c ? 'selected' : ''}>${c}</option>`; })}</select></div>
-        <div class="small muted">Groups: ${u.groups.join(', ') || '—'} (managed in Entra ID)</div>
+        <fieldset class="mb-16"><legend>Groups <span class="small muted">· from Entra ID; changing them here simulates a SCIM update</span></legend><div class="grid-2" style="gap:0 16px">${Q.S.groups.map(function (g) { return h`<label class="check"><input type="checkbox" data-multi name="groups" value="${g.name}" ${u.groups.indexOf(g.name) >= 0 ? 'checked' : ''} ${isAdmin && u.status === 'Active' && g.name !== 'All staff' ? '' : 'disabled'}> ${g.name}</label>`; })}</div></fieldset>
         ${isAdmin && u.status === 'Active' && u.id !== Q.S.session.userId ? h`<hr><div class="label mb-8">Remove access</div><div class="btn-row"><button type="button" class="btn btn-danger" data-act="u-revoke" data-id="${u.id}">Revoke now</button><button type="button" class="btn" data-act="u-leaver" data-id="${u.id}">Process as leaver</button></div><p class="small muted mt-8">Revoke-now ends every session at once and reassigns open tasks to the manager.</p>` : ''}`,
       foot: isAdmin && u.status === 'Active' ? h`<button class="btn btn-primary" type="submit">Save changes</button><button class="btn" type="button" data-act="drawer-close">Cancel</button>` : h`<button class="btn" type="button" data-act="drawer-close">Close</button>`,
       submit: function (f) {
@@ -68,10 +69,28 @@
         var pending = 0;
         removed.forEach(function (r) { Q.wf.user.removeRole(u, r); });
         added.forEach(function (r) { if (Q.wf.user.requestRole(u, r)) pending++; });
+        var grp = (u.groups.indexOf('All staff') >= 0 ? ['All staff'] : []).concat((f.groups || []).filter(function (g) { return g !== 'All staff'; }));
+        var tr = null;
+        if (u.status === 'Active' && grp.slice().sort().join('|') !== u.groups.slice().sort().join('|')) tr = Q.wf.user.setGroups(u, grp);
         if (f.clearance && f.clearance !== u.clearance) { var b = u.clearance; u.clearance = f.clearance; Q.audit('permission', 'User', u.id, 'Changed clearance of ' + u.name + ' from ' + b + ' to ' + f.clearance, { clearance: b }, { clearance: f.clearance }); Q.fire('security', { user: u.id, privilege: true, title: 'Clearance changed for ' + u.name }); }
-        Q.save(); Q.drawer.close(); Q.toast(pending ? pending + ' privileged role change(s) waiting for a second admin' : 'Saved'); Q.render();
+        Q.save(); Q.drawer.close(); Q.toast((pending ? pending + ' privileged role change(s) waiting for a second admin' : 'Saved') + (tr ? ' · training: ' + tr.added + ' allocated, ' + tr.closed + ' closed' : '')); Q.render();
       } });
   }
+  Q.act['u-new'] = function () {
+    Q.drawer.open({ kicker: 'Simulated SCIM provisioning', title: 'New starter', submitLabel: 'Provision from Entra ID',
+      body: h`<p class="small muted">In production Entra ID pushes new starters through SCIM. This creates the account the same way, then allocates the current version of every document their groups and roles must train on.</p>
+        <div class="form-grid"><div class="field"><label for="nsn">Name</label><input class="input" id="nsn" name="name" placeholder="e.g. Alex Example"></div>
+          <div class="field"><label for="nst">Job title</label><input class="input" id="nst" name="title" placeholder="e.g. Support Agent"></div>
+          <div class="field"><label for="nsm">Manager</label><select class="select" id="nsm" name="manager">${Q.activeUsers().filter(function (u) { return u.groups.indexOf('Managers') >= 0; }).map(function (u) { return h`<option value="${u.id}">${u.name}</option>`; })}</select></div>
+          <div class="field"><label for="nss">Site</label><select class="select" id="nss" name="site"><option>London</option><option>Manila</option></select></div>
+          <fieldset class="full"><legend>Groups (All staff is automatic)</legend><div class="grid-2" style="gap:0 16px">${Q.S.groups.filter(function (g) { return g.name !== 'All staff'; }).map(function (g) { return h`<label class="check"><input type="checkbox" data-multi name="groups" value="${g.name}"> ${g.name}</label>`; })}</div></fieldset>
+          <fieldset class="full"><legend>Roles</legend><div class="grid-2" style="gap:0 16px">${['employee', 'author', 'reviewer'].map(function (r) { return h`<label class="check"><input type="checkbox" data-multi name="roles" value="${r}" ${r === 'employee' ? 'checked' : ''}> ${Q.ROLE_LABEL[r]}</label>`; })}</div><div class="help">Privileged roles need the two-person rule, so grant them after provisioning.</div></fieldset></div>`,
+      submit: function (f, form) {
+        if (!f.name || f.name.split(/\s+/).length < 2) return Q.fieldError(form, 'name', 'Give a first and last name.');
+        var r = Q.wf.user.provision({ name: f.name, title: f.title, manager: f.manager, site: f.site, groups: f.groups, roles: f.roles });
+        Q.drawer.close(); Q.toast(r.user.name + ' provisioned · ' + Q.plural(r.added, 'training allocation') + ' created'); Q.render();
+      } });
+  };
   Q.act['u-revoke'] = function (el) {
     var u = Q.user(el.getAttribute('data-id'));
     var open = Q.S.tasks.filter(function (t) { return t.assignee === u.id && t.status === 'open'; }).length;
@@ -227,6 +246,7 @@
           <dl class="dl one"><div><dt>How it connects</dt><dd class="small">${i.mech}</dd></div><div><dt>Least permission</dt><dd class="small">${i.perms}</dd></div></dl>
           <dl class="dl mt-16"><div><dt>Last success</dt><dd>${i.lastOk ? Q.fmtDateTime(i.lastOk) : '—'}</dd></div><div><dt>Failures / retry queue</dt><dd>${i.failures} / ${i.queue}</dd></div></dl>
           ${i.note ? h`<p class="small muted mt-8" style="margin-bottom:0">${i.note}</p>` : ''}
+          ${i.id === 'docusign' ? h`<div class="mt-16"><div class="spread small"><span>Sends this year: <b>${Q.ds.used()} of ${Q.ds.cfg().allowance}</b></span><a href="#/approvals">Sends log</a></div><div class="progress mt-8"><div style="width:${Q.pct(Q.ds.used(), Q.ds.cfg().allowance)}%"></div></div></div>` : ''}
           <div class="btn-row mt-16"><button class="btn btn-sm" data-act="int-test" data-id="${i.id}">Test connection</button>${i.queue ? h`<button class="btn btn-sm" data-act="int-retry" data-id="${i.id}">Retry ${i.queue} queued</button>` : ''}</div></div>`;
       })}</div>`;
   }
@@ -283,9 +303,18 @@
       <form class="card card-pad" data-submit="set-statement"><h2 class="mb-8">Electronic signatures</h2>
         <div class="field"><label for="ss">Signature statement</label><textarea class="textarea" id="ss" name="statement" ${isQm ? '' : 'disabled'}>${st.statement}</textarea><div class="help">Use {meaning} where the meaning goes. Agreed by the Quality Manager.</div></div>
         ${isQm ? h`<button class="btn mt-8" type="submit">Save statement</button>` : ''}
-        ${row('Fresh sign-in for every signature', sw('x', true, true), 'Always on. Each signing action needs its own re-authentication with MFA; an existing session is never enough.')}
-        ${row('Batch signing', sw('x2', true, true), 'One fresh sign-in covers a listed set of records; each record still gets its own signature row.')}
+        ${row('Fresh sign-in for every in-app signature', sw('x', true, true), 'Always on for signatures made in the app (change requests, CAPA plans and actions, periodic reviews, rules). Each signing action needs its own re-authentication with MFA.')}
+        ${row('Approvals go through DocuSign (Part 11 module)', sw('x2', true, true), 'Controlled documents, CAPA closures, deviations, vendor approvals and validation deliverables. One envelope per version: author, then reviewers, then QA approver.')}
         ${row('Biometrics as part of a signature', sw('x3', false, true), 'Off by decision: face or fingerprint only unlocks the mobile app.')}</form>
+      <form class="card card-pad" data-submit="set-docusign"><h2 class="mb-8">DocuSign allowance</h2>
+        <div class="form-grid"><div class="field"><label for="dsal">Sends a year</label><input class="input" type="number" min="1" id="dsal" name="allowance" value="${st.docusign.allowance}" ${isQm ? '' : 'disabled'}></div>
+          <div class="field"><label for="dsym">Allowance year starts</label><select class="select" id="dsym" name="month" ${isQm ? '' : 'disabled'}>${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(function (m, i) { return h`<option value="${i + 1}" ${st.docusign.yearStartMonth === i + 1 ? 'selected' : ''}>${m}</option>`; })}</select></div>
+          <div class="field"><label for="dswa">Warn the Quality Manager when this many are left</label><input class="input" type="number" min="0" id="dswa" name="warnAt" value="${st.docusign.warnAt}" ${isQm ? '' : 'disabled'}></div></div>
+        <p class="small muted mt-8">This year: ${Q.ds.used()} used, ${Q.ds.remaining()} remaining (${Q.ds.yearRange().label}). Check the figure against the DocuSign contract.</p>
+        ${isQm ? h`<button class="btn mt-8" type="submit">Save allowance</button>` : ''}</form>
+      <div class="card card-pad"><h2 class="mb-8">Read and understood</h2>
+        ${row('Statement people confirm', h`<span class="small">${st.ackStatement.replace('{doc}', 'WI-003').replace('{version}', '4.0')}</span>`, 'Not a Part 11 signature. Signed in through Microsoft 365; date and time set by the system; locked once made.')}
+        ${row('Completed records can be edited or deleted', sw('x5', false, true), 'Never, by anyone, administrators included. A correction is a new record with a reason; the original stays.')}</div>
       <div class="card card-pad"><h2 class="mb-8">Segregation of duties</h2>
         ${row('Authors cannot approve their own documents', sw('sod.authorCannotApprove', st.sod.authorCannotApprove, !isAdmin), 'Overrides need a named admin, a reason and a signature, and are logged.')}
         ${row('System Administrators cannot approve quality records', sw('sod.adminCannotApprove', st.sod.adminCannotApprove, !isAdmin))}
@@ -317,6 +346,13 @@
   }
   function setPath(obj, path, val) { var p = path.split('.'); var o = obj; for (var i = 0; i < p.length - 1; i++) o = o[p[i]]; var b = o[p[p.length - 1]]; o[p[p.length - 1]] = val; return b; }
   Q.on['set-toggle'] = function (el) { var k = el.getAttribute('data-key'); var b = setPath(Q.S.settings, k, el.checked); Q.audit('config', 'Setting', k, 'Changed setting ' + k + ' to ' + (el.checked ? 'on' : 'off'), { value: b }, { value: el.checked }); Q.toast('Setting saved · logged'); Q.refresh(); };
+  Q.on['set-docusign'] = function (form) {
+    var f = Q.formData(form), b = Q.clone(Q.S.settings.docusign);
+    var n = { allowance: Math.max(1, +f.allowance || b.allowance), yearStartMonth: +f.month || 1, warnAt: Math.max(0, +f.warnAt || 0) };
+    Q.S.settings.docusign.allowance = n.allowance; Q.S.settings.docusign.yearStartMonth = n.yearStartMonth; Q.S.settings.docusign.warnAt = n.warnAt;
+    Q.audit('config', 'Setting', 'docusign.allowance', 'Changed DocuSign allowance settings', { allowance: b.allowance, yearStartMonth: b.yearStartMonth, warnAt: b.warnAt }, n);
+    Q.toast('Allowance saved'); Q.refresh();
+  };
   Q.on['set-statement'] = function (form) { var f = Q.formData(form); if (!f.statement || f.statement.indexOf('{meaning}') < 0) return Q.fieldError(form, 'statement', 'Keep {meaning} in the statement.'); var b = Q.S.settings.statement; Q.S.settings.statement = f.statement; Q.audit('config', 'Setting', 'signature.statement', 'Changed the signature statement', { text: b }, { text: f.statement }); Q.toast('Statement saved'); Q.refresh(); };
   Q.on['set-anchor'] = function (el) { var b = Q.S.settings.anchorMinutes; Q.S.settings.anchorMinutes = +el.value; Q.audit('config', 'Setting', 'audit.anchor', 'Audit anchor interval set to ' + el.value + ' minutes', { minutes: b }, { minutes: +el.value }); Q.toast('Saved'); Q.refresh(); };
   Q.on['set-support'] = function (form) { var u = Q.formData(form).u; Q.S.settings.supportOwners.push(u); Q.audit('role.change', 'User', u, 'Added ' + Q.fullName(u) + ' as a Support Owner'); Q.toast('Support Owner added'); Q.refresh(); };
