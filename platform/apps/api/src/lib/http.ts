@@ -2,9 +2,14 @@
 import { ZodError } from 'zod';
 import { NotFound, ruleViolation } from '@veqms/db';
 
+// A refusal that must reach the audit trail (segregation of duties, access denied). The request's transaction
+// rolls back on any error, so the error handler writes this note in a transaction of its own.
+export interface AuditNote { action: string; objectType: string; objectId: string; summary: string }
+
 export class HttpError extends Error {
   readonly status: number;
   readonly code: string;
+  log?: AuditNote;
   constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
@@ -15,6 +20,7 @@ export const badRequest = (m: string) => new HttpError(400, m);
 export const forbidden = (m = 'You don’t have permission to do that.') => new HttpError(403, m);
 export const notFound = (m = 'Not found.') => new HttpError(404, m);
 export const conflict = (m: string) => new HttpError(409, m);
+export function logged(e: HttpError, note: AuditNote): HttpError { e.log = note; return e; }
 
 export function toHttp(e: unknown): { status: number; body: { error: { code: string; message: string } } } {
   if (e instanceof HttpError) return { status: e.status, body: { error: { code: e.code, message: e.message } } };

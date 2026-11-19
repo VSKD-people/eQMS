@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { rows, one, maybe, type Db } from '@veqms/db';
 import { DOC_TYPES, can, canBeApprover, type Role } from '@veqms/domain';
-import { badRequest, conflict, forbidden, notFound } from '../lib/http.ts';
+import { badRequest, conflict, forbidden, logged, notFound } from '../lib/http.ts';
 import { canSee, people, ref, type Person } from '../lib/people.ts';
 import { addTask, audit, closeTasks, notify, dueIn } from '../lib/work.ts';
 import { allocateDocument, audienceOf, setAudience } from './training.ts';
@@ -31,8 +31,8 @@ async function involved(db: Db, d: DocRow, userId: string): Promise<boolean> {
 }
 export async function assertVisible(db: Db, me: Person, d: DocRow): Promise<void> {
   if (!canSee(me, d.classification, await involved(db, d, me.id))) {
-    await audit(db, 'read.denied', 'Document', d.number, `Access denied: ${d.number} is ${d.classification}`);
-    throw forbidden(`${d.number} is ${d.classification}. You need ${d.classification} clearance or named access.`);
+    throw logged(forbidden(`${d.number} is ${d.classification}. You need ${d.classification} clearance or named access.`),
+      { action: 'read.denied', objectType: 'Document', objectId: d.number, summary: `Access denied: ${d.number} is ${d.classification}` });
   }
 }
 

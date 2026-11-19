@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 // Standalone output gives a small Node server for the container image (see infra and the Dockerfile).
-// @veqms/domain is TypeScript source in the workspace, so Next compiles it.
+// @veqms/domain is a workspace package, built to dist/ before the web build (see the Dockerfile).
 const config: NextConfig = {
   output: 'standalone',
   transpilePackages: ['@veqms/domain'],

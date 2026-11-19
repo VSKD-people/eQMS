@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "node --watch --experimental-strip-types src/server.ts",
+    "dev": "node --watch --experimental-strip-types --env-file=../../.env src/server.ts",
     "start": "node dist/server.js",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },

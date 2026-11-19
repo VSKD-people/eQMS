@@ -69,9 +69,10 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     environment:
-      # The standalone Next.js server always runs with NODE_ENV=production. If the web app refuses DEV_AUTH in
-      # production, run the web app with `npm run dev:web` instead of this container for persona sign-in.
+      # The standalone Next.js server always runs with NODE_ENV=production. VEQMS_LOCAL=1 tells the web app this is
+      # the local stack, so the persona picker works over plain http://localhost. Never set it in Azure.
       API_BASE_URL: http://api:8080
+      VEQMS_LOCAL: "1"
       DEV_AUTH: "1"
       SESSION_SECRET: bG9jYWwtb25seS1zZXNzaW9uLXNlY3JldC0zMi1ieXRlcyE=
       APP_BASE_URL: http://localhost:3000

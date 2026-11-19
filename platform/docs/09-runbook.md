@@ -216,17 +216,18 @@ For a normal leaver, disabling the account in Entra ID is enough: provisioning d
 training items close and their records stay. When access must end **immediately** (dismissal, suspected misuse):
 
 1. **Entra ID:** disable the account and use **Revoke sessions** on the user. This stops new sign-ins.
-2. **VeQMS:** in the Entra enterprise application, use **Provision on demand** for that user so VeQMS marks them
-   inactive now instead of at the next cycle. The API checks the user's status on every request, so their next
-   request is refused even if their access token hasn't expired.
+2. **VeQMS:** a System Administrator opens Administration → Users → *Change access* and sets the person to
+   **Revoked** (or **Left**), with the reason. This ends every VeQMS session at once (tokens issued before that
+   moment are refused), closes their open training items and keeps their records. *End all sessions now* ends
+   sessions without changing their access. Provisioning from Entra ID does the same when it deactivates the user,
+   so **Provision on demand** in the Entra enterprise application is an alternative.
 3. **Open approvals:** check the Approvals register for envelopes waiting on them. Void and send again with a
    different signer (each new envelope uses a send).
 4. **Ownership:** move their documents, CAPAs and tasks to someone else.
 5. Record what you did and when.
 
-*Check before go-live:* the schema has a per-user "sessions revoked at" time (tokens issued earlier are refused) but
-no Phase 1 endpoint sets it yet. Confirm what SCIM deactivation sets in the finished API, and test this procedure
-end to end with a test user.
+*Check before go-live:* test this procedure end to end with a test user, including a request made with a token
+issued before the revocation.
 
 ## Incident handling
 

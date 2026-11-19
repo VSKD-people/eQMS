@@ -1,0 +1,101 @@
+# VeQMS platform (Phase 1)
+
+The live, full-stack version of VeQMS: a PostgreSQL database, a Node API, a Next.js web app, and the Azure
+infrastructure to run them in UK South. The clickable prototype in `../veqms/` stays as the reference for screens
+and flows; the specs are in `../specs/`.
+
+> **Status.** Written and partly tested in a sandbox without npm access. The database, its rules and the API logic
+> have run against PostgreSQL 16 and pass their tests. The API and web app have been type-checked against stand-in
+> types, not built with the real packages. The web app has not been opened in a browser, and nothing has been
+> deployed to Azure. Start with "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
+> Details: [07 · Testing and validation](docs/07-testing-and-validation.md).
+
+## What Phase 1 does
+
+- Microsoft Entra ID sign-in; users and groups from Entra (SCIM); roles granted in VeQMS.
+- Documents: draft, review, then approval through **DocuSign** (one envelope per version: author, reviewers,
+  QA approver, in order). Verification check before sending, every send counted against the yearly allowance,
+  void and decline back to draft, correction sends, signed PDF and certificate stored.
+- CAPA and deviation closure through DocuSign.
+- Read-and-understood training in the app: audiences per document, allocation, confirmation with optional quiz,
+  locked records, corrections as new records, matrix, reminders.
+- Approvals register and sends log, audit trail with a hash-chain check, Excel and PDF reports, settings.
+
+## Folders
+
+| Folder | Contents |
+|---|---|
+| `packages/domain` | Shared business rules, no I/O |
+| `packages/db` | Migrations, demo seed, invariant tests, connection helpers |
+| `apps/api` | Fastify API, DocuSign, storage and mail integrations, daily job, tests |
+| `apps/web` | Next.js web app |
+| `infra` | Bicep (Azure UK South), job scripts, local database set-up |
+| `docs` | The documentation set (below) |
+
+## Run it locally
+
+Needs Docker, or Node 22.12+ and PostgreSQL 16.
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:3000 and pick a persona. DocuSign runs in mock mode: each signer signs in VeQMS when it is
+their turn. Sample data only.
+
+Without Docker: copy `.env.example` to `.env` and `apps/web/.env.example` to `apps/web/.env.local`, create a
+database called `veqms`, run `infra/local/initdb/01-local-login.sql` against it (creates the API's local login), then:
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+Migrations and the demo seed run as the database owner (here the `postgres` user), not as the API's login:
+
+```bash
+DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5432/veqms npm run db:migrate
+```
+
+```bash
+DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5432/veqms npm run db:seed
+```
+
+```bash
+npm run dev:api
+```
+
+```bash
+npm run dev:web
+```
+
+## Checks
+
+```bash
+npm run typecheck && npm test
+```
+
+```bash
+npm run db:test
+```
+
+The API flow test needs `DATABASE_URL` pointing at a freshly migrated and seeded database (it changes data). CI runs
+everything on each push: `.github/workflows/platform-ci.yml`.
+
+## Documentation
+
+| Document | For |
+|---|---|
+| [BUILD_PROMPT.md](BUILD_PROMPT.md) | Carrying on the build: rules, first tasks, Phases 2 to 7, open decisions |
+| [01 · Architecture](docs/01-architecture.md) | How the parts fit and why |
+| [02 · Data model](docs/02-data-model.md) | Tables, roles, the rules the database enforces |
+| [03 · API](docs/03-api.md) | Every endpoint and setting |
+| [04 · Security and compliance](docs/04-security-and-compliance.md) | Threats and controls, Part 11 mapping, open decisions |
+| [05 · Deployment to Azure](docs/05-deployment-azure.md) | From an empty subscription to a live system |
+| [06 · DocuSign](docs/06-docusign.md) | The approval route and the DocuSign account set-up |
+| [07 · Testing and validation](docs/07-testing-and-validation.md) | Test suites, what has run, UAT scenarios, validation |
+| [08 · Migration](docs/08-migration.md) | Bringing records across from KSTARRS and SharePoint |
+| [09 · Runbook](docs/09-runbook.md) | Day-to-day operations, incidents, leavers, restore |

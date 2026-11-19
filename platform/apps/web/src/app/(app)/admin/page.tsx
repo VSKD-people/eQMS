@@ -3,13 +3,14 @@ import { getMe, has, load } from '@/lib/page';
 import type { AuditEntry, Settings, UserRow } from '@/lib/types';
 import { MONTHS, fmtUtc, qs } from '@/lib/format';
 import { Chip, Empty, Notice, Tabs } from '@/components/ui';
-import { saveSettings } from './actions';
+import { endSessions, saveRoles, saveSettings, saveStatus } from './actions';
 
 export const metadata = { title: 'Administration' };
 
 type SP = { tab?: string; objectType?: string; objectId?: string; verify?: string; ok?: string; err?: string };
 
-const OBJECT_TYPES = ['document', 'document_version', 'envelope', 'capa', 'quality_event', 'training_record', 'user', 'settings', 'report'];
+// The record types the API writes to the audit trail.
+const OBJECT_TYPES = ['Document', 'CAPA', 'Quality event', 'Training record', 'Training', 'User', 'Group', 'Settings', 'Report', 'Audit trail'];
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -25,7 +26,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <div className="page-head"><div><h1>Administration</h1><div className="sub">Audit trail, settings and users. Users and groups come from Microsoft Entra ID.</div></div></div>
       <Tabs base="/admin" current={tab} tabs={tabs} />
       <Notice ok={sp.ok} err={sp.err} />
-      {tab === 'audit' ? <AuditTab sp={sp} /> : tab === 'settings' ? <SettingsTab /> : <UsersTab />}
+      {tab === 'audit' ? <AuditTab sp={sp} /> : tab === 'settings' ? <SettingsTab /> : <UsersTab canManage={has(me, 'admin.users')} myId={me.user.id} />}
     </>
   );
 }
@@ -78,7 +79,7 @@ async function SettingsTab() {
       <h2 className="label mt-16">Training</h2>
       <div className="field"><label htmlFor="s-ack">Read-and-understood statement</label>
         <input className="input" id="s-ack" name="ackStatement" defaultValue={s.ackStatement} required />
-        <div className="help">Must include {'{number}'} and {'{version}'}. Changes apply to records made from now on.</div></div>
+        <div className="help">Must include {'{doc}'} and {'{version}'}. Changes apply to records made from now on.</div></div>
       <div className="grid-2">
         <div className="field"><label htmlFor="s-rem">Reminder days before due</label><input className="input" id="s-rem" name="reminderDays" defaultValue={s.reminderDays.join(', ')} />
           <div className="help">Comma-separated, for example 7, 3, 1.</div></div>
@@ -90,17 +91,37 @@ async function SettingsTab() {
   );
 }
 
-async function UsersTab() {
+const ROLE_LABELS: [string, string][] = [['admin', 'System Administrator'], ['qm', 'Quality Manager'], ['author', 'Author'], ['reviewer', 'Reviewer'],
+  ['approver', 'Approver'], ['process', 'Process owner'], ['employee', 'Employee'], ['auditor', 'Auditor (read-only)']];
+
+async function UsersTab({ canManage, myId }: { canManage: boolean; myId: string }) {
   const users = await load<UserRow[]>('/users');
   return (
     <>
-      <div className="callout plain mb-16">Users, groups and leavers are managed in Microsoft Entra ID and arrive here through SCIM provisioning. Change them there, not here.</div>
+      <div className="callout plain mb-16">People, groups and leavers come from Microsoft Entra ID through SCIM provisioning. Roles are granted here by a System Administrator.
+        A System Administrator can’t also be an Approver or Quality Manager, and nobody can change their own access.</div>
       {users.length ? (
         <div className="table-wrap"><table className="t"><caption className="sr-only">Users</caption>
-          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Job title</th><th scope="col">Roles</th><th scope="col">Groups</th><th scope="col">Status</th></tr></thead>
+          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Job title</th><th scope="col">Roles</th><th scope="col">Groups</th><th scope="col">Status</th>{canManage ? <th scope="col">Manage</th> : null}</tr></thead>
           <tbody>{users.map((u) => (
             <tr key={u.id}><td><a href={`/training/records${qs({ userId: u.id })}`}>{u.name}</a></td><td className="small">{u.email}</td><td className="small">{u.jobTitle ?? '—'}</td>
-              <td className="small">{u.roles.join(', ')}</td><td className="small">{u.groups.join(', ') || '—'}</td><td><Chip text={u.status} cls={u.status === 'active' ? 'chip-done' : 'chip-outline'} /></td></tr>
+              <td className="small">{u.roles.join(', ')}</td><td className="small">{u.groups.join(', ') || '—'}</td><td><Chip text={u.status} cls={u.status === 'active' ? 'chip-done' : 'chip-outline'} /></td>
+              {canManage ? <td>{u.id === myId ? <span className="small muted">You</span> : (
+                <details><summary className="small">Change access</summary>
+                  <form action={saveRoles.bind(null, u.id)} className="stack mt-16">
+                    <fieldset><legend className="small">Roles</legend>
+                      {ROLE_LABELS.map(([r, label]) => <label key={r} className="check small"><input type="checkbox" name="roles" value={r} defaultChecked={u.roles.includes(r as UserRow['roles'][number])} /> {label}</label>)}</fieldset>
+                    <div className="field"><label className="small" htmlFor={`rr-${u.id}`}>Reason</label><input className="input" id={`rr-${u.id}`} name="reason" required minLength={5} /></div>
+                    <div><button className="btn btn-primary" type="submit">Save roles</button></div>
+                  </form>
+                  <form action={saveStatus.bind(null, u.id)} className="stack mt-16">
+                    <div className="field"><label className="small" htmlFor={`st-${u.id}`}>Access</label>
+                      <select className="select" id={`st-${u.id}`} name="status" defaultValue={u.status}><option value="active">Active</option><option value="revoked">Revoked</option><option value="left">Left the organisation</option></select></div>
+                    <div className="field"><label className="small" htmlFor={`sr-${u.id}`}>Reason</label><input className="input" id={`sr-${u.id}`} name="reason" required minLength={5} /></div>
+                    <div><button className="btn" type="submit">Save access</button></div>
+                  </form>
+                  <form action={endSessions.bind(null, u.id)} className="mt-16"><button className="btn" type="submit">End all sessions now</button></form>
+                </details>)}</td> : null}</tr>
           ))}</tbody></table></div>
       ) : <Empty title="No users yet" text="Users appear once Entra ID provisioning has run." />}
     </>

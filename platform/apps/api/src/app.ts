@@ -6,7 +6,8 @@ import type { Config } from './config.ts';
 import type { DocuSign } from './integrations/docusign.ts';
 import type { Storage } from './integrations/storage.ts';
 import { createAuthenticator, getAuth, setAuth, type Auth } from './lib/auth.ts';
-import { forbidden, toHttp } from './lib/http.ts';
+import { forbidden, HttpError, toHttp } from './lib/http.ts';
+import { audit } from './lib/work.ts';
 import { isReadOnly } from '@veqms/domain';
 import type { Person } from './lib/people.ts';
 import { coreRoutes } from './routes/core.ts';
@@ -36,10 +37,17 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   };
   const ctx: Ctx = { ...deps, run };
 
-  app.setErrorHandler((err, req, reply) => {
+  app.setErrorHandler(async (err, req, reply) => {
     const h = toHttp(err);
     if (h.status >= 500) req.log.error({ err }, 'request failed');
-    void reply.status(h.status).send(h.body);
+    const note = err instanceof HttpError ? err.log : undefined;
+    if (note) {
+      try {
+        const a = getAuth(req);
+        await withTenant(deps.pool, { tenantId: a.tenantId, userId: a.user.id }, (db) => audit(db, note.action, note.objectType, note.objectId, note.summary));
+      } catch (e) { req.log.error({ err: e }, 'could not write the audit entry for a refusal'); }
+    }
+    return reply.status(h.status).send(h.body);
   });
 
   app.get('/health', async () => ({ ok: true }));

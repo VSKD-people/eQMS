@@ -41,6 +41,34 @@ const capaApi = async (db: Db, c: Capa) => ({ id: c.id, number: c.number, title:
 const qeApi = async (db: Db, q: Qe) => ({ id: q.id, number: q.number, type: q.type, title: q.title, state: q.state, severity: q.severity, owner: { id: q.owner_id, name: q.owner_name },
   description: q.description, assessment: q.assessment, closureJustification: q.closure_justification, closedAt: iso(q.closed_at), envelope: await env.latestFor(db, q.id) });
 
+export async function recordEffectiveness(db: Db, me: Person, n: string, result: string, verdict: 'Effective' | 'Not effective'): Promise<void> {
+  const c = await capa(db, n);
+  owns(me, c.owner_id);
+  if (!['Execution', 'Effectiveness check'].includes(c.state)) throw conflict('Record the effectiveness check once the actions are done.');
+  if (c.closure_envelope_id && (await maybe(db, `select 1 from app.envelopes where id = $1 and status = 'sent'`, [c.closure_envelope_id]))) throw conflict('The closure is out for signature. Void the envelope to change the result.');
+  if (verdict === 'Not effective') {
+    await db.query(`update app.capas set effectiveness_result = $2, effectiveness_verdict = $3, effectiveness_by = $4, effectiveness_at = now(), state = 'Execution', actions_locked = false where id = $1`, [c.id, result, verdict, me.id]);
+    await audit(db, 'capa.effectiveness', 'CAPA', n, 'Effectiveness check: not effective. Back to execution for more actions.', { state: c.state }, { state: 'Execution', verdict: verdict });
+    await closeTasks(db, { recordId: c.id, kinds: ['effectiveness'] });
+    await addTask(db, { kind: 'capa-actions', recordType: 'capa', recordId: c.id, recordNumber: n, assigneeId: c.owner_id, dueAt: dueIn(14), note: 'Not effective: plan further actions' });
+    return;
+  }
+  await db.query(`update app.capas set effectiveness_result = $2, effectiveness_verdict = $3, effectiveness_by = $4, effectiveness_at = now(), state = 'Effectiveness check' where id = $1`, [c.id, result, verdict, me.id]);
+  await audit(db, 'capa.effectiveness', 'CAPA', n, 'Effectiveness check recorded: effective. Ready to send the closure to DocuSign.', { state: c.state, result: c.effectiveness_result }, { state: 'Effectiveness check', result: result, verdict: verdict });
+  await closeTasks(db, { recordId: c.id, kinds: ['effectiveness'] });
+  await addTask(db, { kind: 'effectiveness', recordType: 'capa', recordId: c.id, recordNumber: n, assigneeId: c.owner_id, dueAt: dueIn(3), note: 'Send the closure for approval in DocuSign' });
+}
+
+export async function recordClosureJustification(db: Db, me: Person, n: string, justification: string): Promise<void> {
+  const q = await qe(db, n);
+  owns(me, q.owner_id);
+  if (q.type !== 'Deviation') throw conflict('Only deviations close through DocuSign.');
+  if (!['Open', 'Assessment'].includes(q.state)) throw conflict('This deviation isn’t open.');
+  if (q.closure_envelope_id && (await maybe(db, `select 1 from app.envelopes where id = $1 and status = 'sent'`, [q.closure_envelope_id]))) throw conflict('The closure is out for signature. Void the envelope to change the justification.');
+  await db.query('update app.quality_events set closure_justification = $2 where id = $1', [q.id, justification]);
+  await audit(db, 'qe.closure', 'Quality event', n, 'Closure justification recorded (no CAPA needed). Ready to send to DocuSign.', { justification: q.closure_justification }, { justification: justification });
+}
+
 export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
   // The closure PDF exactly as it would go into the envelope, for the sender's verification check.
   for (const [path, kind] of [['capas', 'capa'], ['quality-events', 'quality_event']] as const) {
@@ -63,23 +91,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.post('/capas/:number/effectiveness', async (req, reply) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ result: z.string().min(10).max(4000), verdict: z.enum(['Effective', 'Not effective']) }), req.body);
-    await ctx.run(req, async (db, me) => {
-      const c = await capa(db, n);
-      owns(me, c.owner_id);
-      if (!['Execution', 'Effectiveness check'].includes(c.state)) throw conflict('Record the effectiveness check once the actions are done.');
-      if (c.closure_envelope_id && (await maybe(db, `select 1 from app.envelopes where id = $1 and status = 'sent'`, [c.closure_envelope_id]))) throw conflict('The closure is out for signature. Void the envelope to change the result.');
-      if (b.verdict === 'Not effective') {
-        await db.query(`update app.capas set effectiveness_result = $2, effectiveness_verdict = $3, effectiveness_by = $4, effectiveness_at = now(), state = 'Execution', actions_locked = false where id = $1`, [c.id, b.result, b.verdict, me.id]);
-        await audit(db, 'capa.effectiveness', 'CAPA', n, 'Effectiveness check: not effective. Back to execution for more actions.', { state: c.state }, { state: 'Execution', verdict: b.verdict });
-        await closeTasks(db, { recordId: c.id, kinds: ['effectiveness'] });
-        await addTask(db, { kind: 'capa-actions', recordType: 'capa', recordId: c.id, recordNumber: n, assigneeId: c.owner_id, dueAt: dueIn(14), note: 'Not effective: plan further actions' });
-        return;
-      }
-      await db.query(`update app.capas set effectiveness_result = $2, effectiveness_verdict = $3, effectiveness_by = $4, effectiveness_at = now(), state = 'Effectiveness check' where id = $1`, [c.id, b.result, b.verdict, me.id]);
-      await audit(db, 'capa.effectiveness', 'CAPA', n, 'Effectiveness check recorded: effective. Ready to send the closure to DocuSign.', { state: c.state, result: c.effectiveness_result }, { state: 'Effectiveness check', result: b.result, verdict: b.verdict });
-      await closeTasks(db, { recordId: c.id, kinds: ['effectiveness'] });
-      await addTask(db, { kind: 'effectiveness', recordType: 'capa', recordId: c.id, recordNumber: n, assigneeId: c.owner_id, dueAt: dueIn(3), note: 'Send the closure for approval in DocuSign' });
-    });
+    await ctx.run(req, (db, me) => recordEffectiveness(db, me, n, b.result, b.verdict));
     return noContent(reply);
   });
 
@@ -100,15 +112,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.post('/quality-events/:number/closure', async (req, reply) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ justification: z.string().min(10).max(4000) }), req.body);
-    await ctx.run(req, async (db, me) => {
-      const q = await qe(db, n);
-      owns(me, q.owner_id);
-      if (q.type !== 'Deviation') throw conflict('Only deviations close through DocuSign.');
-      if (!['Open', 'Assessment'].includes(q.state)) throw conflict('This deviation isn’t open.');
-      if (q.closure_envelope_id && (await maybe(db, `select 1 from app.envelopes where id = $1 and status = 'sent'`, [q.closure_envelope_id]))) throw conflict('The closure is out for signature. Void the envelope to change the justification.');
-      await db.query('update app.quality_events set closure_justification = $2 where id = $1', [q.id, b.justification]);
-      await audit(db, 'qe.closure', 'Quality event', n, 'Closure justification recorded (no CAPA needed). Ready to send to DocuSign.', { justification: q.closure_justification }, { justification: b.justification });
-    });
+    await ctx.run(req, (db, me) => recordClosureJustification(db, me, n, b.justification));
     return noContent(reply);
   });
   api.get('/quality-events/:number/approval-plan', (req) => ctx.run(req, async (db) => {

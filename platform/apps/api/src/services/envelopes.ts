@@ -5,7 +5,7 @@ import { rows, one, maybe, type Db } from '@veqms/db';
 import { can, planDocumentEnvelope, planClosureEnvelope, verificationComplete, currentOrder, allowanceState, allowanceYear, mapEnvelopeStatus, mapRecipientStatus, type EnvelopePlan, type Verification } from '@veqms/domain';
 import type { DocuSign } from '../integrations/docusign.ts';
 import type { Storage } from '../integrations/storage.ts';
-import { badRequest, conflict, forbidden, notFound } from '../lib/http.ts';
+import { badRequest, conflict, forbidden, logged, notFound } from '../lib/http.ts';
 import { people, person, type Person } from '../lib/people.ts';
 import { addTask, audit, automationRan, closeTasks, notify, dueIn } from '../lib/work.ts';
 import { assertVisible, docByNumber, currentVersion, makeEffective } from './documents.ts';
@@ -22,6 +22,8 @@ type SignerRow = { id: string; user_id: string; name: string; email: string; rol
 
 const ENV_SELECT = `select e.*, u.name as sent_by_name, s.allowance_year, s.send_no from app.envelopes e join app.users u on u.id = e.sent_by left join app.docusign_sends s on s.envelope_id = e.id`;
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
+// Audit trail names for record types, the same everywhere in the trail.
+export const LABEL: Record<EnvRow['record_type'], string> = { document: 'Document', capa: 'CAPA', quality_event: 'Quality event' };
 // Hash of the exact bytes stored, so anyone can check a file with sha256sum.
 const hashBytes = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 export type Source = 'app' | 'connect' | 'poll';
@@ -118,10 +120,11 @@ export async function planForClosure(db: Db, kind: 'capa' | 'quality_event', num
 }
 
 // ---------- Sending ----------
-async function checkPlan(db: Db, plan: EnvelopePlan, recordType: string, recordNumber: string): Promise<void> {
+async function checkPlan(db: Db, plan: EnvelopePlan, recordType: EnvRow['record_type'], recordNumber: string): Promise<void> {
   if (!plan.problems.length) return;
-  if (plan.problems.some((p) => /segregation of duties|can’t also|can’t approve/.test(p))) await audit(db, 'sod.block', recordType, recordNumber, 'DocuSign send blocked: ' + plan.problems[0]);
-  throw conflict(plan.problems[0]!);
+  const e = conflict(plan.problems[0]!);
+  const sod = plan.problems.find((p) => /segregation of duties|can’t also|can’t approve/.test(p));
+  throw sod ? logged(e, { action: 'sod.block', objectType: LABEL[recordType], objectId: recordNumber, summary: 'DocuSign send blocked: ' + sod }) : e;
 }
 async function assertCanSend(db: Db, me: Person, recordId: string): Promise<void> {
   if (await maybe(db, `select 1 from app.envelopes where record_id = $1 and status = 'sent'`, [recordId])) throw conflict('An envelope for this record is already out for signature.');
@@ -156,14 +159,14 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: EnvRow[
     await addTask(db, { kind: 'fyi', fyi: true, recordType: o.recordType, recordId: o.recordId, recordNumber: o.recordNumber, assigneeId: s.userId, ref: id,
       note: `You’re signer ${s.routingOrder} as ${s.roleLabel}. DocuSign will email you when it’s your turn.` });
   }
-  await audit(db, 'docusign.verify', o.recordType, o.recordNumber, `Verification check passed for ${o.plan.subject.split(' · ')[0]}: footer, version, document ID and dates`, null, verification);
+  await audit(db, 'docusign.verify', LABEL[o.recordType], o.recordNumber, `Verification check passed for ${o.plan.subject.split(' · ')[0]}: footer, version, document ID and dates`, null, verification);
   // Call DocuSign last: if it fails, the transaction rolls back and no send is counted.
   const dsId = await deps.docusign.createEnvelope({ subject: o.plan.subject, pdf: o.pdf, fileName: o.fileName, veqmsEnvelopeId: id,
     signers: lines.map((s) => ({ recipientId: s.recipientId, name: s.person.name, email: s.person.email, routingOrder: s.routingOrder, meaning: s.meaning, anchor: s.anchor })) });
   await db.query('update app.envelopes set docusign_envelope_id = $2 where id = $1', [id, dsId]);
   await db.query('insert into app.envelope_directory (docusign_envelope_id, tenant_id, envelope_id) values ($1, app.current_tenant(), $2)', [dsId, id]);
   await db.query(`insert into app.envelope_events (tenant_id, envelope_id, type, user_id, detail) values (app.current_tenant(), $1, 'sent', $2, $3)`, [id, me.id, `Envelope sent to ${lines.length} signers${correctionOf ? ' (correction send)' : ''}`]);
-  await audit(db, 'docusign.send', o.recordType, o.recordNumber, `Sent DocuSign envelope ${dsId} (send ${send.send_no} of the ${send.allowance_year} allowance${correctionOf ? '; correction after a ' + last!.status + ' envelope' : ''})`, null,
+  await audit(db, 'docusign.send', LABEL[o.recordType], o.recordNumber, `Sent DocuSign envelope ${dsId} (send ${send.send_no} of the ${send.allowance_year} allowance${correctionOf ? '; correction after a ' + last!.status + ' envelope' : ''})`, null,
     { envelope: id, docusignEnvelopeId: dsId, subject: o.plan.subject, signers: lines.map((s) => `${s.person.name} · ${s.meaning}`), sendNo: send.send_no });
   await advance(db, id);
   const a = await allowance(db);
@@ -238,7 +241,7 @@ export async function applyStatus(db: Db, deps: Deps, envelopeId: string, envSta
     if (u.status === 'signed') {
       await db.query(`update app.envelope_signers set status = 'signed', signed_at = coalesce($2::timestamptz, now()) where id = $1`, [s.id, u.at]);
       await db.query(`insert into app.envelope_events (tenant_id, envelope_id, type, user_id, source) values (app.current_tenant(), $1, 'signed', $2, $3)`, [envelopeId, s.user_id, source]);
-      await audit(db, 'docusign.signed', e.record_type, e.record_number, `DocuSign: ${s.name} signed ${e.subject.split(' · ')[0]} · ${s.meaning}`, null, { envelope: envelopeId, signer: s.name, meaning: s.meaning, at: u.at });
+      await audit(db, 'docusign.signed', LABEL[e.record_type], e.record_number, `DocuSign: ${s.name} signed ${e.subject.split(' · ')[0]} · ${s.meaning}`, null, { envelope: envelopeId, signer: s.name, meaning: s.meaning, at: u.at });
       await closeTasks(db, { recordId: e.record_id, kinds: ['ds-sign'], assigneeId: s.user_id });
       if (e.record_type === 'document' && s.meaning === 'Approved') await db.query(`update app.document_approvers set status = 'Signed', signed_at = now() where document_id = $1 and user_id = $2`, [e.record_id, s.user_id]);
     } else if (u.status === 'declined') {
@@ -291,7 +294,7 @@ async function complete(db: Db, deps: Deps, envelopeId: string, source: Source):
       [e.record_type, e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, e.id, e.pdf_sha256,
        `Signed in DocuSign with the Part 11 module: signer re-authenticated and chose the meaning “${s.meaning}”.`]);
   }
-  await audit(db, 'docusign.completed', e.record_type, e.record_number, `Envelope ${e.docusign_envelope_id} completed; signed PDF, certificate of completion and envelope ID stored`, null,
+  await audit(db, 'docusign.completed', LABEL[e.record_type], e.record_number, `Envelope ${e.docusign_envelope_id} completed; signed PDF, certificate of completion and envelope ID stored`, null,
     { envelope: e.id, docusignEnvelopeId: e.docusign_envelope_id, signedPdfSha256: signedSha, certificateSha256: certSha });
   let training = 0;
   if (e.record_type === 'document' && e.document_version_id) {
@@ -325,7 +328,7 @@ async function giveBack(db: Db, e: EnvRow, how: 'declined' | 'voided', reason: s
     await db.query(`insert into app.envelope_events (tenant_id, envelope_id, type, user_id, detail, source) values (app.current_tenant(), $1, 'voided', $2, $3, $4)`, [e.id, by, reason, source]);
   }
   await db.query(`update app.envelope_signers set status = 'voided' where envelope_id = $1 and status not in ('signed', 'declined')`, [e.id]);
-  await audit(db, `docusign.${how === 'voided' ? 'void' : 'declined'}`, e.record_type, e.record_number, `Envelope ${how}: ${reason}. A corrected envelope is a new send.`, { status: 'sent' }, { status: how, reason });
+  await audit(db, `docusign.${how === 'voided' ? 'void' : 'declined'}`, LABEL[e.record_type], e.record_number, `Envelope ${how}: ${reason}. A corrected envelope is a new send.`, { status: 'sent' }, { status: how, reason });
   await closeTasks(db, { recordId: e.record_id, kinds: ['ds-sign', 'fyi'] });
   const why = `Envelope ${how}${by ? ' by ' + ((await person(db, by))?.name ?? 'a signer') : ''}. Reason: ${reason}`;
   if (e.record_type === 'document') {
@@ -358,6 +361,8 @@ export async function voidEnvelope(db: Db, deps: Deps, me: Person, envelopeId: s
 // Development and UAT only (DOCUSIGN_MODE=mock): stands in for the signer acting in DocuSign.
 export async function mockAct(db: Db, deps: Deps, me: Person, envelopeId: string, action: 'sign' | 'decline', reason?: string) {
   if (deps.docusign.mode !== 'mock') throw forbidden('Only available with the DocuSign mock.');
+  const e = await byId(db, envelopeId);
+  if (e.status !== 'sent') throw conflict(`This envelope is ${e.status}.`);
   const ss = await signers(db, envelopeId);
   const s = ss.find((x) => x.user_id === me.id && (x.status === 'sent' || x.status === 'delivered'));
   if (!s) throw conflict('It isn’t your turn to sign this envelope.');
@@ -370,7 +375,7 @@ export async function file(db: Db, deps: Deps, me: Person, envelopeId: string, k
   await assertRecordVisible(db, me, e);
   const key = kind === 'original' ? e.pdf_blob : kind === 'signed' ? e.signed_pdf_blob : e.certificate_blob;
   if (!key) throw notFound('That file is stored when the envelope completes.');
-  await audit(db, 'read', e.record_type, e.record_number, `Opened ${kind} PDF of envelope ${e.docusign_envelope_id ?? e.id}`);
+  await audit(db, 'read', LABEL[e.record_type], e.record_number, `Opened ${kind} PDF of envelope ${e.docusign_envelope_id ?? e.id}`);
   return { bytes: await deps.storage.get(key), name: `${e.record_number}${e.version ? '_v' + e.version : ''}_${kind}.pdf` };
 }
 
