@@ -27,7 +27,7 @@ grant select, insert, update on all tables in schema app to veqms_app;
 grant select on all tables in schema app to veqms_readonly;
 grant usage on all sequences in schema app to veqms_app;
 revoke delete, truncate on all tables in schema app from veqms_app, veqms_readonly;
-revoke update on app.audit_log, app.signatures, app.agreement_events, app.signing_transactions, app.notification_log, app.automation_runs, app.schema_migrations from veqms_app;
+revoke update on app.audit_client_info, app.audit_log, app.signatures, app.agreement_events, app.signing_transactions, app.notification_log, app.automation_runs, app.schema_migrations from veqms_app;
 revoke insert, update on app.tenants, app.tenant_directory, app.schema_migrations from veqms_app;
 -- Configuration that is replaced as a whole (audiences, reviewer and approver lists, group membership from SCIM, role assignments)
 -- may be deleted by the API; every change is audited with old and new values. Quality records never are.

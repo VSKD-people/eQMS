@@ -1,4 +1,5 @@
 import 'server-only';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { env } from './env';
 import { getSession, needsRefresh, setSession, type Session } from './session';
@@ -40,13 +41,26 @@ async function currentSession(canWrite: boolean, next?: string): Promise<Session
   }
 }
 
+// The person's IP address and device, passed on to the API for the audit trail. The first X-Forwarded-For address is
+// the one Azure's ingress saw; the user agent is the browser's.
+async function clientHeaders(): Promise<Record<string, string>> {
+  try {
+    const h = await headers();
+    const ip = (h.get('x-forwarded-for') ?? '').split(',')[0]?.trim() || h.get('x-real-ip') || '';
+    const ua = h.get('user-agent') ?? '';
+    return { ...(ip ? { 'x-veqms-client-ip': ip } : {}), ...(ua ? { 'x-veqms-user-agent': ua.slice(0, 500) } : {}) };
+  } catch {
+    return {}; // outside a request (should not happen for API calls)
+  }
+}
+
 export interface CallOptions { method?: string; body?: unknown; canWrite?: boolean; next?: string }
 
 export async function api<T>(path: string, o: CallOptions = {}): Promise<T> {
   const s = await currentSession(!!o.canWrite || (o.method ?? 'GET') !== 'GET', o.next);
   const res = await fetch(`${env.apiBaseUrl}/api/v1${path}`, {
     method: o.method ?? 'GET',
-    headers: { accept: 'application/json', ...(o.body !== undefined ? { 'content-type': 'application/json' } : {}), ...authHeaders(s) },
+    headers: { accept: 'application/json', ...(o.body !== undefined ? { 'content-type': 'application/json' } : {}), ...authHeaders(s), ...(await clientHeaders()) },
     body: o.body !== undefined ? JSON.stringify(o.body) : undefined,
     cache: 'no-store'
   });
@@ -64,7 +78,7 @@ export async function api<T>(path: string, o: CallOptions = {}): Promise<T> {
 // Raw response for file downloads (reports, PDFs). Used by Route Handlers, which can refresh tokens.
 export async function apiRaw(path: string): Promise<Response> {
   const s = await currentSession(true);
-  return fetch(`${env.apiBaseUrl}/api/v1${path}`, { headers: authHeaders(s), cache: 'no-store' });
+  return fetch(`${env.apiBaseUrl}/api/v1${path}`, { headers: { ...authHeaders(s), ...(await clientHeaders()) }, cache: 'no-store' });
 }
 
 export function errorMessage(e: unknown): string {

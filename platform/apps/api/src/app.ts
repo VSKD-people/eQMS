@@ -32,9 +32,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     trustProxy: true
   });
   const authenticate = createAuthenticator(deps.cfg, deps.pool);
+  // The browser never calls the API: the web app does, and passes on the person's IP address and device in
+  // X-VeQMS-Client-IP and X-VeQMS-User-Agent. Without them (direct calls), the caller's own address is recorded.
+  const header = (req: FastifyRequest, name: string) => { const v = req.headers[name]; return typeof v === 'string' && v ? v : null; };
   const run: Run = (req, fn) => {
     const a = getAuth(req);
-    return withTenant(deps.pool, { tenantId: a.tenantId, userId: a.user.id }, (db) => fn(db, a.user, a));
+    return withTenant(deps.pool, { tenantId: a.tenantId, userId: a.user.id, clientIp: header(req, 'x-veqms-client-ip') ?? req.ip, userAgent: header(req, 'x-veqms-user-agent') ?? header(req, 'user-agent') },
+      (db) => fn(db, a.user, a));
   };
   const ctx: Ctx = { ...deps, run };
 

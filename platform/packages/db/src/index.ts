@@ -33,13 +33,17 @@ export function createPool(cfg: DbConfig): Pool {
 export interface TxContext {
   tenantId: string;
   userId: string | null; // null for system work (webhooks, scheduled jobs)
+  // The signed-in person's IP address and device, recorded once per request with its audit entries (app.audit).
+  clientIp?: string | null;
+  userAgent?: string | null;
 }
 
 export async function withTenant<T>(pool: Pool, ctx: TxContext, fn: (db: Db) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('begin');
-    await client.query("select set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)", [ctx.tenantId, ctx.userId ?? '']);
+    await client.query("select set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true), set_config('app.client_ip', $3, true), set_config('app.user_agent', $4, true)",
+      [ctx.tenantId, ctx.userId ?? '', ctx.clientIp ?? '', (ctx.userAgent ?? '').slice(0, 500)]);
     const out = await fn(client);
     await client.query('commit');
     return out;

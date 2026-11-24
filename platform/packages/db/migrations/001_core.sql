@@ -83,6 +83,7 @@ create table app.settings (
     check (position('{doc}' in ack_statement) > 0 and position('{version}' in ack_statement) > 0),
   reminder_days integer[] not null default '{3,1}',
   overdue_repeat_days integer not null default 2,
+  client_info_retention_days integer not null default 90 check (client_info_retention_days between 1 and 3650), -- IP and device data in the audit trail
   signature_statement text not null default 'I sign this record with the meaning “{meaning}”. I understand this electronic signature is the legally binding equivalent of my handwritten signature.',
   updated_at timestamptz not null default now()
 );
@@ -118,22 +119,24 @@ create table app.audit_log (
   summary text not null,
   before jsonb,
   after jsonb,
-  ip inet,
-  user_agent text,
+  client_info_id uuid,                 -- the request's IP address and device, in audit_client_info while retained
   prev_hash text not null,
   hash text not null,
   primary key (tenant_id, seq)
 );
 create index audit_object on app.audit_log (tenant_id, object_type, object_id);
 
+-- The hash covers the link to the IP and device record (client_info_id), not the values, so those can be deleted at
+-- the end of their retention without breaking the chain.
 create or replace function app.audit_entry_hash(
   p_tenant uuid, p_seq bigint, p_at timestamptz, p_actor uuid, p_actor_label text, p_on_behalf uuid, p_action text,
-  p_object_type text, p_object_id text, p_summary text, p_before jsonb, p_after jsonb, p_prev text
+  p_object_type text, p_object_id text, p_summary text, p_before jsonb, p_after jsonb, p_client_info uuid, p_prev text
 ) returns text language sql immutable as $$
   select encode(digest(p_prev || jsonb_build_object(
     'tenant', p_tenant, 'seq', p_seq, 'at', to_char(p_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
     'actor', p_actor, 'actorLabel', p_actor_label, 'onBehalfOf', p_on_behalf, 'action', p_action,
-    'objectType', p_object_type, 'objectId', p_object_id, 'summary', p_summary, 'before', p_before, 'after', p_after
+    'objectType', p_object_type, 'objectId', p_object_id, 'summary', p_summary, 'before', p_before, 'after', p_after,
+    'clientInfo', p_client_info
   )::text, 'sha256'), 'hex')
 $$;
 
@@ -146,7 +149,7 @@ begin
   new.at := clock_timestamp();
   new.prev_hash := coalesce(last_hash, repeat('0', 64));
   new.hash := app.audit_entry_hash(new.tenant_id, new.seq, new.at, new.actor_id, new.actor_label, new.on_behalf_of, new.action,
-                                   new.object_type, new.object_id, new.summary, new.before, new.after, new.prev_hash);
+                                   new.object_type, new.object_id, new.summary, new.before, new.after, new.client_info_id, new.prev_hash);
   return new;
 end $$;
 create trigger audit_chain before insert on app.audit_log for each row execute function app.audit_before_insert();
@@ -159,7 +162,7 @@ declare r record; prev text := repeat('0', 64); expected_seq bigint := 1; n bigi
 begin
   for r in select * from app.audit_log where tenant_id = app.current_tenant() order by seq loop
     n := n + 1;
-    if r.seq <> expected_seq or r.prev_hash <> prev or r.hash <> app.audit_entry_hash(r.tenant_id, r.seq, r.at, r.actor_id, r.actor_label, r.on_behalf_of, r.action, r.object_type, r.object_id, r.summary, r.before, r.after, r.prev_hash) then
+    if r.seq <> expected_seq or r.prev_hash <> prev or r.hash <> app.audit_entry_hash(r.tenant_id, r.seq, r.at, r.actor_id, r.actor_label, r.on_behalf_of, r.action, r.object_type, r.object_id, r.summary, r.before, r.after, r.client_info_id, r.prev_hash) then
       return query select false, n, r.seq; return;
     end if;
     prev := r.hash; expected_seq := expected_seq + 1;
@@ -168,13 +171,48 @@ begin
 end $$;
 
 -- Convenience used by the API and by triggers: write one audit entry as the current actor.
+-- The request's IP address and device (user agent), kept apart from the chain for a limited time
+-- (settings.client_info_retention_days), then deleted by app.purge_client_info(). One row per request.
+create table app.audit_client_info (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references app.tenants(id),
+  ip inet,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  retain_until timestamptz not null
+);
+create index audit_client_info_expiry on app.audit_client_info (tenant_id, retain_until);
+
 create or replace function app.audit(p_action text, p_object_type text, p_object_id text, p_summary text, p_before jsonb default null, p_after jsonb default null)
 returns void language plpgsql as $$
-declare v_actor uuid := app.current_actor(); v_label text;
+declare
+  v_actor uuid := app.current_actor(); v_label text; v_ip inet;
+  v_ip_text text := nullif(current_setting('app.client_ip', true), '');
+  v_ua text := nullif(current_setting('app.user_agent', true), '');
+  v_ci uuid := nullif(current_setting('app.client_info_id', true), '')::uuid;
 begin
   select name into v_label from app.users where id = v_actor;
-  insert into app.audit_log (tenant_id, actor_id, actor_label, action, object_type, object_id, summary, before, after, prev_hash, hash)
-  values (app.current_tenant(), v_actor, coalesce(v_label, 'System'), p_action, p_object_type, p_object_id, p_summary, p_before, p_after, '', '');
+  -- The first audit entry of a request records its IP address and device; later entries in the same request link to it.
+  if v_ci is null and (v_ip_text is not null or v_ua is not null) then
+    begin v_ip := v_ip_text::inet; exception when others then v_ip := null; end;
+    insert into app.audit_client_info (tenant_id, ip, user_agent, retain_until)
+    values (app.current_tenant(), v_ip, left(v_ua, 500),
+            now() + make_interval(days => coalesce((select client_info_retention_days from app.settings where tenant_id = app.current_tenant()), 90)))
+    returning id into v_ci;
+    perform set_config('app.client_info_id', v_ci::text, true);
+  end if;
+  insert into app.audit_log (tenant_id, actor_id, actor_label, action, object_type, object_id, summary, before, after, client_info_id, prev_hash, hash)
+  values (app.current_tenant(), v_actor, coalesce(v_label, 'System'), p_action, p_object_type, p_object_id, p_summary, p_before, p_after, v_ci, '', '');
+end $$;
+
+-- Deletes the current tenant's IP and device records past their retention. Runs as the owner because the API role
+-- can never delete; the daily job calls it. Returns the number deleted.
+create or replace function app.purge_client_info() returns integer language plpgsql security definer set search_path = app, pg_temp as $$
+declare n integer;
+begin
+  delete from app.audit_client_info where tenant_id = app.current_tenant() and retain_until < now();
+  get diagnostics n = row_count;
+  return n;
 end $$;
 
 -- ---------- Signatures: insert-only, for both routes ----------

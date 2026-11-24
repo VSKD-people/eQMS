@@ -46,9 +46,9 @@ do $$ begin
   perform pg_temp.expect_error($q$insert into app.tenant_directory values ('t', gen_random_uuid())$q$, 'permission denied');
 end $$;
 
-\echo '3. Audit trail: append-only, contiguous, hash-chained; tampering is detected'
+\echo '3. Audit trail: append-only, contiguous, hash-chained; tampering is detected; IP and device kept apart and purged'
 do $$
-declare n0 bigint; r record;
+declare n0 bigint; r record; ci uuid;
 begin
   select count(*) into n0 from app.audit_log;
   perform app.audit('test', 'Test', 'T-1', 'First test entry', null, '{"a":1}');
@@ -61,6 +61,22 @@ begin
   insert into app.audit_log (tenant_id, actor_label, action, object_type, object_id, summary, prev_hash, hash, seq) values (app.current_tenant(), 'x', 'x', 'x', 'x', 'forged entry', 'forged', 'forged', 1);
   assert (select hash <> 'forged' and seq = n0 + 3 from app.audit_log where summary = 'forged entry'), 'forged values were kept';
   select * into r from app.verify_audit_chain(); assert r.ok, 'chain should still verify';
+  -- IP address and device: recorded once per request, linked from the chain by ID.
+  perform set_config('app.client_ip', '203.0.113.7', true); perform set_config('app.user_agent', 'Test browser', true);
+  perform app.audit('test', 'Test', 'T-2', 'Entry with client info');
+  perform app.audit('test', 'Test', 'T-2', 'Second entry in the same request');
+  assert (select count(distinct client_info_id) = 1 and count(client_info_id) = 2 from app.audit_log where object_id = 'T-2'), 'client info not linked once per request';
+  assert (select c.ip = '203.0.113.7'::inet and c.user_agent = 'Test browser' from app.audit_client_info c where c.id = (select client_info_id from app.audit_log where object_id = 'T-2' limit 1)), 'client info not stored';
+  perform pg_temp.expect_error('delete from app.audit_client_info', 'permission denied');
+  perform pg_temp.expect_error('update app.audit_client_info set ip = null', 'permission denied');
+  -- At the end of retention the values are deleted; the chain still verifies because it covers only the link.
+  insert into app.audit_client_info (tenant_id, ip, user_agent, retain_until) values (app.current_tenant(), '198.51.100.1', 'Old browser', now() - interval '1 day') returning id into ci;
+  perform set_config('app.client_info_id', ci::text, true);
+  perform app.audit('test', 'Test', 'T-3', 'Entry whose client info has expired');
+  assert app.purge_client_info() >= 1, 'expired client info not deleted';
+  assert not exists (select 1 from app.audit_client_info where id = ci), 'expired client info still there';
+  assert exists (select 1 from app.audit_client_info where ip = '203.0.113.7'::inet), 'unexpired client info deleted';
+  select * into r from app.verify_audit_chain(); assert r.ok, 'chain should verify after the purge';
 end $$;
 reset role;
 -- A superuser bypassing the trigger to edit history is caught by the verifier.

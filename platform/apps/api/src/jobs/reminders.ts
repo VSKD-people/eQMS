@@ -1,6 +1,7 @@
 // Daily job (06:00 UTC in Azure): for every tenant, training reminders and overdue notices, a status check on
 // agreements that have been out for more than a day (in case a webhook notification was missed), and the email queue.
-import { withTenant } from '@veqms/db';
+import { one, withTenant } from '@veqms/db';
+import { audit } from '../lib/work.ts';
 import { loadConfig } from '../config.ts';
 import { createAdobeSign } from '../integrations/adobesign.ts';
 import { createStorage } from '../integrations/storage.ts';
@@ -29,6 +30,14 @@ async function main(): Promise<void> {
       try {
         const r = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => reminders(db));
         console.log(JSON.stringify({ tenant: t.tenant_id, job: 'training-reminders', ...r }));
+        // IP address and device records past their retention (settings.client_info_retention_days). The chain covers
+        // only the link to them, so it still verifies afterwards.
+        const purged = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, async (db) => {
+          const n = (await one<{ n: number }>(db, 'select app.purge_client_info() as n')).n;
+          if (n) await audit(db, 'retention', 'Audit trail', 'IP and device', `Deleted ${n} IP address and device records past their retention`);
+          return n;
+        });
+        console.log(JSON.stringify({ tenant: t.tenant_id, job: 'client-info-retention', deleted: purged }));
         if (deps.esign.mode === 'live') {
           const stale = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => signing.staleAgreements(db, 24));
           for (const id of stale) {
