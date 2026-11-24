@@ -3,7 +3,7 @@
 // Effective in VeQMS whether or not its published copy has reached SharePoint yet.
 import { createHash } from 'node:crypto';
 import { rows, one, maybe, withTenant, type Db, type Pool } from '@veqms/db';
-import type { Library, SharePoint, SpChange } from '../integrations/sharepoint.ts';
+import { DeltaExpired, type Library, type SharePoint, type SpChange } from '../integrations/sharepoint.ts';
 import type { Storage } from '../integrations/storage.ts';
 import { badRequest, conflict, notFound } from '../lib/http.ts';
 import type { Person } from '../lib/people.ts';
@@ -109,6 +109,19 @@ export async function syncLibrary(db: Db, sp: SharePoint, lib: Library): Promise
     return { outcome: 'ok', changes: n, alerts };
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 500);
+    if (e instanceof DeltaExpired) {
+      // Start again from now: changes made in the gap aren't known. The nightly hash check still covers every
+      // published file, so QA is told and can run it early.
+      const fresh = await sp.delta(lib, null).catch(() => null);
+      if (fresh) {
+        await db.query(`update app.sync_runs set finished_at = now(), outcome = 'ok', delta_token = $2, changes = $3, alerts = $4, error = $5 where id = $1`,
+          [run.id, fresh.token, n, alerts, msg + '; restarted from now']);
+        await audit(db, 'sharepoint.resync', 'SharePoint', lib, `The ${lib} library's change token expired; the sync restarted from now. Changes made in the gap were not seen`);
+        await notify(db, { to: await qualityManagers(db), kind: 'warn', title: `SharePoint sync restarted (${lib} library)`,
+          body: 'Its change token had expired, so changes made since the last sync were not seen. The nightly hash check still covers every published file.', href: '/admin?tab=sharepoint' });
+        return { outcome: 'ok', changes: n, alerts, error: msg };
+      }
+    }
     await db.query(`update app.sync_runs set finished_at = now(), outcome = 'failed', changes = $2, alerts = $3, error = $4 where id = $1`, [run.id, n, alerts, msg]);
     return { outcome: 'failed', changes: n, alerts, error: msg };
   }

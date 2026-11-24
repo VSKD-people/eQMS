@@ -20,7 +20,7 @@ import { sendQueuedEmail } from '../src/integrations/mail.ts';
 import { HttpError } from '../src/lib/http.ts';
 import { anchor, checkLatest } from '../src/services/anchor.ts';
 import * as sp from '../src/services/sharepoint.ts';
-import { createSharePoint } from '../src/integrations/sharepoint.ts';
+import { createSharePoint, DeltaExpired } from '../src/integrations/sharepoint.ts';
 import { loadConfig } from '../src/config.ts';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -347,6 +347,11 @@ test('API flow: Adobe Sign approvals, training records, closures, SharePoint, ad
   await sys((db) => sp.syncLibrary(db, fakeLive as any, 'drafts'));
   const wv2 = await versionOf(wd.number);
   ok(!wv2.pdf_blob && !wv2.pdf_source_tag, 'the drafts sync clears a PDF made from an older state of the Word file');
+  const expiring = { ...spm, delta: async (lib: any, token: string | null) => { if (token) throw new DeltaExpired(lib); return { changes: [], token: 'fresh-token' }; } };
+  const rx = await sys((db) => sp.syncLibrary(db, expiring as any, 'controlled'));
+  const lastRun = await sys((db) => one<any>(db, `select outcome, delta_token from app.sync_runs where library = 'controlled' order by started_at desc limit 1`));
+  const told = await sys((db) => rows<any>(db, `select 1 from app.notifications where user_id = $1 and title = 'SharePoint sync restarted (controlled library)'`, [ids.vic]));
+  ok(rx.outcome === 'ok' && lastRun.delta_token === 'fresh-token' && told.length === 1, 'an expired change token: the sync restarts from now and QA is told');
 
   console.log('Admin, email, register, audit');
   await as('hannah', async (db) => admin.setStatus(db, (await people(db, [ids.jake!]))[0]!, 'left', 'Left the company'));

@@ -36,6 +36,10 @@ export interface SharePoint {
   simulateOutsideEdit?(lib: Library, itemId: string, who: string): Promise<void>;
 }
 
+// The change token can no longer be used (verify: Graph answers 410 Gone when a delta token has expired). The sync
+// starts again from now, and says so.
+export class DeltaExpired extends Error { constructor(lib: Library) { super(`The change token for the ${lib} library has expired`); this.name = 'DeltaExpired'; } }
+
 export function createSharePoint(cfg: Config): SharePoint {
   const columns = JSON.parse(cfg.SHAREPOINT_COLUMNS) as Record<string, string>;
   return cfg.SHAREPOINT_MODE === 'live' ? live(cfg, columns) : mock(join(cfg.LOCAL_STORAGE_DIR, '.sharepoint-mock'), columns);
@@ -130,7 +134,9 @@ function live(cfg: Config, columns: Record<string, string>): SharePoint {
       let url = startToken ?? `${G}/drives/${drive(lib)}/root/delta${fromStart ? '' : '?token=latest'}`;
       const changes: SpChange[] = [];
       for (let page = 0; page < 10_000; page++) {
-        const r = await json<{ value: GraphItem[]; '@odata.nextLink'?: string; '@odata.deltaLink'?: string }>(await call('GET', url), 'delta');
+        const res = await call('GET', url);
+        if (res.status === 410 && startToken) throw new DeltaExpired(lib);
+        const r = await json<{ value: GraphItem[]; '@odata.nextLink'?: string; '@odata.deltaLink'?: string }>(res, 'delta');
         for (const i of r.value) {
           changes.push({ id: i.id, name: i.name, deleted: !!i.deleted, folder: !!i.folder, modifiedAt: i.lastModifiedDateTime ?? null, cTag: i.cTag ?? null,
             byApp: i.lastModifiedBy?.application?.id ?? null, byUser: i.lastModifiedBy?.user?.id ?? null,

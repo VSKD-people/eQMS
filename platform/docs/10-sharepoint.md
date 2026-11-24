@@ -98,6 +98,8 @@ environment; a web search confirmed the main endpoints but not the details below
 - [ ] Delta: `token=latest` for a starting point, `@odata.nextLink` paging, `@odata.deltaLink` as the next token,
       deleted items carry `deleted`, and **column changes appear in delta** (they must, or an outside edit of the
       columns alone would go unseen).
+- [ ] An expired delta token answers 410 Gone. The sync then starts again from now, records it, and tells QA (changes in
+      the gap aren't seen; the nightly hash check still covers published files).
 - [ ] `lastModifiedBy.application.id` equals the managed identity's client ID for VeQMS's own writes.
 - [ ] Throttling: 429 and 503 with `Retry-After` in seconds.
 - [ ] The Word file VeQMS creates opens in Word Online (it was checked in LibreOffice only).
