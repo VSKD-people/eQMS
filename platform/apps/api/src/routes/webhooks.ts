@@ -1,16 +1,14 @@
 // Adobe Sign webhooks. "The webhook notifies, the API confirms": a notification is accepted only on the secret URL
-// (ADOBE_SIGN_WEBHOOK_TOKEN) with the expected X-AdobeSign-ClientId, and VeQMS then reads the agreement from Adobe
-// Sign itself and acts on that, never on the notification body. Adobe Sign retries failed deliveries, so handling is
-// idempotent (a final agreement ignores repeats).
+// (ADOBE_SIGN_WEBHOOK_TOKEN) with the expected X-AdobeSign-ClientId. The route only queues it (app.webhook_inbox,
+// de-duplicated on Adobe's notification ID) and answers at once, as Adobe Sign expects a reply within 5 seconds; the
+// queue worker (services/inbox.ts) then reads the agreement from Adobe Sign and acts on that, never on the body.
 // Every reply echoes the client ID, as Adobe Sign requires, including the "verification of intent" GET it sends when
 // the webhook is created. Verify against Adobe's current webhook guide before go-live: the header name, the echo, and
-// the notification JSON (agreement.id, event).
+// the notification JSON (webhookNotificationId, agreement.id, event).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createHash } from 'node:crypto';
-import { withTenant } from '@veqms/db';
 import { ADOBE_CLIENT_ID_HEADER, secretMatches, webhookEcho } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
-import * as signing from '../services/agreements.ts';
+import { enqueue } from '../services/inbox.ts';
 
 export function webhookRoutes(hooks: FastifyInstance, ctx: Ctx): void {
   // The payload hash is over the exact bytes received, so this scope keeps the raw body instead of parsing JSON.
@@ -40,21 +38,13 @@ export function webhookRoutes(hooks: FastifyInstance, ctx: Ctx): void {
     const clientId = accepted(req);
     if (clientId === null) { req.log.warn('Adobe Sign webhook notification refused'); return reply.code(404).send(); }
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-    let msg: { event?: string; agreement?: { id?: string } };
+    let msg: { webhookNotificationId?: string; event?: string; agreement?: { id?: string } };
     try { msg = JSON.parse(raw.toString('utf8')); } catch { return echo(reply, clientId, { ignored: 'not JSON' }); }
     const providerId = msg.agreement?.id;
     if (!providerId) return echo(reply, clientId, { ignored: 'no agreement id' });
-
-    // The directory has no row-level security: it only maps an Adobe Sign agreement ID to its tenant.
-    const dir = await ctx.pool.query<{ tenant_id: string; agreement_id: string }>('select tenant_id, agreement_id from app.agreement_directory where provider_agreement_id = $1', [providerId]);
-    const hit = dir.rows[0];
-    if (!hit) return echo(reply, clientId, { ignored: 'unknown agreement' });
-
-    const sha = createHash('sha256').update(raw).digest('hex');
-    await withTenant(ctx.pool, { tenantId: hit.tenant_id, userId: null }, async (db) => {
-      await signing.webhookReceived(db, hit.agreement_id, sha, msg.event ?? '');
-      await signing.fromProvider(db, ctx, hit.agreement_id, 'webhook');
-    });
-    return echo(reply, clientId);
+    // One insert, then answer. A repeated notification ID is recorded once.
+    const queued = await enqueue(ctx.pool, { eventId: msg.webhookNotificationId ?? null, event: msg.event ?? null, providerAgreementId: providerId, raw });
+    if (queued) ctx.inbox?.kick();
+    return echo(reply, clientId, { queued });
   });
 }

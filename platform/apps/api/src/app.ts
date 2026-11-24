@@ -20,7 +20,8 @@ import { adminRoutes } from './routes/admin.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { scimRoutes } from './routes/scim.ts';
 
-export interface AppDeps { cfg: Config; pool: Pool; esign: ESign; storage: Storage }
+// inbox: the webhook queue worker (services/inbox.ts). Optional, so tests can drain the queue themselves.
+export interface AppDeps { cfg: Config; pool: Pool; esign: ESign; storage: Storage; inbox?: { kick(): void } }
 export type Run = <T>(req: FastifyRequest, fn: (db: Db, me: Person, auth: Auth) => Promise<T>) => Promise<T>;
 export interface Ctx extends AppDeps { run: Run }
 

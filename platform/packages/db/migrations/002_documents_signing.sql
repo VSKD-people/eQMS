@@ -140,7 +140,8 @@ create table app.audience_users (
 create table app.agreements (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references app.tenants(id),
-  provider_agreement_id text unique,          -- the agreement ID Adobe Sign returns when it accepts the agreement
+  provider text not null default 'adobe' check (provider in ('adobe')), -- the e-signature service; Adobe Acrobat Sign
+  provider_agreement_id text unique,          -- the agreement ID the provider returns when it accepts the agreement
   record_type text not null check (record_type in ('document', 'capa', 'quality_event')),
   record_id uuid not null,
   record_number text not null,

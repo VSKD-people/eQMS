@@ -191,7 +191,7 @@ create table app.signatures (
   signed_at timestamptz not null,
   -- Every signature comes from Adobe Sign, or was migrated from KSTARRS. Nothing is signed inside VeQMS:
   -- read-and-understood confirmations are training records, not signatures.
-  source text not null check (source in ('adobe_sign', 'kstarrs')),
+  source text not null check (source in ('adobe', 'kstarrs')),
   agreement_id uuid,                     -- the Adobe Sign agreement the signature came from
   content_sha256 text not null,
   statement text not null,

@@ -83,7 +83,7 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   ok(d1.status === 'completed' && d1.files.signed && d1.files.auditReport, 'agreement completed; signed PDF and audit report stored with hashes');
   ok(await docState('VP-001') === 'Effective', 'VP-001 is Effective');
   const sig1 = await sys((db) => rows(db, `select meaning, source from app.signatures where record_number = 'VP-001' order by meaning`));
-  ok(sig1.length === 3 && sig1.every((s: any) => s.source === 'adobe_sign'), '3 signatures recorded from Adobe Sign');
+  ok(sig1.length === 3 && sig1.every((s: any) => s.source === 'adobe'), '3 signatures recorded from Adobe Sign');
   const tr1 = await sys((db) => rows<any>(db, `select r.user_id, r.completed_at, r.agreement_id, r.alloc_reason from app.training_records r where r.document_number = 'VP-001'`));
   ok(tr1.some((r) => r.user_id === ids.priya && r.completed_at && r.agreement_id === e1.id) && tr1.some((r) => r.user_id === ids.omar && r.completed_at), 'author and reviewer get completed training records from the agreement');
   ok(tr1.some((r) => r.user_id === ids.jake && !r.completed_at), 'the IT team audience is allocated the new version');

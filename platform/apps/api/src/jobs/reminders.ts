@@ -7,6 +7,7 @@ import { createStorage } from '../integrations/storage.ts';
 import { poolFor } from '../server.ts';
 import { sendQueuedEmail } from '../integrations/mail.ts';
 import * as signing from '../services/agreements.ts';
+import { drainInbox } from '../services/inbox.ts';
 import { reminders } from '../services/training.ts';
 
 async function main(): Promise<void> {
@@ -20,6 +21,9 @@ async function main(): Promise<void> {
         .then(() => console.log(JSON.stringify({ job: 'adobe-sign-sign-in', ok: true })))
         .catch((e) => { failed++; console.error(JSON.stringify({ job: 'adobe-sign-sign-in', ok: false, error: String(e) })); });
     }
+    // Webhook notifications still queued (the API normally handles them within seconds).
+    const queue = await drainInbox(pool, deps, 10_000);
+    console.log(JSON.stringify({ job: 'webhook-queue', ...queue }));
     const tenants = (await pool.query<{ tenant_id: string }>('select distinct tenant_id from app.tenant_directory')).rows;
     for (const t of tenants) {
       try {

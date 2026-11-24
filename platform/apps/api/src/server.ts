@@ -4,6 +4,7 @@ import { loadConfig, type Config } from './config.ts';
 import { buildApp } from './app.ts';
 import { createAdobeSign } from './integrations/adobesign.ts';
 import { createStorage } from './integrations/storage.ts';
+import { createInboxWorker } from './services/inbox.ts';
 
 // Scope for Azure Database for PostgreSQL with Entra authentication. Check it against Microsoft's current docs.
 const PG_SCOPE = 'https://ossrdbms-aad.database.windows.net/.default';
@@ -26,11 +27,15 @@ async function main(): Promise<void> {
   let log: { error: (obj: object, msg: string) => void } = { error: (obj, msg) => console.error(msg, obj) };
   // Log the message and code only: pg errors carry the whole client object, which is large and holds connection details.
   const pool = await poolFor(cfg, (err) => log.error({ err: { message: err.message, code: (err as { code?: string }).code } }, 'Database connection lost; it will be replaced on the next request'));
-  const app = buildApp({ cfg, pool, esign: createAdobeSign(cfg), storage: createStorage(cfg) });
+  const esign = createAdobeSign(cfg), storage = createStorage(cfg);
+  const inbox = createInboxWorker(pool, { esign, storage }, { error: (obj, msg) => log.error(obj, msg) });
+  const app = buildApp({ cfg, pool, esign, storage, inbox });
   log = app.log;
+  inbox.start();
+  inbox.kick(); // anything queued before a restart
   if (cfg.devAuthAllowed) app.log.warn('Development sign-in (X-Dev-User) is ON. Never use this setting in production.');
   if (cfg.ADOBE_SIGN_MODE === 'mock') app.log.warn('Adobe Sign is in MOCK mode: nothing is sent to Adobe Sign and signatures are simulated.');
-  const stop = async () => { await app.close(); await pool.end(); process.exit(0); };
+  const stop = async () => { inbox.stop(); await app.close(); await pool.end(); process.exit(0); };
   process.on('SIGTERM', () => void stop());
   process.on('SIGINT', () => void stop());
   await app.listen({ port: cfg.PORT, host: '0.0.0.0' });

@@ -15,7 +15,7 @@ account. The code is `apps/api/src/services/agreements.ts` (the workflow), `apps
 Every signature goes through Adobe Sign, except read-and-understood training. Training stays in VeQMS: the trainee
 confirms under their Microsoft 365 sign-in and the record is locked; it is a training record, not an electronic
 signature, and not a Part 11 signature. The database enforces the rule: a signature row's `source` can only be
-`adobe_sign`, or `kstarrs` for approvals migrated from the old system.
+`adobe`, or `kstarrs` for approvals migrated from the old system.
 
 | Record | Agreement | Signers, in order | Built |
 |---|---|---|---|
@@ -44,7 +44,7 @@ Each new kind of sign-off adds its record type to `agreements.record_type` and a
 - **Declined or cancelled:** the record goes back to its owner with the reason (documents return to Draft). A corrected
   agreement is a new transaction and links to the one it replaces (`correction_of`).
 - **Completed:** the API stores the signed PDF and Adobe Sign's audit report with SHA-256 hashes, writes one signature
-  row per signer (`source = 'adobe_sign'`, agreement ID, hash of the PDF signed), and then: documents become Effective
+  row per signer (`source = 'adobe'`, agreement ID, hash of the PDF signed), and then: documents become Effective
   (previous version Superseded, periodic review scheduled, author and reviewers get completed training records, the
   audience is allocated the new version); CAPAs close (and their source event); deviations close.
 - **Signature meaning.** Authored, Reviewed or Approved is printed next to each signer's signature field and listed in

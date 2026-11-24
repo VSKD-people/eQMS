@@ -149,7 +149,7 @@ update app.document_versions set agreement_id = pg_temp.k('env:VEN-001') where i
 update app.document_versions set agreement_id = pg_temp.k('env:POL-004') where id = pg_temp.k('POL-004@2.0');
 
 insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, agreement_id, content_sha256, statement)
-select pg_temp.k('tenant'), 'document', e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, 'adobe_sign', e.id, e.pdf_sha256,
+select pg_temp.k('tenant'), 'document', e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, 'adobe', e.id, e.pdf_sha256,
        'Signed in Adobe Sign (Bio-Pharma settings): identity checked at signing; signature meaning “' || s.meaning || '”.'
 from app.agreement_signers s join app.agreements e on e.id = s.agreement_id where e.status = 'completed';
 insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, content_sha256, statement)

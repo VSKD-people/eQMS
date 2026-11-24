@@ -302,7 +302,7 @@ async function complete(db: Db, deps: Deps, agreementId: string, source: Source)
   await db.query(`insert into app.agreement_events (tenant_id, agreement_id, type, detail, source) values (app.current_tenant(), $1, 'completed', 'Agreement completed. Signed PDF and audit report downloaded and stored.', $2)`, [e.id, source]);
   for (const s of ss) {
     await db.query(`insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, agreement_id, content_sha256, statement)
-      values (app.current_tenant(), $1, $2, $3, $4, $5, $6, coalesce($7::timestamptz, now()), 'adobe_sign', $8, $9, $10)`,
+      values (app.current_tenant(), $1, $2, $3, $4, $5, $6, coalesce($7::timestamptz, now()), 'adobe', $8, $9, $10)`,
       [e.record_type, e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, e.id, e.pdf_sha256,
        adobeSignStatement(s.meaning)]);
   }
