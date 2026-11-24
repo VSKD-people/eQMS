@@ -681,16 +681,16 @@
 
     // ---------------- Notifications ----------------
     S.notifications = [
-      { id: 'N-1', to: 'u-vic', at: D(-6, 15, 45), kind: 'action', title: 'Your turn to sign POL-004 v2.0 in DocuSign', body: 'DocuSign has emailed you the signing link. The author and both reviewers have signed. You are QA approver 1 of 2.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
-      { id: 'N-2', to: 'u-vic', at: D(0, 7, 0), kind: 'overdue', title: 'Overdue: sign POL-004 v2.0 in DocuSign', body: 'Approval was due ' + Q.fmtShort(D(-2)) + '. The record owner has been told.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
+      { id: 'N-1', to: 'u-vic', at: D(-6, 15, 45), kind: 'action', title: 'Your turn to sign POL-004 v2.0 in Adobe Sign', body: 'Adobe Sign has emailed you the signing link. The author and both reviewers have signed. You are QA approver 1 of 2.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
+      { id: 'N-2', to: 'u-vic', at: D(0, 7, 0), kind: 'overdue', title: 'Overdue: sign POL-004 v2.0 in Adobe Sign', body: 'Approval was due ' + Q.fmtShort(D(-2)) + '. The record owner has been told.', record: 'POL-004', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-3', to: 'u-vic', at: D(-3, 9, 2), kind: 'action', title: 'CR-015 is ready for your review', body: 'Major change · parallel review · due ' + Q.fmtDay(D(1)), record: 'CR-015', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
-      { id: 'N-4', to: 'u-vic', at: D(-3, 9, 5), kind: 'fyi', title: 'FYI: you’ll be asked to sign SOP-020 in DocuSign', body: 'Expected around ' + Q.fmtDay(D(9)) + ', after review.', record: 'SOP-020', read: true, channels: ['in-app'] },
+      { id: 'N-4', to: 'u-vic', at: D(-3, 9, 5), kind: 'fyi', title: 'FYI: you’ll be asked to sign SOP-020 in Adobe Sign', body: 'Expected around ' + Q.fmtDay(D(9)) + ', after review.', record: 'SOP-020', read: true, channels: ['in-app'] },
       { id: 'N-5', to: 'u-vic', at: D(-2, 8, 0), kind: 'reminder', title: 'Reminder: SOP-012 training is due tomorrow', body: 'Read and understood · audience: All staff', record: 'SOP-012', read: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-6', to: 'u-vic', at: D(-4, 11, 30), kind: 'info', title: 'High-severity event QE-016 raised', body: 'Two laptops found without disk encryption. CAPA-008 created.', record: 'QE-016', read: true, channels: ['in-app', 'email', 'teams'] },
-      { id: 'N-7', to: 'u-vic', at: D(-1, 10, 41), kind: 'action', title: 'POL-003 v1.1 is ready to send for DocuSign approval', body: 'Review closed. Check the footer, version, document ID and dates before you send: a correction after sending costs a second send.', record: 'POL-003', read: false, mandatory: true, channels: ['in-app', 'email'] },
+      { id: 'N-7', to: 'u-vic', at: D(-1, 10, 41), kind: 'action', title: 'POL-003 v1.1 is ready to send to Adobe Sign', body: 'Review closed. Check the footer, version, document ID and dates before you send: a correction after sending uses a second transaction.', record: 'POL-003', read: false, mandatory: true, channels: ['in-app', 'email'] },
       { id: 'N-8', to: 'u-vic', at: D(-5, 18, 2), kind: 'security', title: 'New sign-in from a new device', body: 'Safari on macOS, London. If this was not you, tell IT at once.', record: null, read: true, mandatory: true, channels: ['email'] },
-      { id: 'N-9', to: 'u-tom', at: D(-6, 15, 45), kind: 'fyi', title: 'FYI: you’ll sign POL-004 v2.0 in DocuSign', body: 'You sign after Victoria E. DocuSign emails you when it is your turn.', record: 'POL-004', read: false, channels: ['in-app', 'email'] },
-      { id: 'N-10', to: 'u-tom', at: D(-4, 9, 0), kind: 'action', title: 'Your turn to approve the plan for CR-016', body: 'Major change · due ' + Q.fmtDay(D(2)), record: 'CR-016', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
+      { id: 'N-9', to: 'u-tom', at: D(-6, 15, 45), kind: 'fyi', title: 'FYI: you’ll sign POL-004 v2.0 in Adobe Sign', body: 'You sign after Victoria E. Adobe Sign emails you when it is your turn.', record: 'POL-004', read: false, channels: ['in-app', 'email'] },
+      { id: 'N-10', to: 'u-tom', at: D(-4, 9, 0), kind: 'action', title: 'Your turn to sign the CR-016 plan in Adobe Sign', body: 'Major change · Victoria E. has signed as process owner · due ' + Q.fmtDay(D(2)), record: 'CR-016', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
       { id: 'N-11', to: 'u-grace', at: D(-1, 14, 41), kind: 'action', title: 'New observation OBS-021 to review', body: 'Server room door propped open · raised by Ruth Adeyemi', record: 'OBS-021', read: false, mandatory: true, channels: ['in-app', 'email', 'teams', 'push'] },
       { id: 'N-12', to: 'u-daniel', at: D(-1, 7, 0), kind: 'overdue', title: 'Overdue: SOP-012 training', body: 'Your manager Louise Harvey has been told. Repeats every 2 days.', record: 'SOP-012', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
       { id: 'N-13', to: 'u-sam', at: D(-3, 7, 0), kind: 'overdue', title: 'Overdue: periodic review of REG-002', body: 'Due ' + Q.fmtShort(D(-5)) + '. Your manager has been told.', record: 'PR-032', read: false, mandatory: true, channels: ['in-app', 'email', 'teams'] },
@@ -713,16 +713,16 @@
       R('RULE-07', 'Overdue escalation', 'Due date passed', 'Day 2, then every 2 days', ['Notify task owner', 'Notify their manager'], ['Email', 'Teams'], 'Active', { mandatory: true, runs: 47, version: 2 }),
       R('RULE-08', 'Overdue: Quality Manager step', 'Due date passed', 'After manager escalation', ['Notify Quality Manager'], ['Email', 'Teams'], 'Off', { note: 'Switch on once a Quality Manager is appointed.' }),
       R('RULE-09', 'New document effective', 'Document became effective', 'Document lists a training audience', ['Assign the new version to the full audience', 'Show earlier records as superseded', 'Notify trainees'], ['Email', 'In-app', 'Push'], 'Active', { runs: 18 }),
-      R('RULE-15', 'Approval envelope completed', 'DocuSign envelope completed', 'Document, CAPA or deviation', ['Store signed PDF and certificate', 'Make the record effective or closed', 'Create completed training records for author and reviewers'], ['In-app', 'Email'], 'Active', { runs: 9 }),
+      R('RULE-15', 'Adobe Sign agreement completed', 'Adobe Sign agreement completed', 'Any sign-off', ['Store signed PDF and audit report', 'Move the record on (effective, approved or closed)', 'Create completed training records for author and reviewers of a document'], ['In-app', 'Email'], 'Active', { runs: 9 }),
       R('RULE-10', 'Periodic review due', 'Periodic review due', 'At the advance-notice date', ['Create review task', 'Notify document owner'], ['Email', 'Teams'], 'Active', { runs: 22 }),
       R('RULE-11', 'High-severity event or CAPA', 'Record created', 'Quality event or CAPA · severity High', ['Notify Quality Manager and process owner', 'Post to Teams channel #quality-events'], ['Email', 'Teams channel'], 'Active', { runs: 4 }),
-      R('RULE-12', 'Signature completed', 'Signature completed', 'In-app or DocuSign', ['Notify record owner'], ['In-app', 'Email'], 'Active', { runs: 88 }),
+      R('RULE-12', 'Signature completed', 'Signature completed', 'Adobe Sign', ['Notify record owner'], ['In-app', 'Email'], 'Active', { runs: 88 }),
       R('RULE-16', 'Training reminders', 'Due date approaching or passed', '3 days and 1 day before; overdue every 2 days', ['Remind the trainee', 'Tell their manager when overdue'], ['Email', 'In-app'], 'Active', { runs: 57 }),
       R('RULE-13', 'Security events', 'Security event', 'New device, MFA change, role change', ['Notify affected user', 'Notify admins of privilege changes'], ['Email'], 'Active', { mandatory: true, runs: 9 }),
       R('RULE-14', 'Publish effective documents to SharePoint', 'Document became effective', 'Classification Public or Internal', ['Publish read-only watermarked PDF', 'Archive superseded version'], ['SharePoint'], 'Pending approval', { createdBy: 'u-hannah', createdAt: D(-1), version: 1, note: 'Phase 2 · Option A publish-only' })
     ];
     S.runs = [
-      { id: 'RUN-1', rule: 'RULE-07', at: D(0, 7, 0), event: 'Due date passed', record: 'POL-004', result: 'Sent', detail: 'DocuSign signer + manager notified (day 2)' },
+      { id: 'RUN-1', rule: 'RULE-07', at: D(0, 7, 0), event: 'Due date passed', record: 'POL-004', result: 'Sent', detail: 'Adobe Sign signer + manager notified (day 2)' },
       { id: 'RUN-2', rule: 'RULE-06', at: D(-2, 8, 0), event: 'Due date approaching', record: 'SOP-012', result: 'Sent', detail: '1-day reminder to Victoria E.' },
       { id: 'RUN-3', rule: 'RULE-11', at: D(-4, 11, 30), event: 'Record created', record: 'QE-016', result: 'Partly failed', detail: 'Email sent; Teams channel post failed (connector off)' },
       { id: 'RUN-4', rule: 'RULE-02', at: D(-3, 9, 2), event: 'Stage reached', record: 'CR-015', result: 'Sent', detail: '2 reviewers notified' },
@@ -741,38 +741,37 @@
       { id: 'teams', name: 'Microsoft Teams bot', mech: 'Azure Bot Service; proactive messages with Adaptive Cards', perms: 'Bot installed only in QMS-related teams', phase: 'Phase 6', on: false, health: 'off', lastOk: null, failures: 2, queue: 2, note: 'Waiting on IT: custom Teams apps allowed?' },
       { id: 'sp-pub', name: 'SharePoint publishing (Option A)', mech: 'Graph drive upload to one publication library; superseded versions to an archive library', perms: 'Sites.Selected, write grant on the QMS site only', phase: 'Phase 2', on: false, health: 'off', lastOk: null, failures: 0, queue: 0 },
       { id: 'sp-imp', name: 'SharePoint import (Option B)', mech: 'One-time Graph read of the legacy library into drafts', perms: 'Sites.Selected read grant on the legacy site, revoked after migration', phase: 'Phase 2', on: false, health: 'off', lastOk: null, failures: 0, queue: 0 },
-      { id: 'docusign', name: 'DocuSign eSignature (Part 11 module)', mech: 'eSignature REST API with JWT grant; status from Connect webhooks (HMAC-SHA256 verified), with polling as a fallback', perms: 'Integration user limited to QMS envelopes; Part 11 signer re-authentication required', phase: 'Phase 1', on: true, health: 'ok', lastOk: D(0, 9, 50), failures: 0, queue: 0, note: 'Approvals only: controlled documents, CAPAs, deviations, vendor approvals and validation deliverables. Allowance: 500 sends a year.' }
+      { id: 'adobesign', name: 'Adobe Sign (Bio-Pharma settings for Part 11)', mech: 'Acrobat Sign REST API with OAuth (refresh token in Key Vault); status from webhooks, each one read back from the API before acting, with polling as a fallback', perms: 'Integration user limited to QMS agreements; identity check and reason for signing required at signing', phase: 'Phase 1', on: true, health: 'ok', lastOk: D(0, 9, 50), failures: 0, queue: 0, note: 'Every signature except read-and-understood training. Allowance: 500 transactions a year (placeholder until the contract confirms it).' }
     ];
 
     // ---------------- Workflow definitions (versioned) ----------------
     S.workflows = [
-      { id: 'WF-DOC', name: 'Document lifecycle (DocuSign approval)', module: 'Documents', version: 4, status: 'Active', approvedBy: 'u-vic', states: ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'], transitions: [
+      { id: 'WF-DOC', name: 'Document lifecycle (Adobe Sign approval)', module: 'Documents', version: 4, status: 'Active', approvedBy: 'u-vic', states: ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'], transitions: [
         { from: 'Draft', to: 'In review', roles: 'Author', sig: null, sod: '', sla: '—', fields: 'Change summary, reviewers, approvers' },
         { from: 'In review', to: 'Review closed', roles: 'System (all reviewers done)', sig: 'Reviewed', sod: '', sla: '5 days', fields: '' },
         { from: 'In review', to: 'Draft', roles: 'Reviewer', sig: null, sod: '', sla: '', fields: 'Reason' },
-        { from: 'Review closed', to: 'In approval', roles: 'Owner, author or QA', sig: null, sod: 'Approver cannot be the author', sla: '', fields: 'Verification check: footer, version, document ID, dates. One DocuSign send' },
-        { from: 'In approval', to: 'Effective', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored, Reviewed, Approved', sod: 'Author cannot approve', sla: '5 days', fields: 'Signed PDF, certificate, envelope ID stored' },
-        { from: 'In approval', to: 'Draft', roles: 'System (envelope declined or voided)', sig: null, sod: '', sla: '', fields: 'Reason' },
+        { from: 'Review closed', to: 'In approval', roles: 'Owner, author or QA', sig: null, sod: 'Approver cannot be the author', sla: '', fields: 'Verification check: footer, version, document ID, dates. One Adobe Sign send' },
+        { from: 'In approval', to: 'Effective', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored, Reviewed, Approved', sod: 'Author cannot approve', sla: '5 days', fields: 'Signed PDF, audit report, agreement ID stored' },
+        { from: 'In approval', to: 'Draft', roles: 'System (agreement declined or cancelled)', sig: null, sod: '', sla: '', fields: 'Reason' },
         { from: 'Effective', to: 'Superseded', roles: 'System (new version effective)', sig: null, sod: '', sla: '', fields: '' },
-        { from: 'Effective', to: 'Obsolete', roles: 'Quality Manager', sig: 'Approved', sod: '', sla: '', fields: 'Reason' }
+        { from: 'Effective', to: 'Obsolete', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Approved (Quality Manager)', sod: '', sla: '', fields: 'Reason' }
       ] },
       { id: 'WF-CR', name: 'Change request', module: 'Change requests', version: 2, status: 'Active', approvedBy: 'u-vic', states: ['Planning', 'Review', 'Approval', 'In execution', 'Effectiveness check', 'Closed'], transitions: [
         { from: 'Planning', to: 'Review', roles: 'Process owner', sig: null, sod: '', sla: '', fields: 'Description, reason, impact, at least one action' },
         { from: 'Review', to: 'Approval', roles: 'System (all reviewers done)', sig: null, sod: '', sla: '5 days', fields: '' },
-        { from: 'Approval', to: 'In execution', roles: 'Approver', sig: 'Approved (plan)', sod: 'Owner cannot approve own plan', sla: '5 days', fields: '' },
+        { from: 'Approval', to: 'In execution', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (approvers)', sod: 'Owner cannot approve own plan', sla: '5 days', fields: 'Verification check' },
         { from: 'In execution', to: 'Effectiveness check', roles: 'System (all actions done)', sig: null, sod: '', sla: '', fields: '' },
-        { from: 'Effectiveness check', to: 'Closed', roles: 'Approver', sig: 'Approved (completion)', sod: '', sla: '', fields: 'Result, verdict' }
+        { from: 'Effectiveness check', to: 'Closed', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (approvers)', sod: 'Owner cannot approve', sla: '', fields: 'Result, verdict, verification check' }
       ] },
       { id: 'WF-CAPA', name: 'CAPA', module: 'Quality events and CAPA', version: 2, status: 'Active', approvedBy: 'u-vic', states: ['Planning', 'Execution', 'Effectiveness check', 'Closed'], transitions: [
-        { from: 'Planning', to: 'Execution', roles: 'Process owner', sig: 'Approved (actions)', sod: '', sla: '', fields: 'At least one action; route by severity' },
-        { from: 'Execution', to: 'Effectiveness check', roles: 'QM (High) or process owner (Low)', sig: 'Approved (completed actions)', sod: 'Action owner cannot approve own action', sla: '', fields: 'Root cause, evidence' },
-        { from: 'Effectiveness check', to: 'Closed', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Result, verdict, verification check' }
+        { from: 'Planning', to: 'Execution', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (QM) for High; Approved (owner) for Low', sod: 'QM cannot be the owner', sla: '', fields: 'At least one action; route by severity' },
+        { from: 'Execution', to: 'Effectiveness check', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (QM) for High; Approved (owner) for Low', sod: 'QM cannot have done any of the actions', sla: '', fields: 'Root cause, evidence' },
+        { from: 'Effectiveness check', to: 'Closed', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Result, verdict, verification check' }
       ] },
       { id: 'WF-QE', name: 'Quality event', module: 'Quality events and CAPA', version: 1, status: 'Active', approvedBy: 'u-vic', states: ['Open', 'Assessment', 'CAPA raised', 'Closed'], transitions: [
         { from: 'Open', to: 'Assessment', roles: 'Owner', sig: null, sod: '', sla: '2 days', fields: '' },
         { from: 'Assessment', to: 'CAPA raised', roles: 'Owner', sig: null, sod: '', sla: '', fields: 'Assessment, severity' },
-        { from: 'Assessment', to: 'Closed', roles: 'Owner', sig: 'Closed without CAPA (in-app)', sod: '', sla: '', fields: 'Justification' },
-        { from: 'Assessment', to: 'Closed (deviation)', roles: 'System (DocuSign envelope completed)', sig: 'DocuSign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Justification, verification check' }
+        { from: 'Assessment', to: 'Closed', roles: 'System (Adobe Sign agreement completed)', sig: 'Adobe Sign: Authored (owner), Approved (QA)', sod: 'QA approver cannot be the owner', sla: '', fields: 'Justification, verification check' }
       ] },
       { id: 'WF-DOC-5', name: 'Document lifecycle (draft v5: add legal review for contracts)', module: 'Documents', version: 5, status: 'Pending approval', approvedBy: null, states: ['Draft', 'In review', 'Legal review', 'Review closed', 'In approval', 'Effective'], transitions: [] }
     ];
@@ -781,8 +780,8 @@
     S.settings = {
       orgName: 'VeQMS',
       statement: 'I sign this record with the meaning “{meaning}”. I understand this electronic signature is the legally binding equivalent of my handwritten signature.',
-      meanings: ['Approved', 'Reviewed', 'Authored', 'Verified', 'Completed', 'Closed without CAPA', 'No update needed'],
-      docusign: { allowance: 500, yearStartMonth: 1, goLive: GOLIVE, warnAt: 50 },
+      meanings: ['Authored', 'Reviewed', 'Approved', 'Completed'], // reasons for signing set in Adobe Sign
+      esign: { allowance: 500, yearStartMonth: 1, goLive: GOLIVE, warnAt: 50 },
       ackStatement: 'I confirm I have read and understood {doc}, version {version}',
       classes: {
         Public: { download: true, print: true, watermark: false, desc: 'Can be shared outside VeQMS.' },
@@ -813,12 +812,12 @@
 
     S.prefs = {};
     S.delegations = [{ id: 'DEL-1', from: 'u-tom', to: 'u-priya', start: D(20), end: D(27), scope: 'Review only', reason: 'Annual leave' }];
-    S.savedViews = { 'u-vic': [{ name: 'My approvals', kinds: ['ds-sign', 'send-approval', 'cr-approve'] }, { name: 'Training only', kinds: ['training'] }] };
+    S.savedViews = { 'u-vic': [{ name: 'My approvals', kinds: ['esign-sign', 'send-approval'] }, { name: 'Training only', kinds: ['training'] }] };
     S.drafts = [];
     S.roleRequests = [{ id: 'RR-1', user: 'u-grace', role: 'approver', requestedBy: 'u-hannah', at: D(-1, 16), status: 'Waiting for second admin' }];
     S.notifLog = [];
     S.audit = [];
-    S.signatures = []; // global, insert-only list (manifest pages read from here)
+    S.signatures = sigRows; // global, insert-only list: one row per signer of every completed agreement
     return S;
   };
 
@@ -832,17 +831,17 @@
       [-60, 10, 0, 'u-vic', 'legal-hold', 'Quality event', 'QE-012', 'Placed QE-012 on legal hold'],
       [-58, 9, 0, 'u-priya', 'create', 'Quality event', 'QE-013', 'Raised QE-013 Phishing simulation'],
       [-40, 10, 0, 'u-grace', 'create', 'Change request', 'CR-012', 'Created CR-012'],
-      [-30, 11, 3, 'u-vic', 'sign', 'Change request', 'CR-012', 'Signed CR-012 plan · Approved'],
+      [-30, 11, 3, 'system', 'esign.signed', 'Change request', 'CR-012', 'Adobe Sign webhook: Victoria E. signed CR-012 · Approved (plan)'],
       [-30, 9, 0, 'u-tom', 'create', 'Quality event', 'QE-011', 'Raised QE-011 Internal audit finding'],
       [-28, 9, 30, 'u-tom', 'create', 'CAPA', 'CAPA-007', 'Created CAPA-007 from QE-011'],
-      [-24, 10, 15, 'u-grace', 'sign', 'Quality event', 'QE-014', 'Closed QE-014 without CAPA · signed with justification'],
-      [-21, 15, 0, 'u-omar', 'sign', 'CAPA', 'CAPA-007', 'Signed action CA-1 · Completed'],
-      [-18, 9, 40, 'u-vic', 'docusign.send', 'Document', 'SOA-001', 'Verification check passed; sent DocuSign envelope for SOA-001 v2.1'],
-      [-18, 11, 5, 'u-vic', 'docusign.void', 'Document', 'SOA-001', 'Voided envelope for SOA-001 v2.1: footer showed version 2.0 instead of 2.1'],
-      [-17, 9, 0, 'u-vic', 'docusign.send', 'Document', 'SOA-001', 'Corrected and sent a new DocuSign envelope for SOA-001 v2.1 (second send)'],
-      [-17, 16, 40, 'system', 'docusign.signed', 'Document', 'SOP-012', 'DocuSign Connect: PJ Walters signed SOP-012 v3.0 · Approved'],
-      [-16, 11, 2, 'system', 'docusign.signed', 'Document', 'SOP-012', 'DocuSign Connect: Victoria E. signed SOP-012 v3.0 · Approved'],
-      [-16, 11, 3, 'system', 'docusign.completed', 'Document', 'SOP-012', 'Envelope completed; signed PDF and certificate of completion stored against v3.0'],
+      [-24, 10, 15, 'system', 'esign.completed', 'Quality event', 'QE-014', 'Adobe Sign agreement completed: QE-014 closed without CAPA (justification approved)'],
+      [-21, 15, 0, 'system', 'esign.signed', 'CAPA', 'CAPA-007', 'Adobe Sign webhook: Omar Haddad signed CAPA-007 action CA-1 · Completed'],
+      [-18, 9, 40, 'u-vic', 'esign.send', 'Document', 'SOA-001', 'Verification check passed; sent Adobe Sign agreement for SOA-001 v2.1'],
+      [-18, 11, 5, 'u-vic', 'esign.cancel', 'Document', 'SOA-001', 'Cancelled the agreement for SOA-001 v2.1: footer showed version 2.0 instead of 2.1'],
+      [-17, 9, 0, 'u-vic', 'esign.send', 'Document', 'SOA-001', 'Corrected and sent a new Adobe Sign agreement for SOA-001 v2.1 (second transaction)'],
+      [-17, 16, 40, 'system', 'esign.signed', 'Document', 'SOP-012', 'Adobe Sign webhook: PJ Walters signed SOP-012 v3.0 · Approved'],
+      [-16, 11, 2, 'system', 'esign.signed', 'Document', 'SOP-012', 'Adobe Sign webhook: Victoria E. signed SOP-012 v3.0 · Approved'],
+      [-16, 11, 3, 'system', 'esign.completed', 'Document', 'SOP-012', 'Agreement completed; signed PDF and audit report stored against v3.0'],
       [-16, 11, 3, 'system', 'state', 'Document', 'SOP-012', 'SOP-012 v3.0 Effective; v2.1 Superseded'],
       [-15, 0, 5, 'system', 'automation', 'Document', 'SOP-012', 'RULE-09 assigned SOP-012 v3.0 to the All staff audience (13 people)'],
       [-14, 9, 18, 'u-sam', 'state', 'Document', 'POL-004', 'Submitted v2.0 for review'],
@@ -851,11 +850,13 @@
       [-9, 14, 0, 'u-grace', 'create', 'Document', 'SOP-020', 'Created SOP-020 from template TPL-SOP'],
       [-8, 9, 0, 'u-tom', 'create', 'Change request', 'CR-015', 'Created CR-015'],
       [-6, 15, 42, 'u-omar', 'review', 'Document', 'POL-004', 'Closed review with 1 comment'],
-      [-6, 15, 41, 'u-sam', 'docusign.verify', 'Document', 'POL-004', 'Verification check passed for POL-004 v2.0: footer, version, document ID and dates'],
-      [-6, 15, 45, 'u-sam', 'docusign.send', 'Document', 'POL-004', 'Sent DocuSign envelope for POL-004 v2.0 (author, 2 reviewers, 2 QA approvers)'],
-      [-6, 16, 2, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Jim Speir signed POL-004 v2.0 · Authored'],
-      [-6, 17, 10, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Carrie Foreman signed POL-004 v2.0 · Reviewed'],
-      [-5, 9, 30, 'system', 'docusign.signed', 'Document', 'POL-004', 'DocuSign Connect: Omar Haddad signed POL-004 v2.0 · Reviewed'],
+      [-6, 15, 41, 'u-sam', 'esign.verify', 'Document', 'POL-004', 'Verification check passed for POL-004 v2.0: footer, version, document ID and dates'],
+      [-6, 15, 45, 'u-sam', 'esign.send', 'Document', 'POL-004', 'Sent Adobe Sign agreement for POL-004 v2.0 (author, 2 reviewers, 2 QA approvers)'],
+      [-6, 16, 2, 'system', 'esign.signed', 'Document', 'POL-004', 'Adobe Sign webhook: Jim Speir signed POL-004 v2.0 · Authored'],
+      [-6, 17, 10, 'system', 'esign.signed', 'Document', 'POL-004', 'Adobe Sign webhook: Carrie Foreman signed POL-004 v2.0 · Reviewed'],
+      [-5, 9, 30, 'system', 'esign.signed', 'Document', 'POL-004', 'Adobe Sign webhook: Omar Haddad signed POL-004 v2.0 · Reviewed'],
+      [-4, 8, 50, 'u-vic', 'esign.send', 'Change request', 'CR-016', 'Sent Adobe Sign agreement for the CR-016 plan (process owner, then approver)'],
+      [-4, 9, 0, 'system', 'esign.signed', 'Change request', 'CR-016', 'Adobe Sign webhook: Victoria E. signed CR-016 · Authored (plan)'],
       [-6, 8, 55, 'u-lena', 'create', 'Observation', 'OBS-020', 'Raised OBS-020'],
       [-5, 9, 0, 'u-grace', 'state', 'Observation', 'OBS-020', 'Escalated OBS-020 to QE-015'],
       [-5, 18, 2, 'u-vic', 'login', 'Session', 'u-vic', 'Signed in from a new device (Safari, macOS)'],
@@ -872,7 +873,7 @@
       [-1, 16, 20, 'u-sam', 'checkout', 'Document', 'WI-003', 'Checked out WI-003'],
       [-1, 9, 10, 'u-aud', 'read', 'Document', 'PLN-001', 'Download attempt blocked: PLN-001 is Restricted'],
       [-1, 10, 41, 'u-priya', 'review', 'Document', 'POL-003', 'Marked reviewed; review closed'],
-      [0, 7, 0, 'system', 'automation', 'Document', 'POL-004', 'RULE-07 overdue escalation (day 2): DocuSign signer Victoria E.'],
+      [0, 7, 0, 'system', 'automation', 'Document', 'POL-004', 'RULE-07 overdue escalation (day 2): Adobe Sign signer Victoria E.'],
       [0, 8, 2, 'u-vic', 'login', 'Session', 'u-vic', 'Signed in (SSO + MFA)'],
       [0, 8, 30, 'u-omar', 'upload', 'CAPA', 'CAPA-007', 'Uploaded screenshot-console.png (malware scan started)'],
       [0, 9, 12, 'u-ruth', 'create', 'Observation', 'OBS-022', 'Raised OBS-022']

@@ -5,7 +5,7 @@
   checks the audit hash chain, then puts you back on the page and persona you started with.
   It doesn't change any records. Opening a Restricted document adds one "read" audit entry,
   which the app logs on purpose.
-  Last run on this build: 13 personas, 3,822 renders, 0 errors, audit chain valid.
+  Last run on this build (fresh data): 13 personas, 3,848 renders, 0 errors, audit chain valid.
 */
 (function () {
   var Q = window.Q;
@@ -26,7 +26,7 @@
     ['/today', '/today?f=overdue', '/today?f=upcoming', '/tasks', '/documents'],
     withTabs('/training', ['my', 'matrix', 'records', 'audiences']),
     ['/training?tab=records&u=u-vic', '/training?tab=records&d=SOP-012&all=1', '/training?tab=matrix&g=IT%20team'],
-    ['/approvals', '/approvals?tab=register', '/approvals?year=all&st=voided'],
+    ['/approvals', '/approvals?tab=transactions', '/approvals?tab=register', '/approvals?year=all&st=cancelled', '/approvals?year=all&st=declined'],
     ['/changes', '/changes?view=board'],
     withTabs('/reviews', ['mine', 'org']),
     withTabs('/quality', ['observations', 'events', 'capa']),

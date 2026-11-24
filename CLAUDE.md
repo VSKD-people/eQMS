@@ -52,10 +52,9 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 | `js/seed.js` | `Q.seed()`: all sample data. Dates are relative to today |
 | `js/store.js` | Load/save, users and roles, `Q.can` permissions, classification (`Q.canSee`, `Q.canDownload`), hash-chained `Q.audit`, notifications, tasks |
 | `js/engine.js` | Workflow engine `Q.wf.*` (doc, cr, obs, qe, capa, review, user), automation rules `Q.fire`, signatures, segregation of duties `Q.sodBlock`, training: audiences, allocation, `Q.completeTraining`, `Q.correctTraining`, `Q.trStatus` |
-| `js/docusign.js` | Approvals through DocuSign `Q.ds.*`: `plan` (signers, order, problems), `cantSend`, `send` (verification check, one envelope = one send), `sign`, `decline`, `void`, completion (signed PDF, certificate, envelope ID), allowance `used`/`remaining` |
+| `js/esign.js` | Signatures through Adobe Sign `Q.esign.*`: `STAGES` (one per kind of sign-off: who signs, PDF lines, what completing or returning does), `plan` (signers, order, problems), `cantSend`, `send` (verification check, one agreement = one transaction), `sign`, `decline`, `cancel`, completion (signed PDF, audit report, agreement ID), allowance `used`/`remaining` |
 | `js/ui.js` | Router, shell, drawers, menus, Ctrl/Cmd+K palette, shared components, tour |
-| `js/sign.js` | E-signature drawer `Q.sign` (Confirm → sign in again → Recorded) |
-| `js/views/*.js` | One file per module: today, documents, training, changes, reviews, quality, analytics, admin, misc, approvals (send drawer, simulated DocuSign signing, envelope details, register) |
+| `js/views/*.js` | One file per module: today, documents, training, changes, reviews, quality, analytics, admin, misc, approvals (send drawer, simulated Adobe Sign signing page, agreement details, register, agreement card on records) |
 | `js/app.js` | Route table and boot. Loads last |
 
 ## Rules to keep
@@ -66,17 +65,21 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
   `data-input` call `Q.on[name]`. Drawer forms submit through `data-submit`.
 - **State changes go through the engine.** Views call `Q.wf.*`; they never edit records directly. The engine
   writes the audit entry (`Q.audit`, hash-chained) and fires automation (`Q.fire`).
-- **Two signing routes.** Approvals of controlled documents (incl. vendor approvals and validation plans and
-  reports), CAPA closures and deviation closures go through DocuSign: call `Q.ds.openSend` / `Q.ds.send`, never
-  change those records' state by hand; the envelope completing does it. Other signatures stay in the app: create
-  them with `Q.makeSignature` via the `Q.sign` drawer, and check `Q.sodBlock` first. Signatures are insert-only.
+- **Every signature goes through Adobe Sign.** Every sign-off except read-and-understood training is an Adobe Sign
+  agreement: document approvals (incl. vendor approvals and validation plans and reports) and making a document
+  obsolete; change request plans, action sign-offs and completion; CAPA plans, action sign-offs, completed actions
+  and closures; quality event closures without a CAPA (any type); periodic reviews; the access review; rule and
+  workflow approvals. Call `Q.esign.openSend(id, stage, ref)` / `Q.esign.send`, never change those records' state
+  by hand; the agreement completing does it (each stage's `onComplete`), and declining or cancelling returns it
+  (`onReturn`). A new kind of sign-off is a new entry in `Q.esign.STAGES`. Signing plans check approvers with
+  `Q.sodBlock(record, kind, userId)`. There is no in-app e-signature drawer. Signatures are insert-only.
 - **Training records are locked once completed.** Only the trainee confirms (`Q.completeTraining`); dates come from
   the system; corrections are new records (`Q.correctTraining`). Change audiences with `Q.setAudience` so the change
   is logged with old and new values.
 - **Permissions.** Gate actions with `Q.can(perm)` (roles map in `store.js`), and records with `Q.canSee` and
   `Q.canDownload`. The System Administrator can't approve; the auditor is read-only.
 - **Sample data version.** After changing the shape of the data in `seed.js`, bump `version` in `seed.js` and
-  the matching check in `Q.load` in `store.js` (both are `10`). Old browsers then reseed instead of breaking.
+  the matching check in `Q.load` in `store.js` (both are `11`). Old browsers then reseed instead of breaking.
 - **New script files** need a `<script>` tag in `index.html`, before `js/app.js`.
 - **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The Katalyze Data brand
   is applied: pink `#E2186F` fills (`--accent-fill`), purple `#940080` text accents (`--accent`), navy `#002B49` ink,
@@ -88,9 +91,10 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 1. Syntax: open the page and check the browser console for errors.
 2. Smoke test: paste `tools/smoke-test.js` into the browser console (or run it with a browser tool).
    It renders every page, tab and record as every active persona, then checks the audit chain.
-   The last run on this build: 13 personas, 3,822 renders, 0 errors, chain valid.
+   The last run on this build (fresh data): 13 personas, 3,848 renders, 0 errors, chain valid.
 3. End-to-end test (optional, needs Node and Playwright): `node tools/e2e-test.js` with the app served on port 4173.
-   It drives the DocuSign route and the training records through the UI as each persona: 56 checks.
+   It drives the Adobe Sign route (documents, closures, change requests, action sign-offs, CAPA plans, periodic
+   reviews) and the training records through the UI as each persona: 72 checks.
 4. Walk the scenarios in `veqms/README.md` ("Try these in order"). Each one was tested end to end.
 5. Reset the demo data afterwards (account menu → Reset demo data).
 
@@ -104,18 +108,22 @@ Lucy Parkin (System Administrator), Fraser Scott (auditor). Full table in `veqms
 
 ## What's simulated
 
-Microsoft sign-in and step-up re-authentication (any 6 digits work), DocuSign (envelopes, the signing page,
-Connect status, signed PDFs and certificates), Teams, SharePoint, email, malware scanning, Office-to-PDF conversion
-and server-side PDFs. Other integrations are switches and logs only.
+Microsoft sign-in, Adobe Sign (agreements, the signing page with its identity check (any 6 digits work) and reason
+for signing, webhook status, signed PDFs and audit reports), Teams, SharePoint, email, malware scanning,
+Office-to-PDF conversion and server-side PDFs. Other integrations are switches and logs only.
 
 ## Signatures and training (added after the first build)
 
-The app replaces KSTARRS. Approvals use DocuSign with the Part 11 module; read-and-understood training stays in
-the app (not Part 11). This answers open questions 5 and 29 in the spec; both were still open.
-- One envelope per version holds every signer, in order: author, reviewers, QA approver. One cycle = one send.
-- Sends are counted against `settings.docusign.allowance` (500) per allowance year (`yearStartMonth`).
+The app replaces KSTARRS. Every signature except read-and-understood training uses Adobe Sign (Adobe Acrobat Sign;
+its Bio-Pharma settings make each signer confirm their identity and give a reason for signing, which supports
+Part 11). Read-and-understood training stays in the app under the Microsoft 365 sign-in (not Part 11). This answers
+open questions 5 and 29 in the spec; the user switched from DocuSign to Adobe Sign and extended it to every sign-off.
+- One agreement per sign-off holds every signer, in order (for a document: author, reviewers, QA approver). One
+  agreement = one transaction. Reasons for signing: Authored, Reviewed, Approved, Completed (action sign-offs).
+- Transactions are counted against `settings.esign.allowance` (500, a placeholder until the Adobe Sign contract
+  confirms it) per allowance year (`yearStartMonth`).
 - Each document has an `audience` (groups, roles, users, days, quiz). Training rules no longer exist.
-- Approvals before `settings.docusign.goLive` are marked as migrated from KSTARRS.
+- Approvals before `settings.esign.goLive` are marked as migrated from KSTARRS.
 
 ## Sensible next steps
 
@@ -131,7 +139,12 @@ Start with `platform/README.md` and `platform/BUILD_PROMPT.md` (rules, first tas
 the documentation set is `platform/docs/01` to `09`. The prototype stays the reference for screens and flows.
 
 - The database enforces the compliance rules (row-level security, append-only audit chain, insert-only signatures,
-  locked training records, DocuSign allowance). Don't move a rule from SQL into the API only.
-- Checks: `npm run typecheck`, `npm test`, `npm run db:test` in `platform/`; CI is `.github/workflows/platform-ci.yml`.
-- Status when written: database and API logic run and tested against PostgreSQL 16; API and web type-checked
-  against stand-in types only (npm was blocked in the build sandbox); nothing built with real packages or deployed.
+  locked training records, signatures only from Adobe Sign or KSTARRS, the Adobe Sign transaction allowance). Don't
+  move a rule from SQL into the API only.
+- Every signature goes through Adobe Sign except read-and-understood training (`platform/docs/06-adobe-sign.md`). The
+  live Adobe Sign client hasn't run against Adobe Sign yet; its "Verify before go-live" list is in that doc.
+- Checks: `npm run typecheck`, `npm test`, `npm run db:test` in `platform/`; browser tests in `platform/e2e` against
+  `docker compose up --build`. CI is `.github/workflows/platform-ci.yml` (both jobs green on GitHub).
+- Status: built with the real packages (Next.js 16, zod 4, lockfile committed); every check and the nine UAT browser
+  scenarios pass; the Bicep compiles. Not yet run: anything in Azure, Entra sign-in, live Adobe Sign, Graph email.
+  Deploys are manual only (`platform-deploy.yml`) until Azure is set up. Details: `platform/docs/07`.

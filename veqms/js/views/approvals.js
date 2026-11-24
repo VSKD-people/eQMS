@@ -8,7 +8,7 @@
   function short(id) { return id.slice(0, 8) + '…'; }
   function signerList(ag) {
     return h`<div class="stack-sm">${ag.signers.map(function (s) {
-      var st = s.status === 'Sent' ? (s.u === Q.S.session.userId ? 'Your turn' : 'Signing now') : s.status;
+      var st = s.status === 'Sent' ? 'With signer' + (s.u === Q.S.session.userId ? ' · your turn' : '') : s.status;
       var cls = s.status === 'Signed' ? 'st-done' : s.status === 'Sent' ? 'st-turn' : s.status === 'Declined' ? 'st-overdue' : 'st-wait';
       return h`<div class="people-row"><span class="who">${Q.avatar(s.u, 'xs')}<span>${s.order}. ${Q.name(s.u)} · ${s.role}<span class="muted small"> · ${s.meaning}</span></span></span><span class="status-text ${cls}">${st}${s.at && s.status === 'Signed' ? ' ' + Q.fmtShort(s.at) : ''}</span></div>`;
     })}</div>`;
@@ -152,7 +152,7 @@
   };
   Q.act['es-cancel'] = function (el) {
     var ag = es.byId(el.getAttribute('data-id'));
-    Q.drawer.open({ kicker: 'Adobe Sign', title: 'Cancel agreement', submitLabel: 'Cancel agreement',
+    Q.drawer.open({ kicker: 'Adobe Sign', title: 'Cancel this agreement', submitLabel: 'Cancel agreement',
       body: h`<div class="callout warn mb-16"><strong>Cancelling stops the agreement for every signer.</strong><p class="small" style="margin:4px 0 0">${ag.kind === 'doc' && ag.stage === 'doc-approval' ? 'The document returns to draft' : 'The sign-off returns to whoever sent it'} with your reason recorded. Sending a corrected agreement uses another transaction (${es.remaining()} left this year).</p></div>
         <div class="field"><label for="escr">Reason (required)</label><textarea class="textarea" id="escr" name="reason" placeholder="e.g. Footer shows the wrong version"></textarea></div>`,
       submit: function (f, form) { if (!f.reason) return Q.fieldError(form, 'reason', 'Give a reason.'); try { es.cancel(ag, f.reason); } catch (e) { Q.toast(e.message, 'warn'); return; } Q.drawer.close(); Q.toast('Agreement cancelled'); Q.refresh(); } });
@@ -243,7 +243,7 @@
             { key: 'completedAt', label: 'Approved', render: function (a) { return Q.fmtDateTime(a.completedAt); } }, { key: 'signers', label: 'Signers', sort: false, render: function (a) { return h`<span class="small">${a.signers.map(function (s) { return Q.user(s.u).initials + ' · ' + s.meaning; }).join(', ')}</span>`; } },
             { key: 'id', label: 'Agreement', render: function (a) { return h`<span class="mono">${short(a.id)}</span>`; } }] })}`;
     } else {
-      Q.reports.transactions = { title: 'Adobe Sign transactions log', file: 'adobe-sign-transactions', rows: function () { return txRows(list.slice().sort(Q.by('sentAt'))); }, intro: 'Every agreement sent. Allowance: ' + es.cfg().allowance + ' transactions a year (' + range.label + '); ' + es.used() + ' used, ' + es.remaining() + ' remaining.' };
+      Q.reports.transactions = { title: 'Transactions log', file: 'adobe-sign-transactions', rows: function () { return txRows(list.slice().sort(Q.by('sentAt'))); }, intro: 'Every agreement sent. Allowance: ' + es.cfg().allowance + ' transactions a year (' + range.label + '); ' + es.used() + ' used, ' + es.remaining() + ' remaining.' };
       body = h`<div class="toolbar"><select class="select" data-change="qfilter" data-key="year" aria-label="Period"><option value="">This allowance year</option><option value="all" ${q.year === 'all' ? 'selected' : ''}>All years</option></select>
           <select class="select" data-change="qfilter" data-key="st" aria-label="Status"><option value="">Any status</option>${Object.keys(es.STATUS).map(function (k) { return h`<option value="${k}" ${q.st === k ? 'selected' : ''}>${es.STATUS[k]}</option>`; })}</select>
           <span style="margin-left:auto">${Q.reportButtons('transactions')}</span></div>
@@ -259,7 +259,7 @@
         <div class="card kpi"><div class="kpi-label">Out for signature</div><div class="kpi-value">${out.length}</div><div class="kpi-sub">${out.map(function (a) { return a.record; }).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join(', ') || 'None'}</div></div>
         <div class="card kpi"><div class="kpi-label">Completed this year</div><div class="kpi-value">${thisYear.filter(function (a) { return a.status === 'completed'; }).length}</div><div class="kpi-sub">signed PDF and audit report stored</div></div>
         <div class="card kpi"><div class="kpi-label">Cancelled or declined</div><div class="kpi-value" style="${corrections ? 'color:var(--overdue)' : ''}">${corrections}</div><div class="kpi-sub">each correction uses another transaction</div></div></div>
-      <div class="tabs" role="tablist">${[['transactions', 'Adobe Sign transactions'], ['register', 'Register of approvals']].map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
+      <div class="tabs" role="tablist">${[['transactions', 'Transactions log'], ['register', 'Register of approvals']].map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
       ${body}`;
   };
 })(window.Q);

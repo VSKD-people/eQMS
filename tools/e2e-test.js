@@ -1,11 +1,12 @@
 /*
-  VeQMS end-to-end test: the DocuSign approval route and read-and-understood training, driven through the UI
-  as each persona. Needs Node.js and Playwright with Chromium.
+  VeQMS end-to-end test: signatures through Adobe Sign (document approvals, closures, change requests, action
+  sign-offs, periodic reviews) and read-and-understood training, driven through the UI as each persona.
+  Needs Node.js and Playwright with Chromium.
     1. Serve the app:  python3 -m http.server 4173 --bind 127.0.0.1 --directory veqms
     2. Run:            node tools/e2e-test.js [output-folder] [app-url]
   It starts from fresh demo data, writes the exported Excel files and e2e-results.json to the output folder
   (default: the system temp folder), and prints PASS or FAIL for each check.
-  Last run on this build: 56 of 56 passed.
+  Last run on this build: 72 of 72 passed.
 */
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -36,95 +37,95 @@ function ok(name, pass, detail) { results.push({ name, pass: !!pass, detail: det
   const signCurrent = async (envSel) => { // open signing drawer, tick, continue, code, sign
     await click(envSel);
     await p.check('#drawer-root input[name="agree"]'); await submit();
-    await p.fill('#dsotp', '123456'); await submit(); await p.waitForTimeout(900);
+    await p.fill('#esotp', '123456'); await submit(); await p.waitForTimeout(900);
     await click('#drawer-root .drawer-foot .btn-primary'); // Done
   };
   const sendDrawer = async () => { for (const k of ['footer', 'version', 'docId', 'dates']) await p.check(`#drawer-root input[name="${k}"]`); await submit(); };
-  const startUsed = await E(() => Q.ds.used());
+  const startUsed = await E(() => Q.esign.used());
 
-  // ---------- A. POL-004: finish an envelope already out for signature ----------
+  // ---------- A. POL-004: finish an agreement already out for signature ----------
   await as('u-vic'); await go('#/documents/POL-004');
-  ok('A1 POL-004 shows Sign in DocuSign for Victoria', await p.locator('.page-head [data-act="ds-open-sign"]').count() === 1);
-  await signCurrent('.page-head [data-act="ds-open-sign"]');
-  let s = await E(() => { const e = Q.ds.active('POL-004'); return { st: e && e.status, signers: e && e.signers.map(x => x.u + ':' + x.status), doc: Q.S.docs['POL-004'].state, tomTask: Q.S.tasks.some(t => t.kind === 'ds-sign' && t.assignee === 'u-tom' && t.status === 'open' && t.record === 'POL-004') }; });
-  ok('A2 after Victoria signs, PJ is next and has a DocuSign task', s.st === 'sent' && s.signers.join() === 'u-sam:Signed,u-priya:Signed,u-omar:Signed,u-vic:Signed,u-tom:Sent' && s.doc === 'In approval' && s.tomTask, JSON.stringify(s));
+  ok('A1 POL-004 shows Sign in Adobe Sign for Victoria', await p.locator('.page-head [data-act="es-open-sign"]').count() === 1);
+  await signCurrent('.page-head [data-act="es-open-sign"]');
+  let s = await E(() => { const e = Q.esign.active('POL-004'); return { st: e && e.status, signers: e && e.signers.map(x => x.u + ':' + x.status), doc: Q.S.docs['POL-004'].state, tomTask: Q.S.tasks.some(t => t.kind === 'esign-sign' && t.assignee === 'u-tom' && t.status === 'open' && t.record === 'POL-004') }; });
+  ok('A2 after Victoria signs, PJ is next and has an Adobe Sign task', s.st === 'sent' && s.signers.join() === 'u-sam:Signed,u-priya:Signed,u-omar:Signed,u-vic:Signed,u-tom:Sent' && s.doc === 'In approval' && s.tomTask, JSON.stringify(s));
   await as('u-tom'); await go('#/today');
-  ok('A3 PJ sees "Sign in DocuSign" task on Today', (await p.locator('.task-card', { hasText: 'Sign in DocuSign' }).count()) >= 1);
+  ok('A3 PJ sees "Sign in Adobe Sign" task on Today', (await p.locator('.task-card', { hasText: 'Sign in Adobe Sign' }).count()) >= 1);
   await go('#/documents/POL-004');
-  await signCurrent('.page-head [data-act="ds-open-sign"]');
+  await signCurrent('.page-head [data-act="es-open-sign"]');
   s = await E(() => {
-    const d = Q.S.docs['POL-004'], v = Q.curVer(d), env = Q.ds.byId(v.envelope);
-    const part = Q.S.assignments.filter(a => a.doc === 'POL-004' && a.ver === '2.0' && a.envelope);
-    const aud = Q.S.assignments.filter(a => a.doc === 'POL-004' && a.ver === '2.0' && !a.envelope);
-    return { state: d.state, v1: d.versions[0].state, env: env.status, signed: !!env.signedPdf, cert: !!env.certificate, vEnv: v.envelope === env.id, vSigned: !!v.signedPdf, sigs: v.signatures.map(x => x.meaning).join(','),
+    const d = Q.S.docs['POL-004'], v = Q.curVer(d), env = Q.esign.byId(v.agreement);
+    const part = Q.S.assignments.filter(a => a.doc === 'POL-004' && a.ver === '2.0' && a.agreement);
+    const aud = Q.S.assignments.filter(a => a.doc === 'POL-004' && a.ver === '2.0' && !a.agreement);
+    return { state: d.state, v1: d.versions[0].state, env: env.status, signed: !!env.signedPdf, report: !!env.auditReport, vEnv: v.agreement === env.id, vSigned: !!v.signedPdf, sigs: v.signatures.map(x => x.meaning).join(','),
       part: part.map(a => a.user + ':' + (a.completed ? 'done' : 'open')).sort().join(','), partStmt: part[0] && part[0].statement, aud: aud.length, audHasPart: aud.some(a => ['u-sam', 'u-priya', 'u-omar'].includes(a.user)),
-      members: Q.audienceMembers(d).length, used: Q.ds.used(), globalSigs: Q.S.signatures.filter(x => x.envelope === env.id).length, rule15: Q.S.runs.some(r => r.rule === 'RULE-15') };
+      members: Q.audienceMembers(d).length, used: Q.esign.used(), globalSigs: Q.S.signatures.filter(x => x.agreement === env.id).length, rule15: Q.S.runs.some(r => r.rule === 'RULE-15') };
   });
-  ok('A4 envelope completes → POL-004 v2.0 Effective, v1.0 Superseded', s.state === 'Effective' && s.v1 === 'Superseded' && s.env === 'completed', JSON.stringify(s));
-  ok('A5 signed PDF, certificate and envelope ID stored against v2.0', s.signed && s.cert && s.vEnv && s.vSigned && s.globalSigs === 5 && s.sigs === 'Authored,Reviewed,Reviewed,Approved,Approved', s.sigs);
-  ok('A6 completed training records for author and both reviewers, linked to envelope', s.part === 'u-omar:done,u-priya:done,u-sam:done' && /envelope/.test(s.partStmt), s.part);
+  ok('A4 agreement completes → POL-004 v2.0 Effective, v1.0 Superseded', s.state === 'Effective' && s.v1 === 'Superseded' && s.env === 'completed', JSON.stringify(s));
+  ok('A5 signed PDF, audit report and agreement ID stored against v2.0', s.signed && s.report && s.vEnv && s.vSigned && s.globalSigs === 5 && s.sigs === 'Authored,Reviewed,Reviewed,Approved,Approved', s.sigs);
+  ok('A6 completed training records for author and both reviewers, linked to the agreement', s.part === 'u-omar:done,u-priya:done,u-sam:done' && /agreement/.test(s.partStmt), s.part);
   ok('A7 rest of the All staff audience allocated v2.0 (participants not re-allocated)', s.aud === s.members - 3 && !s.audHasPart, s.aud + ' of ' + s.members);
-  ok('A8 completing an envelope does not use a send', s.used === startUsed, s.used + ' vs ' + startUsed);
+  ok('A8 completing an agreement does not use a transaction', s.used === startUsed, s.used + ' vs ' + startUsed);
   ok('A9 RULE-15 ran on completion', s.rule15);
 
-  // ---------- B. POL-003: segregation of duties, decline, correction send, void ----------
+  // ---------- B. POL-003: segregation of duties, decline, correction send, cancel ----------
   await as('u-vic'); await go('#/documents/POL-003');
   ok('B1 POL-003 warns about segregation of duties before sending', /authored this version/.test(await p.locator('.callout.warn').first().innerText()));
-  await click('.page-head [data-act="ds-send"]');
+  await click('.page-head [data-act="es-send"]');
   await sendDrawer();
-  s = await E(() => ({ used: Q.ds.used(), st: Q.S.docs['POL-003'].state, sod: Q.S.audit.some(e => e.action === 'sod.block' && e.objectId === 'POL-003') }));
-  ok('B2 send blocked by segregation of duties and logged; no send used', s.used === startUsed && s.st === 'Review closed' && s.sod, JSON.stringify(s));
-  await p.selectOption('#dsa0', 'u-tom'); await p.waitForTimeout(150);
-  await p.selectOption('#dsa1', ''); await p.waitForTimeout(150);
+  s = await E(() => ({ used: Q.esign.used(), st: Q.S.docs['POL-003'].state, sod: Q.S.audit.some(e => e.action === 'sod.block' && e.objectId === 'POL-003') }));
+  ok('B2 send blocked by segregation of duties and logged; no transaction used', s.used === startUsed && s.st === 'Review closed' && s.sod, JSON.stringify(s));
+  await p.selectOption('#esa0', 'u-tom'); await p.waitForTimeout(150);
+  await p.selectOption('#esa1', ''); await p.waitForTimeout(150);
   await sendDrawer();
-  s = await E(() => { const e = Q.ds.active('POL-003'); return { used: Q.ds.used(), st: Q.S.docs['POL-003'].state, signers: e.signers.map(x => x.u + ':' + x.meaning + ':' + x.order + ':' + x.status).join(','), subj: e.subject, ver: e.verification && e.verification.footer, audit: Q.S.audit.filter(a => a.objectId === 'POL-003' && /docusign\.(send|verify)/.test(a.action)).length }; });
-  ok('B3 one envelope sent: subject has ID and version, order author → reviewer → QA approver', s.used === startUsed + 1 && s.st === 'In approval' && /^POL-003 v1\.1 · /.test(s.subj) && s.signers === 'u-vic:Authored:1:Sent,u-priya:Reviewed:2:Waiting,u-tom:Approved:3:Waiting' && s.ver && s.audit === 2, JSON.stringify(s));
-  await signCurrent('.page-head [data-act="ds-open-sign"]');
+  s = await E(() => { const e = Q.esign.active('POL-003'); return { used: Q.esign.used(), st: Q.S.docs['POL-003'].state, signers: e.signers.map(x => x.u + ':' + x.meaning + ':' + x.order + ':' + x.status).join(','), subj: e.subject, ver: e.verification && e.verification.footer, audit: Q.S.audit.filter(a => a.objectId === 'POL-003' && /esign\.(send|verify)/.test(a.action)).length }; });
+  ok('B3 one agreement sent: name has ID and version, order author → reviewer → QA approver', s.used === startUsed + 1 && s.st === 'In approval' && /^POL-003 v1\.1 · /.test(s.subj) && s.signers === 'u-vic:Authored:1:Sent,u-priya:Reviewed:2:Waiting,u-tom:Approved:3:Waiting' && s.ver && s.audit === 2, JSON.stringify(s));
+  await signCurrent('.page-head [data-act="es-open-sign"]');
   await as('u-priya'); await go('#/documents/POL-003');
-  await click('.page-head [data-act="ds-open-sign"]'); await click('#drawer-root [data-act="ds-decline"]');
-  await p.fill('#dsdr', 'Section 3 still says Confidential may be printed.'); await submit();
-  s = await E(() => { const e = Q.ds.forRecord('POL-003')[0]; return { env: e.status, reason: e.declineReason, st: Q.S.docs['POL-003'].state, task: Q.S.tasks.some(t => t.kind === 'resubmit' && t.record === 'POL-003' && t.assignee === 'u-vic' && t.status === 'open' && /Section 3/.test(t.note)), audit: Q.S.audit.some(a => a.action === 'docusign.declined' && /Section 3/.test(a.summary)), used: Q.ds.used() }; });
-  ok('B4 declined envelope returns POL-003 to Draft with the reason recorded', s.env === 'declined' && s.st === 'Draft' && s.task && s.audit && s.used === startUsed + 1, JSON.stringify(s));
+  await click('.page-head [data-act="es-open-sign"]'); await click('#drawer-root [data-act="es-decline"]');
+  await p.fill('#esdr', 'Section 3 still says Confidential may be printed.'); await submit();
+  s = await E(() => { const e = Q.esign.forRecord('POL-003')[0]; return { env: e.status, reason: e.declineReason, st: Q.S.docs['POL-003'].state, task: Q.S.tasks.some(t => t.kind === 'resubmit' && t.record === 'POL-003' && t.assignee === 'u-vic' && t.status === 'open' && /Section 3/.test(t.note)), audit: Q.S.audit.some(a => a.action === 'esign.declined' && /Section 3/.test(a.summary)), used: Q.esign.used() }; });
+  ok('B4 declined agreement returns POL-003 to Draft with the reason recorded', s.env === 'declined' && s.st === 'Draft' && s.task && s.audit && s.used === startUsed + 1, JSON.stringify(s));
   await as('u-vic');
   await E(() => { const d = Q.S.docs['POL-003']; d.reviewers = []; Q.wf.doc.submitForReview(d); });
-  await go('#/documents/POL-003'); await click('.page-head [data-act="ds-send"]'); await p.selectOption('#dsa0', 'u-tom'); await p.waitForTimeout(100); await p.selectOption('#dsa1', ''); await p.waitForTimeout(100); await sendDrawer();
-  s = await E(() => { const list = Q.ds.forRecord('POL-003'); return { n: list.length, corr: list[0].correctionOf === list[1].id, used: Q.ds.used() }; });
-  ok('B5 corrected envelope is a second send and points at the declined one', s.n === 2 && s.corr && s.used === startUsed + 2, JSON.stringify(s));
-  await click('.page-head [data-act="ds-void"]'); await p.fill('#dsvr', 'Wrong review date on page 1.'); await submit();
-  s = await E(() => ({ env: Q.ds.forRecord('POL-003')[0].status, st: Q.S.docs['POL-003'].state, used: Q.ds.used(), signTasks: Q.S.tasks.filter(t => t.record === 'POL-003' && t.kind === 'ds-sign' && t.status === 'open').length }));
-  ok('B6 void returns to Draft, closes signing tasks, send still counted', s.env === 'voided' && s.st === 'Draft' && s.used === startUsed + 2 && s.signTasks === 0, JSON.stringify(s));
+  await go('#/documents/POL-003'); await click('.page-head [data-act="es-send"]'); await p.selectOption('#esa0', 'u-tom'); await p.waitForTimeout(100); await p.selectOption('#esa1', ''); await p.waitForTimeout(100); await sendDrawer();
+  s = await E(() => { const list = Q.esign.forRecord('POL-003'); return { n: list.length, corr: list[0].correctionOf === list[1].id, used: Q.esign.used() }; });
+  ok('B5 corrected agreement is a second transaction and points at the declined one', s.n === 2 && s.corr && s.used === startUsed + 2, JSON.stringify(s));
+  await click('.page-head [data-act="es-cancel"]'); await p.fill('#escr', 'Wrong review date on page 1.'); await submit();
+  s = await E(() => ({ env: Q.esign.forRecord('POL-003')[0].status, st: Q.S.docs['POL-003'].state, used: Q.esign.used(), signTasks: Q.S.tasks.filter(t => t.record === 'POL-003' && t.kind === 'esign-sign' && t.status === 'open').length }));
+  ok('B6 cancel returns to Draft, closes signing tasks, transaction still counted', s.env === 'cancelled' && s.st === 'Draft' && s.used === startUsed + 2 && s.signTasks === 0, JSON.stringify(s));
 
   // ---------- C. VP-001: validation plan, QA approval ----------
   await go('#/today');
   ok('C1 Victoria has a "Verify and send" task for VP-001', (await p.locator('.task-card', { hasText: 'VP-001' }).count()) === 1);
-  await go('#/documents/VP-001'); await click('.page-head [data-act="ds-send"]'); await sendDrawer();
-  for (const u of ['u-priya', 'u-omar', 'u-vic']) { await as(u); await go('#/documents/VP-001'); await signCurrent('.page-head [data-act="ds-open-sign"]'); }
-  s = await E(() => { const d = Q.S.docs['VP-001']; return { st: d.state, part: Q.S.assignments.filter(a => a.doc === 'VP-001' && a.envelope).map(a => a.user).sort().join(','), aud: Q.S.assignments.filter(a => a.doc === 'VP-001' && !a.envelope).map(a => a.user).sort().join(','), reviewOpen: Object.values(Q.S.reviews).some(r => r.doc === 'VP-001' && r.state === 'Open') }; });
+  await go('#/documents/VP-001'); await click('.page-head [data-act="es-send"]'); await sendDrawer();
+  for (const u of ['u-priya', 'u-omar', 'u-vic']) { await as(u); await go('#/documents/VP-001'); await signCurrent('.page-head [data-act="es-open-sign"]'); }
+  s = await E(() => { const d = Q.S.docs['VP-001']; return { st: d.state, part: Q.S.assignments.filter(a => a.doc === 'VP-001' && a.agreement).map(a => a.user).sort().join(','), aud: Q.S.assignments.filter(a => a.doc === 'VP-001' && !a.agreement).map(a => a.user).sort().join(','), reviewOpen: Object.values(Q.S.reviews).some(r => r.doc === 'VP-001' && r.state === 'Open') }; });
   ok('C2 VP-001 Effective after author, reviewer and QA approver sign', s.st === 'Effective' && s.reviewOpen, JSON.stringify(s));
-  ok('C3 audience (IT team + Quality Manager role) allocated; author and reviewer have records from the envelope', s.part === 'u-omar,u-priya' && s.aud.indexOf('u-vic') >= 0 && s.aud.indexOf('u-jake') >= 0 && s.aud.indexOf('u-priya') < 0, JSON.stringify(s));
+  ok('C3 audience (IT team + Quality Manager role) allocated; author and reviewer have records from the agreement', s.part === 'u-omar,u-priya' && s.aud.indexOf('u-vic') >= 0 && s.aud.indexOf('u-jake') >= 0 && s.aud.indexOf('u-priya') < 0, JSON.stringify(s));
 
-  // ---------- D. CAPA-005 closure through DocuSign ----------
+  // ---------- D. CAPA-005 closure through Adobe Sign ----------
   await as('u-vic'); await go('#/quality/CAPA-005?tab=effectiveness');
   await p.fill('#cer', 'Next simulation click rate was 4% (1 of 24).'); await click('form[data-submit="capa-eff"] button[type="submit"]');
   await sendDrawer();
-  s = await E(() => { const e = Q.ds.active('CAPA-005'); return e && e.signers.map(x => x.u + ':' + x.meaning).join(','); });
-  ok('D1 CAPA closure envelope: owner (Authored) then QA approver (Approved)', s === 'u-priya:Authored,u-vic:Approved', s);
-  await as('u-priya'); await go('#/quality/CAPA-005'); await signCurrent('.page-head [data-act="ds-open-sign"]');
-  await as('u-vic'); await go('#/quality/CAPA-005'); await signCurrent('.page-head [data-act="ds-open-sign"]');
-  s = await E(() => { const c = Q.S.capas['CAPA-005']; return { st: c.state, env: !!c.closeEnvelope, res: c.effectiveness.result, by: c.effectiveness.by, qe: Q.S.events['QE-013'].state }; });
-  ok('D2 CAPA-005 closed when the envelope completed; source event closed', s.st === 'Closed' && s.env && /4%/.test(s.res) && s.by === 'u-vic' && s.qe === 'Closed', JSON.stringify(s));
+  s = await E(() => { const e = Q.esign.active('CAPA-005', 'capa-closure'); return e && e.signers.map(x => x.u + ':' + x.meaning).join(','); });
+  ok('D1 CAPA closure agreement: owner (Authored) then QA approver (Approved)', s === 'u-priya:Authored,u-vic:Approved', s);
+  await as('u-priya'); await go('#/quality/CAPA-005'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  await as('u-vic'); await go('#/quality/CAPA-005'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => { const c = Q.S.capas['CAPA-005']; return { st: c.state, env: !!c.closeAgreement, res: c.effectiveness.result, by: c.effectiveness.by, qe: Q.S.events['QE-013'].state }; });
+  ok('D2 CAPA-005 closed when the agreement completed; source event closed', s.st === 'Closed' && s.env && /4%/.test(s.res) && s.by === 'u-vic' && s.qe === 'Closed', JSON.stringify(s));
 
-  // ---------- E. Deviation QE-017 through DocuSign; other event types stay in-app ----------
+  // ---------- E. Quality events close without a CAPA through Adobe Sign, whatever their type ----------
   await go('#/quality/QE-017');
-  ok('E1 deviation offers "Close through DocuSign"', /Close through DocuSign/.test(await p.locator('.page-head').innerText()));
+  ok('E1 deviation offers "Close without CAPA"', /Close without CAPA/.test(await p.locator('.page-head').innerText()));
   await click('.page-head [data-act="qe-close"]'); await p.fill('#dj', 'One-off delay; the test passed and the schedule stays the same.'); await submit();
   await sendDrawer();
-  await as('u-grace'); await go('#/quality/QE-017'); await signCurrent('.page-head [data-act="ds-open-sign"]');
-  await as('u-vic'); await go('#/quality/QE-017'); await signCurrent('.page-head [data-act="ds-open-sign"]');
-  s = await E(() => { const e = Q.S.events['QE-017']; return { st: e.state, env: e.closure && e.closure.envelope }; });
-  ok('E2 deviation QE-017 closed by completed envelope', s.st === 'Closed' && !!s.env, JSON.stringify(s));
-  await go('#/quality/QE-015');
-  ok('E3 non-deviation event keeps in-app "Close without CAPA"', /Close without CAPA/.test(await p.locator('.page-head').innerText()));
+  await as('u-grace'); await go('#/quality/QE-017'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  await as('u-vic'); await go('#/quality/QE-017'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => { const e = Q.S.events['QE-017']; return { st: e.state, env: e.closure && e.closure.agreement }; });
+  ok('E2 deviation QE-017 closed by completed agreement', s.st === 'Closed' && !!s.env, JSON.stringify(s));
+  s = await E(() => { const p = Q.esign.plan('QE-015', { stage: 'qe-closure' }); return { signers: p.signers.map(x => x.u + ':' + x.meaning).join(','), purpose: p.purpose }; });
+  ok('E3 a nonconformance (QE-015) also closes through Adobe Sign: owner, then QA approver', s.signers === 'u-grace:Authored,u-vic:Approved' && s.purpose === 'Quality event closure', JSON.stringify(s));
 
   // ---------- F. Read and understood (Route 2) ----------
   await go('#/training');
@@ -200,41 +201,97 @@ function ok(name, pass, detail) { results.push({ name, pass: !!pass, detail: det
   ok('K5 training status of a single document', /Training status of one document/i.test(await p.locator('main').innerText()));
   await go('#/approvals');
   const ap = await p.locator('main').innerText();
-  ok('K6 register shows sends used and remaining against 500', new RegExp((startUsed + 5) + ' of 500').test(ap) && /remaining/.test(ap), (ap.match(/\d+ of 500/) || [''])[0]);
-  const [dl3] = await Promise.all([p.waitForEvent('download'), click('[data-act="rpt-xlsx"][data-key="sends"]')]); await dl3.saveAs(OUT + '/docusign-sends.xlsx');
+  ok('K6 register shows transactions used and remaining against 500', new RegExp((startUsed + 5) + ' of 500').test(ap) && /remaining/.test(ap), (ap.match(/\d+ of 500/) || [''])[0]);
+  const [dl3] = await Promise.all([p.waitForEvent('download'), click('[data-act="rpt-xlsx"][data-key="transactions"]')]); await dl3.saveAs(OUT + '/adobe-sign-transactions.xlsx');
   await go('#/approvals?tab=register');
   const [dl4] = await Promise.all([p.waitForEvent('download'), click('[data-act="rpt-xlsx"][data-key="approvals"]')]); await dl4.saveAs(OUT + '/approvals-register.xlsx');
   const regRows = await p.locator('table.t tbody tr').count();
-  ok('K7 register of approvals lists completed envelopes', regRows >= 11, regRows);
+  ok('K7 register of approvals lists completed agreements', regRows >= 11, regRows);
   await p.locator('table.t tbody tr').first().click(); await p.waitForTimeout(250);
-  const [pc] = await Promise.all([ctx.waitForEvent('page'), click('#drawer-root [data-act="ds-cert"]')]); await pc.waitForLoadState(); const certText = await pc.locator('body').innerText(); await pc.close();
-  ok('K8 certificate of completion opens from the envelope', /Certificate of completion/.test(certText) && /Envelope ID/.test(certText));
+  const [pc] = await Promise.all([ctx.waitForEvent('page'), click('#drawer-root [data-act="es-audit-report"]')]); await pc.waitForLoadState(); const certText = await pc.locator('body').innerText(); await pc.close();
+  ok('K8 audit report opens from the agreement', /Audit report/.test(certText) && /Agreement ID/.test(certText));
   await click('#drawer-root .drawer-foot .btn:last-child');
 
   // ---------- L. Allowance, connector off, permissions ----------
   s = await E(() => {
     const d = Q.S.docs['WI-003']; d.checkedOut = null; d.reviewers = []; d.approvers = [{ u: 'u-tom', status: 'Waiting' }];
     Q.S.session.userId = 'u-sam'; Q.wf.doc.submitForReview(d);
-    const cap = Q.S.settings.docusign.allowance; Q.S.settings.docusign.allowance = Q.ds.used();
-    const blockedCap = Q.ds.cantSend('WI-003'); Q.S.settings.docusign.allowance = cap;
-    Q.S.integrations.find(i => i.id === 'docusign').on = false; const blockedOff = Q.ds.cantSend('WI-003'); Q.S.integrations.find(i => i.id === 'docusign').on = true;
-    Q.S.session.userId = 'u-daniel'; const emp = Q.ds.cantSend('WI-003'); const empNav = Q.can('approvals.view');
-    Q.S.session.userId = 'u-aud'; const aud = Q.ds.cantSend('WI-003'); const audNav = Q.can('approvals.view'); const audCorr = Q.can('training.manage');
-    Q.S.session.userId = 'u-sam'; const plan = Q.ds.plan('WI-003', { approvers: ['u-hannah'] }).problems.join(' ');
+    const cap = Q.S.settings.esign.allowance; Q.S.settings.esign.allowance = Q.esign.used();
+    const blockedCap = Q.esign.cantSend('WI-003', 'doc-approval'); Q.S.settings.esign.allowance = cap;
+    Q.S.integrations.find(i => i.id === 'adobesign').on = false; const blockedOff = Q.esign.cantSend('WI-003', 'doc-approval'); Q.S.integrations.find(i => i.id === 'adobesign').on = true;
+    Q.S.session.userId = 'u-daniel'; const emp = Q.esign.cantSend('WI-003', 'doc-approval'); const empNav = Q.can('approvals.view');
+    Q.S.session.userId = 'u-aud'; const aud = Q.esign.cantSend('WI-003', 'doc-approval'); const audNav = Q.can('approvals.view'); const audCorr = Q.can('training.manage');
+    Q.S.session.userId = 'u-sam'; const plan = Q.esign.plan('WI-003', { stage: 'doc-approval', approvers: ['u-hannah'] }).problems.join(' ');
     Q.S.session.userId = 'u-vic';
     return { blockedCap, blockedOff, emp, empNav, aud, audNav, audCorr, plan };
   });
-  ok('L1 no send once the yearly allowance is used up', /allowance of \d+ DocuSign sends is used up/.test(s.blockedCap), s.blockedCap);
-  ok('L2 no send while the DocuSign connector is off', /connector is switched off/.test(s.blockedOff));
+  ok('L1 no send once the yearly allowance is used up', /allowance of \d+ Adobe Sign transactions is used up/.test(s.blockedCap), s.blockedCap);
+  ok('L2 no send while the Adobe Sign connector is off', /connector is switched off/.test(s.blockedOff));
   ok('L3 employee cannot send and has no Approvals page; auditor read-only', /Only the owner/.test(s.emp) && !s.empNav && /read-only/.test(s.aud) && s.audNav && !s.audCorr, JSON.stringify(s));
   ok('L4 System Administrator cannot be a QA approver', /doesn’t hold the Approver or Quality Manager role/.test(s.plan), s.plan);
-  s = await E(() => { const n = Q.S.notifications.filter(x => /allowance running low/.test(x.title)).length; const cap = Q.S.settings.docusign.allowance; Q.S.settings.docusign.allowance = Q.ds.used() + 3; Q.S.session.userId = 'u-sam'; Q.ds.send('WI-003', { verification: { footer: 1, version: 1, docId: 1, dates: 1 } }); Q.S.settings.docusign.allowance = cap; Q.S.session.userId = 'u-vic'; return Q.S.notifications.filter(x => /allowance running low/.test(x.title)).length - n; });
+  s = await E(() => { const n = Q.S.notifications.filter(x => /allowance running low/.test(x.title)).length; const cap = Q.S.settings.esign.allowance; Q.S.settings.esign.allowance = Q.esign.used() + 3; Q.S.session.userId = 'u-sam'; Q.esign.send('WI-003', { stage: 'doc-approval', verification: { footer: 1, version: 1, docId: 1, dates: 1 } }); Q.S.settings.esign.allowance = cap; Q.S.session.userId = 'u-vic'; return Q.S.notifications.filter(x => /allowance running low/.test(x.title)).length - n; });
   ok('L5 Quality Manager is warned when the allowance runs low', s >= 1, s);
 
   // ---------- M. Obsolete closes open training; chain intact ----------
   s = await E(() => { const d = Q.S.docs['POL-009']; Q.wf.doc.obsolete(d, 'Replaced by POL-012'); return { open: Q.S.assignments.filter(a => a.doc === 'POL-009' && Q.trOpen(a)).length, done: Q.S.assignments.filter(a => a.doc === 'POL-009' && a.completed).length, tasks: Q.S.tasks.filter(t => t.record === 'POL-009' && t.kind === 'training' && t.status === 'open').length, chain: Q.verifyChain().ok }; });
   ok('M1 obsolete document closes open training; completed records kept', s.open === 0 && s.done > 0 && s.tasks === 0, JSON.stringify(s));
   ok('M2 audit chain still valid after all flows', s.chain);
+
+  // ---------- O. Change requests and other sign-offs through Adobe Sign (formerly signed in the app) ----------
+  const usedBeforeO = await E(() => Q.esign.used());
+  ok('O1 the in-app signing drawer is gone', await E(() => typeof Q.sign === 'undefined' && typeof Q.makeSignature === 'undefined'));
+  // CR-016: the plan agreement is out; PJ signs it from Today.
+  await as('u-tom'); await go('#/today');
+  ok('O2 PJ has a "Sign in Adobe Sign" task for the CR-016 plan', (await p.locator('.task-card', { hasText: 'CR-016' }).count()) >= 1);
+  await go('#/changes/CR-016'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => { const c = Q.S.crs['CR-016']; const ag = Q.esign.byId(c.planAgreement); return { st: c.state, ag: ag.status, sig: c.signatures.map(x => x.stage + ':' + x.user + ':' + (x.agreement === ag.id)).join(), tasks: Q.S.tasks.filter(t => t.record === 'CR-016' && t.kind === 'cr-action' && t.status === 'open').map(t => t.ref).sort().join() }; });
+  ok('O3 CR-016 plan agreement completes → In execution, signature recorded, action owners tasked', s.st === 'In execution' && s.ag === 'completed' && s.sig === 'Plan approved:u-tom:true' && s.tasks === 'A-8,A-9', JSON.stringify(s));
+  // CR-015: review completes, the process owner sends the plan, owner and approver sign.
+  await as('u-vic'); await E(() => { Q.wf.cr.review(Q.S.crs['CR-015'], 'Agree: UK West is the paired region.'); });
+  s = await E(() => ({ st: Q.S.crs['CR-015'].state, send: Q.S.tasks.some(t => t.kind === 'send-approval' && t.record === 'CR-015' && t.assignee === 'u-tom' && t.stage === 'cr-plan' && t.status === 'open'), approve: Q.S.tasks.some(t => t.kind === 'cr-approve') }));
+  ok('O4 when review completes, the process owner is asked to verify and send the plan (no in-app approve task)', s.st === 'Approval' && s.send && !s.approve, JSON.stringify(s));
+  await as('u-tom'); await go('#/changes/CR-015'); await click('.page-head [data-act="es-send"][data-stage="cr-plan"]'); await sendDrawer();
+  s = await E(() => { const a = Q.esign.active('CR-015', 'cr-plan'); return a && a.signers.map(x => x.u + ':' + x.meaning + ':' + x.order).join(); });
+  ok('O5 CR-015 plan agreement: process owner (Authored), then approver (Approved)', s === 'u-tom:Authored:1,u-vic:Approved:2', s);
+  await signCurrent('.page-head [data-act="es-open-sign"]');
+  await as('u-vic'); await go('#/changes/CR-015'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => ({ st: Q.S.crs['CR-015'].state, used: Q.esign.used() }));
+  ok('O6 CR-015 moves to In execution only when the agreement completes; one transaction used', s.st === 'In execution' && s.used === usedBeforeO + 1, JSON.stringify(s));
+  // Segregation of duties: a change request owner can't approve their own plan.
+  s = await E(() => { const c = Q.wf.cr.create({ title: 'Test own approval', size: 'Minor', process: 'ISMS · Governance', classification: 'Internal', description: 'x', reason: 'y', impact: 'z', items: [], reviewers: [], approvers: ['u-vic'] }); Q.wf.cr.addAction(c, { title: 'Edit', assignee: 'u-vic', due: Q.dayIso(5), sig: false }); Q.wf.cr.submit(c); return { st: c.state, problems: Q.esign.plan(c.id, { stage: 'cr-plan' }).problems.join(' ') }; });
+  ok('O7 owner as approver of their own change request plan is refused (segregation of duties)', s.st === 'Approval' && /segregation of duties/.test(s.problems), JSON.stringify(s));
+  // CR-012 action A-4: Jim completes it and signs it off in Adobe Sign.
+  await as('u-sam'); await go('#/changes/CR-012?tab=actions');
+  await click('[data-act="cr-done"][data-a="A-4"]'); await sendDrawer();
+  s = await E(() => { const a = Q.esign.active('CR-012', 'cr-action', 'A-4'); return a && { signers: a.signers.map(x => x.u + ':' + x.meaning).join(), done: Q.S.crs['CR-012'].actions.find(x => x.id === 'A-4').status }; });
+  ok('O8 action sign-off agreement goes to the person who did it (Completed); not done until signed', s && s.signers === 'u-sam:Completed' && s.done !== 'Done', JSON.stringify(s));
+  await signCurrent('#main [data-act="es-open-sign"]');
+  s = await E(() => { const a = Q.S.crs['CR-012'].actions.find(x => x.id === 'A-4'); return { st: a.status, by: a.signedBy, sig: !!a.signature && Q.S.signatures.some(x => x.id === a.signature && x.source === 'Adobe Sign') }; });
+  ok('O9 action A-4 done and signed in Adobe Sign', s.st === 'Done' && s.by === 'u-sam' && s.sig, JSON.stringify(s));
+  // CR-012 action A-6: Jim sends it, then declines; the action stays open with the reason.
+  await go('#/changes/CR-012?tab=actions'); await click('[data-act="cr-done"][data-a="A-6"]'); await sendDrawer();
+  await click('#main [data-act="es-open-sign"]'); await click('#drawer-root [data-act="es-decline"]');
+  await p.fill('#esdr', 'FRM-007 still shows the old field order.'); await submit();
+  s = await E(() => { const a = Q.S.crs['CR-012'].actions.find(x => x.id === 'A-6'); return { st: a.status, ret: a.returned && a.returned.how, task: Q.S.tasks.some(t => t.kind === 'cr-action' && t.ref === 'A-6' && t.status === 'open' && /FRM-007/.test(t.note || '')) }; });
+  ok('O10 declined action sign-off returns the action to its owner with the reason', s.st !== 'Done' && s.ret === 'declined' && s.task, JSON.stringify(s));
+  // CAPA-008 action plan (high severity): owner, then a Quality Manager.
+  await as('u-omar'); await go('#/quality/CAPA-008'); await click('.page-head [data-act="capa-plan"]');
+  s = await E(() => { const p = Q.esign.plan('CAPA-008', { stage: 'capa-plan' }); return p.signers.map(x => x.u + ':' + x.meaning).join(); });
+  ok('O11 high-severity CAPA plan: owner (Authored), then a Quality Manager (Approved)', s === 'u-omar:Authored,u-vic:Approved', s);
+  await sendDrawer(); await signCurrent('.page-head [data-act="es-open-sign"]');
+  await as('u-vic'); await go('#/quality/CAPA-008'); await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => ({ st: Q.S.capas['CAPA-008'].state, locked: Q.S.capas['CAPA-008'].actionsLocked }));
+  ok('O12 CAPA-008 actions lock and execution starts when the agreement completes', s.st === 'Execution' && s.locked, JSON.stringify(s));
+  // Periodic review PR-031: "No update needed" is signed by the reviewer in Adobe Sign.
+  await go('#/reviews/PR-031'); await click('.page-head [data-act="rv-ok"]'); await sendDrawer();
+  s = await E(() => Q.S.reviews['PR-031'].state);
+  ok('O13 periodic review stays open while its agreement is out', s === 'Open', s);
+  await signCurrent('.page-head [data-act="es-open-sign"]');
+  s = await E(() => { const r = Q.S.reviews['PR-031']; return { st: r.state, ag: !!r.agreement, next: Object.values(Q.S.reviews).some(x => x.doc === 'POL-001' && x.state === 'Open' && x.id !== 'PR-031') }; });
+  ok('O14 review completes when the agreement completes; next review scheduled', s.st === 'Completed' && s.ag && s.next, JSON.stringify(s));
+  s = await E(n => ({ used: Q.esign.used() - n, audit: Q.S.audit.filter(e => e.action === 'esign.send').length, sigActions: Q.S.audit.filter(e => e.action === 'sign').length }), usedBeforeO);
+  ok('O15 every sign-off above used one transaction each (CR-015 plan, 2 actions, CAPA-008 plan, PR-031) and none was signed in the app', s.used === 5, JSON.stringify(s));
+  ok('O16 audit chain still valid', await E(() => Q.verifyChain().ok));
 
   // ---------- N. Smoke test on the changed state ----------
   await go('#/today');
