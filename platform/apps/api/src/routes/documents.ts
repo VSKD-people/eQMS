@@ -79,6 +79,7 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     const ids = q.approvers ? q.approvers.split(',').filter(Boolean).map((x) => uuid.parse(x)) : undefined;
     const r = await env.planForDocument(db, n, ids);
     await docs.assertVisible(db, me, r.d);
+    await env.logBlockedPlan(db, r.plan, 'document', n);
     const name = (id: string) => r.people.find((x) => x.id === id)?.name ?? '';
     return { subject: r.plan.subject, purpose: r.plan.purpose, version: r.v.version, problems: r.plan.problems,
       signers: r.plan.signers.map((s) => ({ ...s, name: name(s.userId), status: 'waiting', signedAt: null })), allowance: await env.allowance(db) };

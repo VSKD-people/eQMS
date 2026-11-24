@@ -54,6 +54,13 @@ test('API flow: DocuSign approvals, training records, closures, admin', { skip: 
   ok(a0.allowance === 500 && a0.year === new Date().getUTCFullYear(), `allowance: ${base} of 500 used in ${a0.year}`);
   const plan3 = await as('vic', (db) => env.planForDocument(db, 'POL-003'));
   ok(plan3.plan.problems.some((p: string) => /segregation of duties/.test(p)), 'POL-003: Victoria wrote it, so the plan shows a segregation-of-duties problem');
+  const sodLog = () => sys((db) => rows<{ summary: string }>(db, `select summary from app.audit_log where action = 'sod.block' and object_id = 'POL-003' order by seq`));
+  await as('vic', (db) => env.logBlockedPlan(db, plan3.plan, 'document', 'POL-003'));
+  ok((await sodLog()).some((r) => /^Send page shown with sending blocked/.test(r.summary)), 'showing the blocked plan is in the audit trail');
+  const planVp = await as('vic', (db) => env.planForDocument(db, 'VP-001'));
+  const before = (await sys((db) => one<{ n: number }>(db, `select count(*)::int as n from app.audit_log where action = 'sod.block'`))).n;
+  await as('vic', (db) => env.logBlockedPlan(db, planVp.plan, 'document', 'VP-001'));
+  ok((await sys((db) => one<{ n: number }>(db, `select count(*)::int as n from app.audit_log where action = 'sod.block'`))).n === before, 'a plan without a segregation-of-duties problem logs nothing');
   const sod = await fails(as('vic', (db, me) => env.sendDocument(db, deps, me, 'POL-003', { verification: V, approvers: [ids.vic!, ids.tom!] })), /segregation of duties/, 'POL-003 send blocked (SoD)');
   ok(sod instanceof HttpError && sod.log?.action === 'sod.block', 'the SoD refusal carries an audit note for the error handler');
   await fails(as('vic', (db, me) => env.sendDocument(db, deps, me, 'VP-001', { verification: { ...V, dates: false } as any, approvers: [ids.vic!] })), /verification/, 'send refused until all four verification checks are ticked');

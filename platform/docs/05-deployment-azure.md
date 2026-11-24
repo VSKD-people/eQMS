@@ -224,9 +224,10 @@ change-control procedure.
 4. Add these as environment variables (not secrets; OIDC means there's no Azure password to store):
    `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `ACR_NAME`.
 
-From then on, every merge to `main` that touches `platform/` runs `.github/workflows/platform-deploy.yml`: build,
-push, migrate (it waits for success), then roll out the API, web app and reminders job, and a smoke check. CI
-(`platform-ci.yml`) runs on every pull request. *Check:* the status values the migrate loop waits for
+From then on, run `.github/workflows/platform-deploy.yml` by hand (Actions > Platform deploy > Run workflow): build,
+push, migrate (it waits for success), then roll out the API, web app and reminders job, and a smoke check. It is
+manual only until Azure is set up; once it is, decide whether merges to `main` should deploy automatically, and if
+so make the deploy wait for CI. CI (`platform-ci.yml`) runs on every pull request. *Check:* the status values the migrate loop waits for
 (`Succeeded`, `Failed`) against `az containerapp job execution show`.
 
 ## 9. Integrations

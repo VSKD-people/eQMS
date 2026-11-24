@@ -7,7 +7,7 @@ import type { Ctx } from '../app.ts';
 import { badRequest } from '../lib/http.ts';
 import type { Person } from '../lib/people.ts';
 import { audit } from '../lib/work.ts';
-import { download, need, param, query, z } from '../lib/params.ts';
+import { download, need, param, query, uuid, z } from '../lib/params.ts';
 import * as docs from '../services/documents.ts';
 import * as env from '../services/envelopes.ts';
 import * as training from '../services/training.ts';
@@ -74,7 +74,7 @@ export function reportRoutes(api: FastifyInstance, ctx: Ctx): void {
     const [name, format] = file.split('.') as [string, 'xlsx' | 'pdf'];
     const r = REPORTS[name];
     if (!r) throw badRequest(`Unknown report. Choose one of: ${Object.keys(REPORTS).join(', ')}.`);
-    const q = query({ group: z.string().max(100).optional(), userId: z.string().uuid().optional(), documentNumber: z.string().max(20).optional(),
+    const q = query({ group: z.string().max(100).optional(), userId: uuid.optional(), documentNumber: z.string().max(20).optional(),
       status: z.string().max(20).optional(), all: z.string().optional(), year: z.coerce.number().int().optional() }, req.query);
     const out = await ctx.run(req, async (db, me) => {
       const table = await r.build(db, me, q);

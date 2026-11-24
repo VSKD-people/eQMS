@@ -44,7 +44,7 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
   // ---------- Users ----------
   api.post('/users', (req) => ctx.run(req, async (db, me) => {
     need(me, 'admin.users');
-    const b = body(z.object({ email: z.string().email().max(200), name: z.string().min(2).max(120), jobTitle: z.string().max(120).optional(),
+    const b = body(z.object({ email: z.email().max(200), name: z.string().min(2).max(120), jobTitle: z.string().max(120).optional(),
       roles: z.array(z.enum(ROLES)).min(1), groups: z.array(z.string()).default([]), managerId: uuid.optional(),
       clearance: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']).default('Internal') }), req.body);
     checkRoles(me, '', b.roles);

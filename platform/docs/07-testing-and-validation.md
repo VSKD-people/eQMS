@@ -16,7 +16,7 @@ so each needs a freshly seeded database.
 ## What has actually run so far
 
 Phase 1 was first written in a sandbox without npm access. It has since been installed and built with the real
-packages (Node 22, TypeScript 5.9, Next.js 15.5, Fastify 5.12, pg 8), and `package-lock.json` is committed.
+packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), and `package-lock.json` is committed.
 
 - **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
   the domain tests (15 of 15); the database invariants on PostgreSQL 16 (all 10 groups); migrate twice (the second run
@@ -49,9 +49,11 @@ Found and fixed during that work:
 - The development sign-in lists all twelve demo people, so every UAT step can be done on screen (Omar signs in
   scenario 2).
 
-Two package advisories are open: `next` 15 depends on a `postcss` version with published advisories (fixed only in
-`next` 16), and `zod` 3 has a memory-exhaustion advisory (fixed in `zod` 4). Both fixes are major upgrades and are
-left for a decision.
+Then upgraded to Next.js 16 and zod 4 to clear two package advisories (`postcss` through `next` 15, and a
+memory-exhaustion issue in `zod` 3); `npm audit` reports none. The upgrade renamed `middleware.ts` to `proxy.ts`
+(Next.js 16), and the API now checks IDs with `z.guid()`: zod 4's `z.uuid()` refuses UUIDs whose version bits aren't
+RFC 9562 ones, which PostgreSQL accepts (the demo seed has many). Every check above passed again after the upgrade.
+Showing a send page that segregation of duties blocks is now logged (UAT scenario 1).
 
 ## Before go-live
 
@@ -69,8 +71,9 @@ left for a decision.
 Use the demo seed (`npm run db:seed`, never in production). Personas sign in with the development picker.
 
 1. Victoria tries to send POL-003 for approval with herself as QA approver: refused (segregation of duties). On screen
-   the plan shows the problem and the Send button is disabled, so nothing reaches the API and nothing is logged. If the
-   form is sent anyway (the browser test does this), the API refuses it and the refusal is in the audit trail.
+   the plan shows the problem and the Send button is disabled; being shown the block is logged (`sod.block`, "Send page
+   shown with sending blocked"). If the form is sent anyway (the browser test does this), the API refuses it and that
+   refusal is logged too.
 2. Victoria sends VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
    becomes Effective; Carrie and Omar have completed training records; the IT team has VP-001 to read.
 3. Jim voids POL-004 with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim sends a corrected

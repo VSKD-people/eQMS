@@ -9,13 +9,11 @@
 # The "production" environment must have required reviewers set in the repository settings.
 name: Platform deploy
 
+# Manual only (Actions > Platform deploy > Run workflow) until the Azure subscription, the variables below and the
+# production environment's reviewers are set up. Then decide whether to deploy on every push to main again, and if
+# so, only after Platform CI has passed.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'platform/**'
-      - '.github/workflows/platform-deploy.yml'
 
 permissions:
   id-token: write   # OIDC token for azure/login

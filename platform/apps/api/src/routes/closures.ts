@@ -98,6 +98,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.get('/capas/:number/approval-plan', (req) => ctx.run(req, async (db) => {
     const q = query({ approver: uuid.optional() }, req.query);
     const r = await env.planForClosure(db, 'capa', param(p, req.params).number, q.approver);
+    await env.logBlockedPlan(db, r.plan, 'capa', r.t.number);
     return { subject: r.plan.subject, purpose: r.plan.purpose, problems: r.plan.problems, allowance: await env.allowance(db),
       signers: r.plan.signers.map((s) => ({ ...s, name: r.people.find((x) => x.id === s.userId)?.name ?? '', status: 'waiting', signedAt: null })) };
   }));
@@ -118,6 +119,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.get('/quality-events/:number/approval-plan', (req) => ctx.run(req, async (db) => {
     const q = query({ approver: uuid.optional() }, req.query);
     const r = await env.planForClosure(db, 'quality_event', param(p, req.params).number, q.approver);
+    await env.logBlockedPlan(db, r.plan, 'quality_event', r.t.number);
     return { subject: r.plan.subject, purpose: r.plan.purpose, problems: r.plan.problems, allowance: await env.allowance(db),
       signers: r.plan.signers.map((s) => ({ ...s, name: r.people.find((x) => x.id === s.userId)?.name ?? '', status: 'waiting', signedAt: null })) };
   }));

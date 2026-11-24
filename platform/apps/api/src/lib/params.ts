@@ -6,7 +6,9 @@ import { can, type Permission } from '@veqms/domain';
 import type { Person } from './people.ts';
 
 export { z };
-export const uuid = z.string().uuid();
+// Any well-formed UUID, as PostgreSQL's uuid type accepts. zod 4's z.uuid() also checks the RFC 9562 version and
+// variant bits, which would refuse valid database ids that weren't made by gen_random_uuid() (the demo seed's, say).
+export const uuid = z.guid();
 export const number = z.string().regex(/^[A-Z]{2,5}-\d{1,6}$/, 'Not a record number');
 
 export function param<T extends z.ZodRawShape>(shape: T, v: unknown): z.infer<z.ZodObject<T>> { return z.object(shape).parse(v); }

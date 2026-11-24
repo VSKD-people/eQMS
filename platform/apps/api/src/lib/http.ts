@@ -25,7 +25,7 @@ export function logged(e: HttpError, note: AuditNote): HttpError { e.log = note;
 export function toHttp(e: unknown): { status: number; body: { error: { code: string; message: string } } } {
   if (e instanceof HttpError) return { status: e.status, body: { error: { code: e.code, message: e.message } } };
   if (e instanceof NotFound) return { status: 404, body: { error: { code: 'not_found', message: 'Not found.' } } };
-  if (e instanceof ZodError) return { status: 400, body: { error: { code: 'bad_request', message: e.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') } } };
+  if (e instanceof ZodError) return { status: 400, body: { error: { code: 'bad_request', message: e.issues.map((i) => `${i.path.map(String).join('.') || 'body'}: ${i.message}`).join('; ') } } };
   const rule = ruleViolation(e);
   if (rule) return { status: rule.status, body: { error: { code: rule.status === 403 ? 'forbidden' : 'conflict', message: rule.message } } };
   const status = (e as { statusCode?: number }).statusCode;

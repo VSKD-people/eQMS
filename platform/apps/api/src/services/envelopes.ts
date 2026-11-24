@@ -120,10 +120,20 @@ export async function planForClosure(db: Db, kind: 'capa' | 'quality_event', num
 }
 
 // ---------- Sending ----------
+// The segregation-of-duties problem in a plan, if there is one (author, reviewer or owner as their own approver).
+function sodProblem(plan: EnvelopePlan): string | undefined {
+  return plan.problems.find((p) => /segregation of duties|can’t also|can’t approve/.test(p));
+}
+// Showing someone a plan they can't send because of segregation of duties is logged like a refused send: the send
+// page disables the button, so without this the block would never reach the audit trail.
+export async function logBlockedPlan(db: Db, plan: EnvelopePlan, recordType: EnvRow['record_type'], recordNumber: string): Promise<void> {
+  const sod = sodProblem(plan);
+  if (sod) await audit(db, 'sod.block', LABEL[recordType], recordNumber, 'Send page shown with sending blocked: ' + sod);
+}
 async function checkPlan(db: Db, plan: EnvelopePlan, recordType: EnvRow['record_type'], recordNumber: string): Promise<void> {
   if (!plan.problems.length) return;
   const e = conflict(plan.problems[0]!);
-  const sod = plan.problems.find((p) => /segregation of duties|can’t also|can’t approve/.test(p));
+  const sod = sodProblem(plan);
   throw sod ? logged(e, { action: 'sod.block', objectType: LABEL[recordType], objectId: recordNumber, summary: 'DocuSign send blocked: ' + sod }) : e;
 }
 async function assertCanSend(db: Db, me: Person, recordId: string): Promise<void> {

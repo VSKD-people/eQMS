@@ -5,11 +5,16 @@
 import { test, expect } from '@playwright/test';
 import { signIn, expectOk, expectRefused, mockSign, mockDecline, verifyAndSend, expectDocState } from './helpers';
 
-test('1 · Victoria cannot send POL-003 she wrote: blocked on screen, refused by the API, and logged', async ({ browser }) => {
+test('1 · Victoria cannot send POL-003 she wrote: blocked on screen and logged, refused by the API and logged', async ({ browser }) => {
   const vic = await signIn(browser, 'victoria');
   await vic.goto('/documents/POL-003/send');
   await expect(vic.locator('.callout.warn[role=alert]')).toContainText(/segregation of duties/i);
   await expect(vic.getByRole('button', { name: 'Send to DocuSign' })).toBeDisabled();
+
+  // Being shown the block is itself logged.
+  await vic.goto('/admin?tab=audit&objectId=POL-003');
+  await expect(vic.locator('main tbody tr', { hasText: 'Send page shown with sending blocked' })).toHaveCount(1);
+  await vic.goto('/documents/POL-003/send');
 
   // The API checks again even if the browser is bypassed: enable the button and post the form anyway.
   for (const c of await vic.getByRole('group', { name: /Verification check/ }).getByRole('checkbox').all()) await c.check();
@@ -19,7 +24,7 @@ test('1 · Victoria cannot send POL-003 she wrote: blocked on screen, refused by
 
   // The refusal reached the audit trail even though the request rolled back.
   await vic.goto('/admin?tab=audit&objectId=POL-003');
-  await expect(vic.locator('main table')).toContainText('sod.block');
+  await expect(vic.locator('main tbody tr', { hasText: /send blocked: .*segregation of duties/i })).toHaveCount(1);
 });
 
 test('2 · VP-001: verify and send, sign in order, becomes Effective, training follows', async ({ browser }) => {

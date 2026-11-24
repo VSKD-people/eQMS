@@ -6,7 +6,7 @@ flows; the specs in `../specs/` win where they disagree with either.
 ## The parts
 
 ```
- Browser ──HTTPS──▶ Web app (Next.js 15, React 19)          Azure Container Apps, UK South
+ Browser ──HTTPS──▶ Web app (Next.js 16, React 19)          Azure Container Apps, UK South
                      │  signs people in with Entra ID (auth code + PKCE)
                      │  keeps the session in an encrypted cookie
                      │  calls the API from the server only, with the user's access token
