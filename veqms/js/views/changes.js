@@ -25,7 +25,7 @@
     return h`<div class="page-head"><div><h1>Change requests</h1><div class="sub">${Q.plural(rows.length, 'change request')}</div></div>
       <div class="btn-row"><div class="seg" role="group" aria-label="View"><button class="${!board ? 'active' : ''}" data-act="tab" data-key="view" data-tab="" aria-pressed="${!board}">${Q.icon('list', 'ico-sm')}<span class="sr-only">List view</span></button><button class="${board ? 'active' : ''}" data-act="tab" data-key="view" data-tab="board" aria-pressed="${board}">${Q.icon('board', 'ico-sm')}<span class="sr-only">Board view</span></button></div>
       ${Q.can('cr.create') ? h`<button class="btn btn-primary" data-act="new-cr">${Q.icon('plus', 'ico-sm')} New change request</button>` : ''}</div></div>
-      ${Q.tip('changes', h`<b>Change control.</b> Planning → Review → Approval (signed) → In execution → Effectiveness check → Closed (signed). Switch to the board to see every CR by state.`)}
+      ${Q.tip('changes', h`<b>Change control.</b> Planning → Review → Approval (Adobe Sign) → In execution → Effectiveness check → Closed (Adobe Sign). Actions that need a signature are signed off in Adobe Sign too. Switch to the board to see every CR by state.`)}
       <div class="toolbar"><input class="input search" type="search" placeholder="Search ID or title" value="${q.q || ''}" data-input="cr-search" aria-label="Search change requests">
         <select class="select" data-change="qfilter" data-key="state" aria-label="State"><option value="">All states</option>${CR_STATES.map(function (t) { return h`<option ${q.state === t ? 'selected' : ''}>${t}</option>`; })}</select>
         <select class="select" data-change="qfilter" data-key="size" aria-label="Major or minor"><option value="">Major and minor</option><option ${q.size === 'Major' ? 'selected' : ''}>Major</option><option ${q.size === 'Minor' ? 'selected' : ''}>Minor</option></select></div>
@@ -46,19 +46,25 @@
     var tab = q.tab || 'overview';
     var rev = c.reviewers.find(function (r) { return r.u === me; });
     var appr = c.approvers.find(function (a) { return a.u === me; });
+    var planOut = Q.esign.active(c.id, 'cr-plan'), closeOut = Q.esign.active(c.id, 'cr-completion');
     var acts = [];
     acts.push(h`<button class="btn" data-act="cr-pdf" data-id="${c.id}">Generate plan PDF</button>`);
     if (!ro) {
       if (c.state === 'Planning' && c.owner === me) acts.push(h`<button class="btn btn-primary" data-act="cr-submit" data-id="${c.id}">Submit for review</button>`);
       if (c.state === 'Review' && rev && rev.status === 'Pending') acts.push(h`<button class="btn" data-act="cr-sendback" data-id="${c.id}">Send back</button><button class="btn btn-primary" data-act="cr-review" data-id="${c.id}">Complete review</button>`);
-      if (c.state === 'Approval' && appr && appr.status === 'Your turn') acts.push(h`<button class="btn" data-act="cr-sendback" data-id="${c.id}">Send back</button><button class="btn btn-primary" data-act="cr-approve" data-id="${c.id}">Approve plan and sign</button>`);
-      if (c.state === 'Effectiveness check' && (c.owner === me || Q.hasRole('qm'))) acts.push(h`<button class="btn btn-primary" data-act="tab" data-tab="effectiveness">Record effectiveness</button>`);
+      if (c.state === 'Approval' && !planOut && !Q.esign.cantSend(c.id, 'cr-plan')) acts.push(h`<button class="btn btn-primary" data-act="es-send" data-id="${c.id}" data-stage="cr-plan">${Q.icon('sign', 'ico-sm')} Verify and send plan to Adobe Sign</button>`);
+      if (c.state === 'Effectiveness check' && !closeOut && (c.owner === me || Q.hasRole('qm') || appr)) acts.push(c.pendingClosure ? h`<button class="btn btn-primary" data-act="es-send" data-id="${c.id}" data-stage="cr-completion">${Q.icon('sign', 'ico-sm')} Send completion to Adobe Sign</button>` : h`<button class="btn btn-primary" data-act="tab" data-tab="effectiveness">Record effectiveness</button>`);
+      acts.push(Q.esign.signButton(c.id));
     }
-    var labels = { 'Approval': c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'Approval · signed' : 'Approval', 'Closed': c.state === 'Closed' ? 'Closed · signed' : 'Closed', 'In execution': c.state === 'In execution' ? 'In execution · ' + c.actions.filter(function (a) { return a.status === 'Done'; }).length + ' of ' + c.actions.length + ' done' : 'In execution' };
+    var labels = { 'Approval': planOut ? 'Approval · Adobe Sign ' + Q.esign.signedCount(planOut) + ' of ' + planOut.signers.length + ' signed' : c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'Approval · signed' : 'Approval', 'Closed': c.state === 'Closed' ? 'Closed · signed' : 'Closed', 'In execution': c.state === 'In execution' ? 'In execution · ' + c.actions.filter(function (a) { return a.status === 'Done'; }).length + ' of ' + c.actions.length + ' done' : 'In execution' };
     var tabs = [['overview', 'Overview'], ['items', 'Items to change · ' + c.items.length], ['actions', 'Actions · ' + c.actions.length], ['attachments', 'Attachments · ' + c.attachments.length], ['related', 'Related items'], ['effectiveness', 'Effectiveness check']];
     var content = { overview: overview, items: items, actions: actions, attachments: attachments, related: related, effectiveness: effectiveness }[tab] || overview;
     return h`<nav class="breadcrumb" aria-label="Breadcrumb"><a href="#/changes">Change requests</a><span>/</span><span>${c.id}</span><span>·</span><a href="#/changes?view=board">Switch to board view</a></nav>
       <div class="page-head"><div><div class="record-meta"><span>Change request · ${c.id}</span><span class="chip ${c.size === 'Major' ? 'chip-turn' : 'chip-outline'}">${c.size} change</span>${Q.cls(c.classification)}</div><h1>${c.title}</h1></div><div class="btn-row">${acts}</div></div>
+      ${planOut ? h`<div class="callout mb-16"><strong>The plan is out for Adobe Sign signature.</strong> ${Q.esign.signedCount(planOut)} of ${planOut.signers.length} signed. Execution starts when the agreement completes.</div>` : ''}
+      ${closeOut ? h`<div class="callout mb-16"><strong>Completion is out for Adobe Sign signature.</strong> ${Q.esign.signedCount(closeOut)} of ${closeOut.signers.length} signed. ${c.id} closes when the agreement completes.</div>` : ''}
+      ${c.planReturned && c.state === 'Planning' ? h`<div class="callout warn mb-16"><strong>Plan ${c.planReturned.how} in Adobe Sign.</strong> ${Q.fullName(c.planReturned.by)}: ${c.planReturned.reason}</div>` : ''}
+      ${c.closureReturned && c.state === 'Effectiveness check' && !closeOut ? h`<div class="callout warn mb-16"><strong>Completion ${c.closureReturned.how} in Adobe Sign.</strong> ${Q.fullName(c.closureReturned.by)}: ${c.closureReturned.reason}</div>` : ''}
       <div class="card mb-16">${Q.stepper(CR_STATES, c.state, labels, { allDone: c.state === 'Closed' })}</div>
       <div class="split"><div style="min-width:0">
         <div class="tabs" role="tablist">${tabs.map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
@@ -69,10 +75,12 @@
           <div><dt>Review due</dt><dd>${Q.fmtDay(c.reviewDue)}</dd></div><div><dt>Route</dt><dd>${c.route === 'parallel' ? 'Parallel review' : 'Sequential review'}</dd></div></dl></div>
         <div class="card ctx-card"><span class="label">People</span>
           ${c.reviewers.map(function (r) { return Q.peopleRow(r.u, 'Reviewer', r.status === 'Pending' && r.u === me ? 'Your turn' : r.status === 'Pending' ? 'Reviewing' : r.status, r.status === 'Reviewed' ? 'st-done' : r.status === 'Pending' ? 'st-turn' : 'st-wait'); })}
-          ${c.approvers.map(function (a) { return Q.peopleRow(a.u, 'Approver', a.status === 'Waiting' && c.state !== 'Planning' ? 'Waiting · FYI sent' : a.status, a.status === 'Signed' ? 'st-done' : a.status === 'Your turn' ? 'st-turn' : 'st-wait'); })}</div>
-        <div class="card ctx-card"><span class="label">Signatures needed</span>
-          <div class="people-row"><span>Approve the plan</span><span class="status-text ${c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'st-done' : 'st-wait'}">${c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'Signed' : 'After review'}</span></div>
-          <div class="people-row"><span>Approve completion</span><span class="status-text ${c.state === 'Closed' ? 'st-done' : 'st-wait'}">${c.state === 'Closed' ? 'Signed' : 'After effectiveness check'}</span></div></div>
+          ${c.approvers.map(function (a) { return Q.peopleRow(a.u, 'Approver', a.status === 'Your turn' && a.u !== me ? 'Signing in Adobe Sign' : a.status === 'Waiting' && c.state !== 'Planning' ? 'Waiting · FYI sent' : a.status, a.status === 'Signed' ? 'st-done' : a.status === 'Your turn' ? 'st-turn' : 'st-wait'); })}</div>
+        <div class="card ctx-card"><span class="label">Signatures needed (Adobe Sign)</span>
+          <div class="people-row"><span>Approve the plan</span><span class="status-text ${c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'st-done' : planOut ? 'st-turn' : 'st-wait'}">${c.signatures.some(function (s) { return s.stage === 'Plan approved'; }) ? 'Signed' : planOut ? 'Out for signature' : 'After review'}</span></div>
+          <div class="people-row"><span>Actions that need a signature</span><span class="status-text ${c.actions.filter(function (a) { return a.sig; }).every(function (a) { return a.status === 'Done'; }) ? 'st-done' : 'st-wait'}">${c.actions.filter(function (a) { return a.sig && a.status === 'Done'; }).length} of ${c.actions.filter(function (a) { return a.sig; }).length} signed</span></div>
+          <div class="people-row"><span>Approve completion</span><span class="status-text ${c.state === 'Closed' ? 'st-done' : closeOut ? 'st-turn' : 'st-wait'}">${c.state === 'Closed' ? 'Signed' : closeOut ? 'Out for signature' : 'After effectiveness check'}</span></div></div>
+        ${Q.esign.recordCard(c.id)}
         ${Q.linkedCard(c.id)}
         ${Q.activityCard(c.id)}
       </aside></div>`;
@@ -96,9 +104,10 @@
     var canAdd = !Q.readOnly() && (c.state === 'Planning' || c.state === 'In execution') && (c.owner === me || Q.hasRole('qm'));
     return h`<div class="table-wrap"><table class="t"><caption class="sr-only">Actions</caption><thead><tr><th scope="col">Action</th><th scope="col">Linked document</th><th scope="col">Assignee</th><th scope="col">Due</th><th scope="col">Signature</th><th scope="col">Status</th></tr></thead><tbody>
       ${c.actions.map(function (a) {
-        var mine = a.assignee === me && c.state === 'In execution' && a.status !== 'Done' && !Q.readOnly();
-        return h`<tr><td><b>${a.title}</b>${a.desc ? h`<div class="small muted">${a.desc}</div>` : ''}${a.docusign ? h`<div class="small muted">Sent to external signers via DocuSign</div>` : ''}</td><td>${a.doc ? Q.recLink(a.doc, { short: true }) : '—'}</td><td>${Q.name(a.assignee)}</td><td class="nowrap">${a.status === 'Done' ? Q.fmtShort(a.doneAt) : Q.fmtShort(a.due)}</td><td>${a.sig ? 'Required' : 'Not required'}</td>
-          <td>${mine ? h`<button class="btn btn-sm btn-primary" data-act="cr-done" data-id="${c.id}" data-a="${a.id}">${a.sig ? 'Complete and sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : a.status === 'In progress' ? Q.chip('In progress') : Q.dueChip(a.due)}</td></tr>`;
+        var out = Q.esign.active(c.id, 'cr-action', a.id);
+        var mine = a.assignee === me && c.state === 'In execution' && a.status !== 'Done' && !Q.readOnly() && !out;
+        return h`<tr><td><b>${a.title}</b>${a.desc ? h`<div class="small muted">${a.desc}</div>` : ''}${a.external ? h`<div class="small muted">Sent to external signers through Adobe Sign</div>` : ''}${a.returned && a.status !== 'Done' && !out ? h`<div class="small" style="color:var(--overdue)">${a.returned.how} in Adobe Sign: ${a.returned.reason}</div>` : ''}</td><td>${a.doc ? Q.recLink(a.doc, { short: true }) : '—'}</td><td>${Q.name(a.assignee)}</td><td class="nowrap">${a.status === 'Done' ? Q.fmtShort(a.doneAt) : Q.fmtShort(a.due)}</td><td>${a.sig ? 'Adobe Sign' : 'Not required'}</td>
+          <td>${out && Q.esign.myTurn(out) ? h`<button class="btn btn-sm btn-primary" data-act="es-open-sign" data-id="${out.id}">Sign in Adobe Sign</button>` : out ? Q.chip('Out for signature', 'chip-turn') : mine ? h`<button class="btn btn-sm btn-primary" data-act="cr-done" data-id="${c.id}" data-a="${a.id}">${a.sig ? 'Complete and send to Adobe Sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : a.status === 'In progress' ? Q.chip('In progress') : Q.dueChip(a.due)}</td></tr>`;
       })}
       ${!c.actions.length ? h`<tr><td colspan="6"><div class="empty" style="padding:20px">No actions yet.</div></td></tr>` : ''}</tbody></table></div>
       ${canAdd ? h`<button class="btn mt-16" data-act="cr-addaction" data-id="${c.id}">${Q.icon('plus', 'ico-sm')} Add action</button>` : ''}`;
@@ -115,13 +124,16 @@
   }
   function effectiveness(c) {
     var e = c.effectiveness;
-    var canRecord = c.state === 'Effectiveness check' && !Q.readOnly() && (c.owner === Q.S.session.userId || Q.hasRole('qm') || Q.hasRole('approver'));
-    if (e.result) return h`<div class="card card-pad"><dl class="dl"><div style="grid-column:1/-1"><dt>Success criteria</dt><dd>${e.criteria}</dd></div><div style="grid-column:1/-1"><dt>Result</dt><dd>${e.result}</dd></div><div><dt>Verdict</dt><dd>${Q.chip(e.verdict, e.verdict === 'Effective' ? 'chip-done' : 'chip-overdue')}</dd></div><div><dt>Checked by</dt><dd>${Q.fullName(e.by)} · ${Q.fmtDate(e.at)}</dd></div></dl></div>`;
-    if (!canRecord) return h`<div class="card card-pad"><div class="label mb-8">Success criteria</div><p>${e.criteria || 'Set during planning.'}</p><p class="small muted" style="margin:0">${c.state === 'Effectiveness check' ? 'Due ' + Q.fmtDate(c.effectivenessDue) + '. The process owner records the result, then an approver signs completion.' : 'Starts when every action is done.'}</p></div>`;
+    var me = Q.S.session.userId, pend = c.pendingClosure, out = Q.esign.active(c.id, 'cr-completion');
+    var canRecord = c.state === 'Effectiveness check' && !Q.readOnly() && !out && (c.owner === me || Q.hasRole('qm') || c.approvers.some(function (a) { return a.u === me; }));
+    if (e.result) return h`<div class="card card-pad"><dl class="dl"><div style="grid-column:1/-1"><dt>Success criteria</dt><dd>${e.criteria}</dd></div><div style="grid-column:1/-1"><dt>Result</dt><dd>${e.result}</dd></div><div><dt>Verdict</dt><dd>${Q.chip(e.verdict, e.verdict === 'Effective' ? 'chip-done' : 'chip-overdue')}</dd></div><div><dt>Checked by</dt><dd>${Q.fullName(e.by)} · ${Q.fmtDate(e.at)}</dd></div>${c.closeAgreement ? h`<div style="grid-column:1/-1"><dt>Completion approved</dt><dd><button class="btn-link mono" style="padding:0;min-height:0" data-act="es-agreement" data-id="${c.closeAgreement}">Adobe Sign ${c.closeAgreement}</button></dd></div>` : ''}</dl></div>`;
+    if (out) return h`<div class="card card-pad"><div class="label mb-8">Completion out for Adobe Sign signature</div><dl class="dl"><div style="grid-column:1/-1"><dt>Result</dt><dd>${pend.result}</dd></div><div><dt>Verdict</dt><dd>${pend.verdict}</dd></div><div><dt>Recorded by</dt><dd>${Q.fullName(pend.by)} · ${Q.fmtDate(pend.at)}</dd></div></dl></div>`;
+    if (!canRecord) return h`<div class="card card-pad"><div class="label mb-8">Success criteria</div><p>${e.criteria || 'Set during planning.'}</p><p class="small muted" style="margin:0">${c.state === 'Effectiveness check' ? 'Due ' + Q.fmtDate(c.effectivenessDue) + '. The process owner records the result, then the owner and the approvers sign completion in Adobe Sign.' : 'Starts when every action is done.'}</p></div>`;
     return h`<form class="card card-pad" data-submit="cr-eff" data-id="${c.id}"><div class="label mb-8">Success criteria</div><p>${e.criteria}</p>
-      <div class="field mb-16"><label for="er">What did you find?</label><textarea class="textarea" id="er" name="result" placeholder="Evidence that the change worked (or didn’t)"></textarea></div>
-      <fieldset class="mb-16"><legend>Verdict</legend><label class="check"><input type="radio" name="verdict" value="Effective" checked> Effective</label><label class="check"><input type="radio" name="verdict" value="Not effective"> Not effective: raise follow-up actions</label></fieldset>
-      <button class="btn btn-primary" type="submit">Approve completion and sign</button></form>`;
+      <div class="field mb-16"><label for="er">What did you find?</label><textarea class="textarea" id="er" name="result" placeholder="Evidence that the change worked (or didn’t)">${pend ? pend.result : ''}</textarea></div>
+      <fieldset class="mb-16"><legend>Verdict</legend><label class="check"><input type="radio" name="verdict" value="Effective" ${!pend || pend.verdict === 'Effective' ? 'checked' : ''}> Effective</label><label class="check"><input type="radio" name="verdict" value="Not effective" ${pend && pend.verdict === 'Not effective' ? 'checked' : ''}> Not effective: raise follow-up actions</label></fieldset>
+      <div class="callout mb-16"><strong>Completion is approved in Adobe Sign</strong><p class="small" style="margin:4px 0 0">One agreement: ${Q.fullName(c.owner)} signs as process owner, then ${c.approvers.map(function (a) { return Q.fullName(a.u); }).join(', ')}. It uses 1 of ${Q.esign.remaining()} transactions left this year.</p></div>
+      <button class="btn btn-primary" type="submit">Save result and send to Adobe Sign</button></form>`;
   }
 
   // ---------- Actions ----------
@@ -144,23 +156,20 @@
       body: h`<div class="field"><label for="crs">Reason (required)</label><textarea class="textarea" id="crs" name="reason"></textarea><div class="help">The owner and earlier reviewers are told, with this reason.</div></div>`,
       submit: function (f, form) { if (!f.reason) return Q.fieldError(form, 'reason', 'Give a reason.'); Q.wf.cr.sendBack(c, f.reason); Q.drawer.close(); Q.toast('Sent back to planning'); Q.refresh(); } });
   };
-  Q.act['cr-approve'] = function (el) {
-    var c = C(el);
-    var b = Q.sodBlock(c, 'cr'); if (b) { Q.toast(b, 'warn'); return; }
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon({ id: c.id, title: c.title, description: c.description, actions: c.actions.map(function (a) { return a.title; }) })), stage: 'Plan approved' }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve the plan for ' + c.id,
-      onSigned: function (s) { Q.wf.cr.approvePlan(c, s[0]); Q.toast('Plan approved. Action owners notified.'); } });
-  };
+  // An action that needs a signature is signed off in Adobe Sign by the person who did it.
   Q.act['cr-done'] = function (el) {
     var c = C(el), a = c.actions.find(function (x) { return x.id === el.getAttribute('data-a'); });
     if (!a.sig) { Q.wf.cr.completeAction(c, a, null); Q.toast('Action done'); Q.refresh(); return; }
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon(a)), stage: 'Action ' + a.id }], meaning: 'Completed', meanings: ['Completed'], title: 'Sign completion: ' + a.title,
-      onSigned: function (s) { Q.wf.cr.completeAction(c, a, s[0]); Q.toast('Action signed'); } });
+    Q.esign.openSend(c.id, 'cr-action', a.id);
   };
   Q.on['cr-eff'] = function (form) {
     var f = Q.formData(form), c = Q.S.crs[form.getAttribute('data-id')];
     if (!f.result) return Q.fieldError(form, 'result', 'Describe what you found.');
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon({ id: c.id, result: f.result, verdict: f.verdict })), stage: 'Completion approved' }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve completion of ' + c.id,
-      onSigned: function (s) { Q.wf.cr.close(c, f.result, f.verdict, s[0]); Q.toast(c.id + ' closed'); } });
+    var block = Q.esign.cantSend(c.id, 'cr-completion'); if (block) { Q.toast(block, 'warn'); return; }
+    var b = c.pendingClosure ? { result: c.pendingClosure.result, verdict: c.pendingClosure.verdict } : null;
+    c.pendingClosure = { result: f.result, verdict: f.verdict, by: Q.S.session.userId, at: new Date().toISOString() };
+    Q.audit('update', 'Change request', c.id, 'Recorded effectiveness result for ' + c.id + ' (' + f.verdict + '); completion to be approved in Adobe Sign', b, { result: f.result, verdict: f.verdict });
+    Q.save(); Q.esign.openSend(c.id, 'cr-completion');
   };
   Q.act['cr-addaction'] = function (el) {
     var c = C(el);
@@ -170,7 +179,7 @@
         <div class="field"><label for="adoc">Linked document</label><select class="select" id="adoc" name="doc"><option value="">None</option>${Object.keys(Q.S.docs).map(function (d) { return h`<option value="${d}">${d} ${Q.S.docs[d].title}</option>`; })}</select></div>
         <div class="field"><label for="aa">Assignee</label><select class="select" id="aa" name="assignee">${users.map(function (u) { return h`<option value="${u.id}">${u.name}</option>`; })}</select></div>
         <div class="field"><label for="adue">Due</label><input class="input" type="date" id="adue" name="due" value="${Q.dayIso(14).slice(0, 10)}"></div>
-        <label class="check" style="align-self:end"><input type="checkbox" name="sig" checked> Requires signature</label></div>`,
+        <label class="check" style="align-self:end"><input type="checkbox" name="sig" checked> Signed off in Adobe Sign</label></div>`,
       submit: function (f, form) { if (!f.title) return Q.fieldError(form, 'title', 'Give the action a title.'); Q.wf.cr.addAction(c, { title: f.title, desc: f.desc, doc: f.doc || null, assignee: f.assignee, due: new Date(f.due + 'T17:00:00').toISOString(), sig: f.sig }); if (f.doc) Q.link(c.id, f.doc); Q.drawer.close(); Q.toast('Action added'); Q.refresh(); } });
   };
   Q.act['cr-additem'] = function (el) {
@@ -193,8 +202,8 @@
     var c = C(el);
     var row = function (k, v) { return '<tr><th style="width:200px">' + k + '</th><td>' + Q.esc(v) + '</td></tr>'; };
     var html = '<h1>Change Request Plan · ' + c.id + '</h1><h2>' + Q.esc(c.title) + '</h2><table>' + row('State', c.state) + row('Major or minor', c.size) + row('Classification', c.classification) + row('Process owner', Q.fullName(c.owner)) + row('Quality process', c.process) + row('Description', c.description) + row('Reason', c.reason) + row('Expected impact', c.impact) + row('Impacted processes', c.impacted.join('; ')) + row('Items to change', c.items.join(', ')) + '</table>' +
-      '<h2>Actions</h2><table><tr><th>Action</th><th>Linked document</th><th>Assignee</th><th>Due</th><th>Signature</th><th>Status</th></tr>' + c.actions.map(function (a) { return '<tr><td>' + Q.esc(a.title) + '</td><td>' + (a.doc || '—') + '</td><td>' + Q.esc(Q.fullName(a.assignee)) + '</td><td>' + Q.fmtDate(a.due) + '</td><td>' + (a.sig ? 'Required' : 'Not required') + '</td><td>' + a.status + '</td></tr>'; }).join('') + '</table>' +
-      '<h2>Signatures</h2>' + (c.signatures.length ? '<table><tr><th>Stage</th><th>Signer</th><th>Meaning</th><th>UTC</th><th>ID</th></tr>' + c.signatures.map(function (s) { return '<tr><td>' + s.stage + '</td><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + s.meaning + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + s.id + '</td></tr>'; }).join('') + '</table>' : '<p>None yet.</p>') +
+      '<h2>Actions</h2><table><tr><th>Action</th><th>Linked document</th><th>Assignee</th><th>Due</th><th>Signature</th><th>Status</th></tr>' + c.actions.map(function (a) { return '<tr><td>' + Q.esc(a.title) + '</td><td>' + (a.doc || '—') + '</td><td>' + Q.esc(Q.fullName(a.assignee)) + '</td><td>' + Q.fmtDate(a.due) + '</td><td>' + (a.sig ? 'Adobe Sign' : 'Not required') + '</td><td>' + a.status + '</td></tr>'; }).join('') + '</table>' +
+      '<h2>Signatures (Adobe Sign)</h2>' + (c.signatures.length ? '<table><tr><th>Stage</th><th>Signer</th><th>Reason for signing</th><th>UTC</th><th>Signature</th><th>Agreement</th></tr>' + c.signatures.map(function (s) { return '<tr><td>' + s.stage + '</td><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + s.meaning + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + s.id + '</td><td class="mono">' + (s.agreement || '—') + '</td></tr>'; }).join('') + '</table>' : '<p>None yet.</p>') +
       '<div class="foot">Generated from the record by ' + Q.esc(Q.me().name) + ' on ' + Q.fmtUtc(new Date().toISOString()) + '. ' + c.classification.toUpperCase() + '.</div>';
     Q.printHtml(c.id + ' plan', html, c.id + ' Change Request Plan PDF');
   };

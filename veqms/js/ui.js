@@ -70,7 +70,7 @@
     { id: 'changes', label: 'Change requests', icon: 'change', href: '#/changes' },
     { id: 'reviews', label: 'Periodic reviews', icon: 'review', href: '#/reviews' },
     { id: 'quality', label: 'Quality events and CAPA', icon: 'quality', href: '#/quality' },
-    { id: 'approvals', label: 'Approvals and DocuSign', icon: 'sign', href: '#/approvals', perm: 'approvals.view' },
+    { id: 'approvals', label: 'Approvals', icon: 'sign', href: '#/approvals', perm: 'approvals.view' },
     { id: 'analytics', label: 'Analytics', icon: 'chart', href: '#/analytics', perm: 'analytics' }
   ];
   Q.isDark = function () {
@@ -619,7 +619,7 @@
     { t: 'Welcome to VeQMS', x: 'This is a working prototype of the frontend. Everything runs in your browser with sample records; nothing is sent anywhere. Changes are saved in this browser until you reset the demo.' },
     { t: 'Start with Today', x: 'Today groups your work by urgency: overdue, next 7 days, then upcoming. Each card has one primary action. Pick a card to see the record beside it.' },
     { t: 'Search, create, jump: Ctrl K', x: 'The command bar searches records and document text, creates new items and jumps to any page. Results only include what you are allowed to see.' },
-    { t: 'Approvals in DocuSign, training in the app', x: 'Approvals go out as one DocuSign envelope per version (author, reviewers, then QA approver), and every send counts against 500 a year. Read-and-understood training is confirmed in the app under your Microsoft 365 sign-in. DocuSign is simulated here.' },
+    { t: 'Signatures in Adobe Sign, training in the app', x: 'Every sign-off goes out as one Adobe Sign agreement with all its signers in order: document approvals, change requests, CAPAs, quality events and reviews. Each agreement uses one of 500 transactions a year. Read-and-understood training is confirmed in the app under your Microsoft 365 sign-in. Adobe Sign is simulated here.' },
     { t: 'See it from other seats', x: 'Use the account menu → "Demo · view as" to switch between the Quality Manager, author, approver, employee, System Administrator and auditor. Rules such as segregation of duties change with the role.' }
   ];
   Q.tour = {

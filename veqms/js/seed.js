@@ -12,10 +12,10 @@
 
   Q.seed = function () {
     var S = {
-      version: 10,
+      version: 11,
       seededAt: new Date().toISOString(),
       session: { userId: 'u-vic', signedInAt: D(0, 8, 2) },
-      counters: { POL: 10, SOP: 21, WI: 4, FRM: 8, REG: 3, PLN: 2, SOA: 2, SPEC: 1, VEN: 1, VP: 1, VR: 0, DS: 0, CR: 17, QE: 17, CAPA: 9, OBS: 23, PR: 37, TR: 5, TPL: 9, RULE: 15, SIG: 120, ACT: 60 },
+      counters: { POL: 10, SOP: 21, WI: 4, FRM: 8, REG: 3, PLN: 2, SOA: 2, SPEC: 1, VEN: 1, VP: 1, VR: 0, AS: 0, CR: 17, QE: 17, CAPA: 9, OBS: 23, PR: 37, TR: 5, TPL: 9, RULE: 15, SIG: 120, ACT: 60 },
       seen: {},
       ui: {}
     };
@@ -221,7 +221,7 @@
         'h', '3. In the contract', 'p', 'Contracts include security, breach notification and right-to-audit clauses.',
         'h', '4. During the contract', 'p', 'High-risk suppliers are reviewed every year. Findings are raised as quality events.',
         'h', '5. Records', 'p', 'The supplier register records each assessment and its outcome.'))],
-      comments: [{ id: 'c5', u: 'u-sam', at: D(-2, 11, 10), block: 3, text: 'Add DocuSign as the route for supplier sign-off of the questionnaire?', resolved: false }]
+      comments: [{ id: 'c5', u: 'u-sam', at: D(-2, 11, 10), block: 3, text: 'Add Adobe Sign as the route for supplier sign-off of the questionnaire?', resolved: false }]
     });
     doc({
       id: 'REG-001', docType: 'Register', title: 'Information Security Risk Register', state: 'Effective', classification: 'Confidential',
@@ -286,69 +286,86 @@
       created: D(-12), modified: D(-2, 16, 5), effective: null, route: 'sequential', audience: { groups: ['IT team'], roles: ['qm'], users: [], days: 14, quiz: false, retrainMonths: null },
       periodic: { months: 24, notice: 60, approval: true },
       reviewers: [{ u: 'u-omar', status: 'Reviewed', at: D(-2, 16, 5) }], approvers: [{ u: 'u-vic', status: 'Waiting' }],
-      versions: [ver('1.0', 'major', 'Review closed', 'First issue: how we validate the eQMS before go-live, including the DocuSign Part 11 approval route.', D(-12), 'u-priya', blocks(
-        'h', '1. System and scope', 'p', 'The VeQMS web app, its DocuSign approval route and the read-and-understood training records.',
+      versions: [ver('1.0', 'major', 'Review closed', 'First issue: how we validate the eQMS before go-live, including the Adobe Sign Part 11 approval route.', D(-12), 'u-priya', blocks(
+        'h', '1. System and scope', 'p', 'The VeQMS web app, its Adobe Sign signing route and the read-and-understood training records.',
         'h', '2. Approach and risk', 'p', 'Risk-based: functions that create Part 11 approvals or training records are tested in full; reporting is tested by sample.',
         'h', '3. Deliverables', 'p', 'This plan, user requirements, test scripts with evidence, a traceability matrix and a validation report.',
         'h', '4. Acceptance criteria', 'p', 'All high-risk tests pass. Any deviation is raised as a quality event and closed before release.',
-        'h', '5. Roles', 'p', 'The author writes the plan, IT reviews it, and QA approves the plan and the report through DocuSign.'))],
+        'h', '5. Roles', 'p', 'The author writes the plan, IT reviews it, and QA approves the plan and the report through Adobe Sign.'))],
       comments: []
     });
     S.docs = docs;
 
-    // ---------------- Approvals through DocuSign (Part 11) ----------------
-    // Approvals before go-live were made in KSTARRS and are kept as migrated records. From go-live,
-    // every approval is one DocuSign envelope per version: author, then reviewers, then QA approver.
+    // ---------------- Signatures through Adobe Sign ----------------
+    // Approvals before go-live were made in KSTARRS and are kept as migrated records. From go-live, every
+    // signature except read-and-understood training is one Adobe Sign agreement per sign-off, signers in order.
     var GOLIVE = D(-120, 9, 0);
-    var envs = [];
-    function guid(seed) { var x = Q.sha256('envelope:' + seed); return x.slice(0, 8) + '-' + x.slice(8, 12) + '-4' + x.slice(13, 16) + '-a' + x.slice(17, 20) + '-' + x.slice(20, 32); }
+    var ags = [], sigRows = [], agIds = {};
+    function guid(seed) { var x = Q.sha256('agreement:' + seed); return x.slice(0, 8) + '-' + x.slice(8, 12) + '-4' + x.slice(13, 16) + '-a' + x.slice(17, 20) + '-' + x.slice(20, 32); }
     function shift(iso, mins) { return new Date(new Date(iso).getTime() + mins * 60000).toISOString(); }
-    function envelopeFor(d, v, o) {
+    function sigRow(ag, x) {
+      var r = { id: 'AS-' + (++S.counters.AS), record: ag.record, version: ag.version, user: x.u, meaning: x.meaning, at: x.at, hash: ag.pdf.hash, source: 'Adobe Sign', agreement: ag.id, stage: ag.stage,
+        statement: 'Signed in Adobe Sign: identity confirmed at signing and reason for signing “' + x.meaning + '” recorded.' };
+      sigRows.push(r);
+      return r;
+    }
+    // A completed agreement from the past: signers is [user, role, meaning, order, signedAt].
+    function pastAgreement(o) {
+      var id = guid(o.record + ':' + o.stage + ':' + (o.ref || '') + (o.n || ''));
+      var signers = o.signers.map(function (x) { return { u: x[0], role: x[1], meaning: x[2], order: x[3], status: 'Signed', at: x[4] }; });
+      var sentAt = o.sentAt || shift(signers[0].at, -20);
+      var pdfName = o.pdfName || (o.record + (o.ref ? '_' + o.ref : '') + '_' + o.stage + '.pdf');
+      var ag = {
+        id: id, stage: o.stage, record: o.record, ref: o.ref || null, kind: o.kind, version: o.version || null, subject: o.subject, purpose: o.purpose,
+        status: 'completed', sentBy: o.sentBy || signers[0].u, sentAt: sentAt, completedAt: o.completedAt || signers[signers.length - 1].at, signers: signers,
+        pdf: { name: pdfName, hash: o.hash || Q.sha256('pdf:' + id) },
+        signedPdf: { name: pdfName.replace(/\.pdf$/, '_signed.pdf'), hash: Q.sha256('signed:' + id) },
+        auditReport: { name: 'Audit_report_' + id.slice(0, 8) + '.pdf', hash: Q.sha256('audit-report:' + id) },
+        verification: { footer: true, version: true, docId: true, dates: true, by: o.sentBy || signers[0].u, at: shift(sentAt, -3) },
+        events: [{ at: sentAt, type: 'sent', detail: 'Agreement sent to ' + signers.length + ' signer' + (signers.length > 1 ? 's' : '') }].concat(signers.map(function (x) { return { at: x.at, type: 'signed', u: x.u, detail: 'Identity confirmed; reason for signing: ' + x.meaning }; }), [{ at: o.completedAt || signers[signers.length - 1].at, type: 'completed', detail: 'Agreement completed. Signed PDF and audit report stored.' }]),
+        correctionOf: o.correctionOf || null
+      };
+      ags.push(ag);
+      ag.rows = signers.map(function (x) { return sigRow(ag, x); });
+      return ag;
+    }
+    function docAgreement(d, v, o) {
       o = o || {};
       var rev = v.signatures.filter(function (x) { return x.meaning === 'Reviewed'; });
       var apr = v.signatures.filter(function (x) { return x.meaning === 'Approved'; });
       var first = v.signatures.length ? v.signatures.map(function (x) { return x.at; }).sort()[0] : v.approvedAt;
       var sentAt = o.sentAt || shift(first, -95);
-      var signers = [{ u: v.createdBy, role: 'Author', meaning: 'Authored', order: 1, status: 'Signed', at: shift(sentAt, 25) }]
-        .concat(rev.map(function (x) { return { u: x.user, role: 'Reviewer', meaning: 'Reviewed', order: 2, status: 'Signed', at: x.at }; }))
-        .concat(apr.map(function (x, i) { return { u: x.user, role: apr.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', meaning: 'Approved', order: 3 + i, status: 'Signed', at: x.at }; }));
-      var id = guid(d.id + v.v + (o.n || ''));
-      var e = {
-        id: id, record: d.id, kind: 'doc', version: v.v, subject: d.id + ' v' + v.v + ' · ' + d.title + ' · Approval', purpose: 'Document approval',
-        status: 'completed', sentBy: o.sentBy || d.owner, sentAt: sentAt, completedAt: v.approvedAt, signers: signers,
-        pdf: { name: d.id + '_v' + v.v + '.pdf', hash: v.hash },
-        signedPdf: { name: d.id + '_v' + v.v + '_signed.pdf', hash: Q.sha256('signed:' + id + v.hash) },
-        certificate: { name: 'Certificate_of_completion_' + id.slice(0, 8) + '.pdf', hash: Q.sha256('certificate:' + id) },
-        verification: { footer: true, version: true, docId: true, dates: true, by: o.sentBy || d.owner, at: shift(sentAt, -3) },
-        events: [{ at: sentAt, type: 'sent', detail: 'Envelope sent to ' + signers.length + ' signers' }].concat(signers.map(function (x) { return { at: x.at, type: 'signed', u: x.u }; }), [{ at: v.approvedAt, type: 'completed', detail: 'Envelope completed. Signed PDF and certificate of completion stored.' }]),
-        correctionOf: o.correctionOf || null
-      };
-      envs.push(e);
-      v.envelope = id; v.signedPdf = e.signedPdf; v.certificate = e.certificate;
-      v.signatures = signers.map(function (x) { return { id: 'DS-' + (++S.counters.DS), user: x.u, meaning: x.meaning, at: x.at, hash: v.hash, source: 'DocuSign', envelope: id, statement: 'Signed in DocuSign with the Part 11 module: signer re-authenticated and chose the meaning “' + x.meaning + '”.' }; });
-      return e;
+      var signers = [[v.createdBy, 'Author', 'Authored', 1, shift(sentAt, 25)]]
+        .concat(rev.map(function (x) { return [x.user, 'Reviewer', 'Reviewed', 2, x.at]; }))
+        .concat(apr.map(function (x, i) { return [x.user, apr.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', 'Approved', 3 + i, x.at]; }));
+      var ag = pastAgreement({ stage: 'doc-approval', record: d.id, kind: 'doc', version: v.v, subject: d.id + ' v' + v.v + ' · ' + d.title + ' · Approval', purpose: 'Document approval',
+        sentBy: o.sentBy || d.owner, sentAt: sentAt, completedAt: v.approvedAt, signers: signers, pdfName: d.id + '_v' + v.v + '.pdf', hash: v.hash, n: o.n, correctionOf: o.correctionOf });
+      v.agreement = ag.id; v.signedPdf = ag.signedPdf; v.auditReport = ag.auditReport;
+      v.signatures = ag.rows.map(function (x) { return { id: x.id, user: x.user, meaning: x.meaning, at: x.at, hash: v.hash, source: 'Adobe Sign', agreement: ag.id, statement: x.statement }; });
+      return ag;
     }
     Object.keys(docs).forEach(function (k) {
       var d = docs[k];
       d.versions.forEach(function (v) {
         if (!v.signatures.length || !v.approvedAt) return;
         if (v.approvedAt >= GOLIVE) {
-          if (d.id === 'SOA-001') { // a correction after sending costs a second send
-            var bad = envelopeFor(d, v, { n: 'void', sentAt: D(-18, 9, 40) });
-            bad.status = 'voided'; bad.completedAt = null; bad.signedPdf = null; bad.certificate = null; bad.voidedAt = D(-18, 11, 5); bad.voidedBy = 'u-vic';
-            bad.voidReason = 'Footer showed version 2.0 instead of 2.1. Corrected and sent again.';
-            bad.signers.forEach(function (x, i) { x.status = i === 0 ? 'Signed' : 'Waiting'; if (i) delete x.at; });
-            bad.events = [{ at: bad.sentAt, type: 'sent', detail: 'Envelope sent to ' + bad.signers.length + ' signers' }, { at: bad.signers[0].at, type: 'signed', u: bad.signers[0].u }, { at: bad.voidedAt, type: 'voided', u: 'u-vic', detail: bad.voidReason }];
-            var good = envelopeFor(d, v, { sentAt: D(-17, 9, 0), correctionOf: bad.id });
-            void good;
-          } else envelopeFor(d, v);
+          if (d.id === 'SOA-001') { // a correction after sending uses a second transaction
+            var bad = docAgreement(d, v, { n: 'cancel', sentAt: D(-18, 9, 40) });
+            sigRows = sigRows.filter(function (x) { return x.agreement !== bad.id; });
+            bad.status = 'cancelled'; bad.completedAt = null; bad.signedPdf = null; bad.auditReport = null; bad.cancelledAt = D(-18, 11, 5); bad.cancelledBy = 'u-vic';
+            bad.cancelReason = 'Footer showed version 2.0 instead of 2.1. Corrected and sent again.';
+            bad.signers.forEach(function (x, i) { x.status = i === 0 ? 'Signed' : 'Cancelled'; if (i) delete x.at; });
+            bad.events = [{ at: bad.sentAt, type: 'sent', detail: 'Agreement sent to ' + bad.signers.length + ' signers' }, { at: bad.signers[0].at, type: 'signed', u: bad.signers[0].u }, { at: bad.cancelledAt, type: 'cancelled', u: 'u-vic', detail: bad.cancelReason }];
+            delete bad.rows;
+            docAgreement(d, v, { sentAt: D(-17, 9, 0), correctionOf: bad.id });
+          } else docAgreement(d, v);
         } else {
           v.signatures.forEach(function (x) { x.source = 'KSTARRS'; x.statement = 'Migrated from KSTARRS (approved before go-live).'; });
           v.migrated = true;
         }
       });
     });
-    // POL-004 v2.0: envelope out for signature now. Author and reviewers have signed; Victoria is next.
+    // POL-004 v2.0: agreement out for signature now. Author and reviewers have signed; Victoria is next.
     (function () {
       var d = docs['POL-004'], v = d.versions[1];
       var id = guid('POL-004' + v.v);
@@ -360,18 +377,16 @@
         { u: 'u-vic', role: 'QA approver 1', meaning: 'Approved', order: 3, status: 'Sent', sentAt: D(-5, 9, 30) },
         { u: 'u-tom', role: 'QA approver 2', meaning: 'Approved', order: 4, status: 'Waiting' }
       ];
-      envs.push({
-        id: id, record: 'POL-004', kind: 'doc', version: '2.0', subject: 'POL-004 v2.0 · Access Control Policy · Approval', purpose: 'Document approval',
+      ags.push({
+        id: id, stage: 'doc-approval', record: 'POL-004', ref: null, kind: 'doc', version: '2.0', subject: 'POL-004 v2.0 · Access Control Policy · Approval', purpose: 'Document approval',
         status: 'sent', sentBy: 'u-sam', sentAt: sentAt, completedAt: null, signers: signers,
-        pdf: { name: 'POL-004_v2.0.pdf', hash: v.hash }, signedPdf: null, certificate: null,
+        pdf: { name: 'POL-004_v2.0.pdf', hash: v.hash }, signedPdf: null, auditReport: null,
         verification: { footer: true, version: true, docId: true, dates: true, by: 'u-sam', at: D(-6, 15, 41) },
-        events: [{ at: sentAt, type: 'sent', detail: 'Envelope sent to 5 signers' }, { at: D(-6, 16, 2), type: 'signed', u: 'u-sam' }, { at: D(-6, 17, 10), type: 'signed', u: 'u-priya' }, { at: D(-5, 9, 30), type: 'signed', u: 'u-omar' }, { at: D(-5, 9, 31), type: 'delivered', u: 'u-vic', detail: 'DocuSign emailed the signing link' }],
+        events: [{ at: sentAt, type: 'sent', detail: 'Agreement sent to 5 signers' }, { at: D(-6, 16, 2), type: 'signed', u: 'u-sam' }, { at: D(-6, 17, 10), type: 'signed', u: 'u-priya' }, { at: D(-5, 9, 30), type: 'signed', u: 'u-omar' }, { at: D(-5, 9, 31), type: 'delivered', u: 'u-vic', detail: 'Adobe Sign emailed the signing link' }],
         correctionOf: null
       });
-      v.envelope = id;
+      v.agreement = id; agIds['POL-004'] = id;
     })();
-    envs.sort(function (a, b) { return a.sentAt < b.sentAt ? -1 : 1; });
-    S.envelopes = envs;
 
     // ---------------- Training records (read and understood) ----------------
     // Each record: person, document, title, version, who allocated it, assigned, due, completed.
@@ -443,7 +458,7 @@
           { id: 'A-6', title: 'Add system owner field to FRM-007', desc: '', doc: 'FRM-007', assignee: 'u-sam', due: D(12), sig: true, status: 'Not started' }
         ],
         attachments: [], effectiveness: { criteria: 'Next three leavers lose access within 60 minutes (checked in the audit trail).', result: null },
-        signatures: [{ id: 'SIG-90', stage: 'Plan approved', user: 'u-vic', meaning: 'Approved', at: D(-30, 11, 3) }]
+        signatures: []
       },
       'CR-014': {
         id: 'CR-014', title: 'Update password wording in the Information Security Policy', size: 'Minor', state: 'Planning', classification: 'Internal', owner: 'u-priya', createdBy: 'u-priya',
@@ -458,8 +473,8 @@
         process: 'ISMS · Supplier management', created: D(-12), reviewDue: D(-4), approvalDue: D(2), route: 'sequential',
         description: 'Add security, breach notification and right-to-audit clauses to the standard supplier contract.', reason: 'Gap found while drafting SOP-020.',
         impact: 'Contract owners and Finance. Existing contracts updated at renewal.', impacted: ['Supplier management'], items: ['SOP-020'],
-        reviewers: [{ u: 'u-grace', status: 'Reviewed', at: D(-5) }], approvers: [{ u: 'u-tom', status: 'Your turn' }],
-        actions: [{ id: 'A-8', title: 'Agree clause wording with legal adviser', desc: '', doc: null, assignee: 'u-vic', due: D(20), sig: false, status: 'Not started' }, { id: 'A-9', title: 'Send updated contract to the top 5 suppliers via DocuSign', desc: 'External signers, so this goes to DocuSign.', doc: null, assignee: 'u-grace', due: D(35), sig: true, status: 'Not started', docusign: true }],
+        reviewers: [{ u: 'u-grace', status: 'Reviewed', at: D(-5) }], approvers: [{ u: 'u-tom', status: 'Your turn' }], planAgreement: null,
+        actions: [{ id: 'A-8', title: 'Agree clause wording with legal adviser', desc: '', doc: null, assignee: 'u-vic', due: D(20), sig: false, status: 'Not started' }, { id: 'A-9', title: 'Send updated contract to the top 5 suppliers through Adobe Sign', desc: 'External signers, so the contract goes out as an Adobe Sign agreement.', doc: null, assignee: 'u-grace', due: D(35), sig: true, status: 'Not started', external: true }],
         attachments: [{ name: 'draft-clauses.docx', size: '56 KB', scan: 'clean', by: 'u-vic', at: D(-12), pdf: true }], effectiveness: { criteria: 'All top-5 supplier contracts signed with the new clauses.', result: null }, signatures: []
       },
       'CR-010': {
@@ -468,7 +483,7 @@
         description: 'Require MFA for every VPN connection.', reason: 'Internal audit recommendation.', impact: 'Everyone who uses VPN.', impacted: ['Access control'], items: ['POL-004'],
         reviewers: [{ u: 'u-priya', status: 'Reviewed', at: D(-70) }], approvers: [{ u: 'u-vic', status: 'Signed', at: D(-66) }],
         actions: [{ id: 'A-10', title: 'Turn on MFA for VPN', desc: '', doc: null, assignee: 'u-omar', due: D(-40), sig: true, status: 'Done', doneAt: D(-41), signedBy: 'u-omar' }, { id: 'A-11', title: 'Tell staff and update the VPN guide', desc: '', doc: null, assignee: 'u-tom', due: D(-38), sig: false, status: 'Done', doneAt: D(-39) }],
-        attachments: [], effectiveness: { criteria: 'No VPN sign-ins without MFA in 30 days of logs.', result: null }, signatures: [{ id: 'SIG-70', stage: 'Plan approved', user: 'u-vic', meaning: 'Approved', at: D(-66) }]
+        attachments: [], effectiveness: { criteria: 'No VPN sign-ins without MFA in 30 days of logs.', result: null }, signatures: []
       },
       'CR-009': {
         id: 'CR-009', title: 'Retire the legacy file share', size: 'Minor', state: 'Closed', classification: 'Internal', owner: 'u-omar', createdBy: 'u-omar',
@@ -477,7 +492,7 @@
         reviewers: [{ u: 'u-sam', status: 'Reviewed', at: D(-112) }], approvers: [{ u: 'u-tom', status: 'Signed', at: D(-108) }],
         actions: [{ id: 'A-12', title: 'Switch off the server', desc: '', doc: null, assignee: 'u-omar', due: D(-40), sig: true, status: 'Done', doneAt: D(-42), signedBy: 'u-omar' }],
         attachments: [], effectiveness: { criteria: 'No access attempts to the old share for 14 days.', result: 'No attempts logged in 21 days.', verdict: 'Effective', by: 'u-tom', at: D(-20) },
-        signatures: [{ id: 'SIG-55', stage: 'Plan approved', user: 'u-tom', meaning: 'Approved', at: D(-108) }, { id: 'SIG-66', stage: 'Completion approved', user: 'u-tom', meaning: 'Approved', at: D(-20) }]
+        signatures: []
       }
     };
 
@@ -492,7 +507,7 @@
       'QE-011': { id: 'QE-011', type: 'Audit finding', title: 'Internal audit finding: patch missed on file server', desc: 'The October internal audit found a critical patch released 41 days earlier not installed on FS-02.', state: 'CAPA raised', severity: 'High', classification: 'Confidential', owner: 'u-tom', process: 'ISMS · Vulnerability mgmt', due: D(-20), created: D(-30), tags: ['A.8.8', 'Internal audit'], assessment: 'Breach of SOP-018 patch window. Exposure limited: FS-02 is not internet-facing.', capa: 'CAPA-007' },
       'QE-012': { id: 'QE-012', type: 'Nonconformance', title: 'Leaver account left active for 9 days', desc: 'A leaver’s account remained active 9 days after their last day.', state: 'Closed', severity: 'High', classification: 'Confidential', owner: 'u-grace', process: 'ISMS · People', due: D(-60), created: D(-70), tags: ['A.5.18'], assessment: 'No sign of use after leaving (audit trail checked).', capa: 'CAPA-004', legalHold: true },
       'QE-013': { id: 'QE-013', type: 'Security incident', title: 'Staff clicked a phishing simulation link', desc: '6 of 22 staff clicked the link in the September phishing simulation.', state: 'CAPA raised', severity: 'Low', classification: 'Internal', owner: 'u-priya', process: 'ISMS · Awareness', due: D(-50), created: D(-58), tags: ['A.6.3'], assessment: 'Simulation only; no real compromise.', capa: 'CAPA-005' },
-      'QE-014': { id: 'QE-014', type: 'Nonconformance', title: 'Visitor log not completed for one day', desc: 'Visitor log blank on a Friday; reception cover was off sick.', state: 'Closed', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Physical security', due: D(-25), created: D(-28), tags: ['A.7.2'], assessment: 'One-off; cover arrangement now in place.', closure: { justification: 'One-off absence. Backup reception cover added to the office rota; no systemic cause.', by: 'u-grace', at: D(-24, 10, 15), sigId: 'SIG-98' } },
+      'QE-014': { id: 'QE-014', type: 'Nonconformance', title: 'Visitor log not completed for one day', desc: 'Visitor log blank on a Friday; reception cover was off sick.', state: 'Closed', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Physical security', due: D(-25), created: D(-28), tags: ['A.7.2'], assessment: 'One-off; cover arrangement now in place.', closure: { justification: 'One-off absence. Backup reception cover added to the office rota; no systemic cause.', by: 'u-grace', at: D(-24, 10, 15), agreement: null } },
       'QE-015': { id: 'QE-015', type: 'Nonconformance', title: 'Confidential printouts left on the shared printer', desc: 'From OBS-020: payroll printouts left on the 1st floor printer overnight.', state: 'Assessment', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Information handling', due: D(5), created: D(-5), tags: ['A.7.7'], assessment: '', source: 'OBS-020' },
       'QE-016': { id: 'QE-016', type: 'Audit finding', title: 'Two laptops found without disk encryption', desc: 'Device compliance report shows 2 of 24 laptops without disk encryption.', state: 'CAPA raised', severity: 'High', classification: 'Confidential', owner: 'u-omar', process: 'ISMS · Endpoint', due: D(-1), created: D(-4), tags: ['A.8.1', 'A.8.24'], assessment: 'Both laptops in the office; no loss reported.', capa: 'CAPA-008' },
       'QE-017': { id: 'QE-017', type: 'Deviation', title: 'Quarterly restore test ran 9 days late', desc: 'The Q3 restore test under SOP-012 ran 9 days after the scheduled date because the test server was being rebuilt.', state: 'Assessment', severity: 'Low', classification: 'Internal', owner: 'u-grace', process: 'ISMS · Continuity', due: D(4), created: D(-6), tags: ['SOP-012', 'A.8.13'], assessment: 'One-off delay. The test passed with no data loss and the schedule stays the same. No corrective action needed.', source: null },
@@ -552,9 +567,70 @@
       'PR-034': { id: 'PR-034', doc: 'POL-009', reviewer: 'u-vic', due: D(45), notice: 60, approval: true, created: D(-15), state: 'Open' },
       'PR-036': { id: 'PR-036', doc: 'PLN-001', reviewer: 'u-tom', due: D(9), notice: 60, approval: true, created: D(-51), state: 'Open' },
       'PR-037': { id: 'PR-037', doc: 'REG-001', reviewer: 'u-vic', due: D(26), notice: 30, approval: true, created: D(-4), state: 'Open' },
-      'PR-029': { id: 'PR-029', doc: 'FRM-007', reviewer: 'u-sam', due: D(-28), notice: 60, approval: false, created: D(-88), state: 'Completed', outcome: 'No update needed', completedAt: D(-30), sigId: 'SIG-92', nextDue: D(700) },
+      'PR-029': { id: 'PR-029', doc: 'FRM-007', reviewer: 'u-sam', due: D(-28), notice: 60, approval: false, created: D(-88), state: 'Completed', outcome: 'No update needed', completedAt: D(-30), agreement: null, nextDue: D(700) },
       'PR-030': { id: 'PR-030', doc: 'SOP-014', reviewer: 'u-mia', due: D(-38), notice: 60, approval: true, created: D(-98), state: 'Completed', outcome: 'Needs update', completedAt: D(-41), followUp: 'CR-012' }
     };
+
+    // ---------------- Earlier sign-offs through Adobe Sign ----------------
+    // Every sign-off since go-live is a completed agreement: change request plans, action sign-offs and
+    // completion, CAPA plans, completed actions and closures, quality event closures and periodic reviews.
+    S.accessReviews = {};
+    (function () {
+      var crs = S.crs, capas = S.capas, evs = S.events;
+      function crSigs(cr, ag, stage) { ag.rows.filter(function (x) { return x.meaning === 'Approved'; }).forEach(function (x) { cr.signatures.push({ id: x.id, stage: stage, user: x.user, meaning: x.meaning, at: x.at, agreement: ag.id }); }); }
+      function actionSignOff(rec, stage, a, kindLabel) {
+        var ag = pastAgreement({ stage: stage, record: rec.id, ref: a.id, kind: kindLabel, subject: rec.id + ' · ' + a.title + ' · Action completed', purpose: stage === 'cr-action' ? 'Change action sign-off' : 'CAPA action sign-off', signers: [[a.assignee, 'Action owner', 'Completed', 1, a.doneAt]] });
+        a.agreement = ag.id; a.signature = ag.rows[0].id;
+      }
+      // Change requests
+      var ag = pastAgreement({ stage: 'cr-plan', record: 'CR-009', kind: 'cr', subject: 'CR-009 · Retire the legacy file share · Plan approval', purpose: 'Change request plan approval', signers: [['u-omar', 'Process owner', 'Authored', 1, D(-108, 9, 40)], ['u-tom', 'Approver', 'Approved', 2, D(-108)]] });
+      crs['CR-009'].planAgreement = ag.id; crSigs(crs['CR-009'], ag, 'Plan approved');
+      actionSignOff(crs['CR-009'], 'cr-action', crs['CR-009'].actions[0], 'cr');
+      ag = pastAgreement({ stage: 'cr-completion', record: 'CR-009', kind: 'cr', subject: 'CR-009 · Retire the legacy file share · Completion', purpose: 'Change request completion', signers: [['u-omar', 'Process owner', 'Authored', 1, D(-20, 9, 40)], ['u-tom', 'Approver', 'Approved', 2, D(-20)]] });
+      crs['CR-009'].closeAgreement = ag.id; crSigs(crs['CR-009'], ag, 'Completion approved');
+      ag = pastAgreement({ stage: 'cr-plan', record: 'CR-010', kind: 'cr', subject: 'CR-010 · Enforce MFA on VPN · Plan approval', purpose: 'Change request plan approval', signers: [['u-tom', 'Process owner', 'Authored', 1, D(-66, 9, 40)], ['u-vic', 'Approver', 'Approved', 2, D(-66)]] });
+      crs['CR-010'].planAgreement = ag.id; crSigs(crs['CR-010'], ag, 'Plan approved');
+      actionSignOff(crs['CR-010'], 'cr-action', crs['CR-010'].actions[0], 'cr');
+      ag = pastAgreement({ stage: 'cr-plan', record: 'CR-012', kind: 'cr', subject: 'CR-012 · Review joiner and leaver steps · Plan approval', purpose: 'Change request plan approval', signers: [['u-grace', 'Process owner', 'Authored', 1, D(-30, 10, 30)], ['u-vic', 'Approver', 'Approved', 2, D(-30, 11, 3)]] });
+      crs['CR-012'].planAgreement = ag.id; crSigs(crs['CR-012'], ag, 'Plan approved');
+      // CAPAs
+      ag = pastAgreement({ stage: 'capa-plan', record: 'CAPA-004', kind: 'capa', subject: 'CAPA-004 · Leaver account left active · Action plan', purpose: 'CAPA action plan approval', signers: [['u-grace', 'Process owner', 'Authored', 1, D(-67, 9, 0)], ['u-vic', 'Quality Manager', 'Approved', 2, D(-67, 9, 30)]] });
+      capas['CAPA-004'].planAgreement = ag.id;
+      actionSignOff(capas['CAPA-004'], 'capa-action', capas['CAPA-004'].actions[0], 'capa');
+      ag = pastAgreement({ stage: 'capa-actions', record: 'CAPA-004', kind: 'capa', subject: 'CAPA-004 · Leaver account left active · Completed actions', purpose: 'CAPA completed actions approval', signers: [['u-grace', 'Process owner', 'Authored', 1, D(-44, 9, 0)], ['u-vic', 'Quality Manager', 'Approved', 2, D(-44, 11, 0)]] });
+      capas['CAPA-004'].actionsAgreement = ag.id;
+      ag = pastAgreement({ stage: 'capa-closure', record: 'CAPA-004', kind: 'capa', subject: 'CAPA-004 · Leaver account left active · CAPA closure', purpose: 'CAPA closure', sentBy: 'u-vic', signers: [['u-grace', 'CAPA owner', 'Authored', 1, D(-10, 9, 30)], ['u-vic', 'QA approver', 'Approved', 2, D(-10)]] });
+      capas['CAPA-004'].closeAgreement = ag.id;
+      ag = pastAgreement({ stage: 'capa-plan', record: 'CAPA-005', kind: 'capa', subject: 'CAPA-005 · Phishing simulation follow-up · Action plan', purpose: 'CAPA action plan approval', signers: [['u-priya', 'Process owner', 'Approved', 1, D(-54)]] });
+      capas['CAPA-005'].planAgreement = ag.id;
+      actionSignOff(capas['CAPA-005'], 'capa-action', capas['CAPA-005'].actions[1], 'capa');
+      ag = pastAgreement({ stage: 'capa-actions', record: 'CAPA-005', kind: 'capa', subject: 'CAPA-005 · Phishing simulation follow-up · Completed actions', purpose: 'CAPA completed actions approval', signers: [['u-priya', 'Process owner', 'Approved', 1, D(-32)]] });
+      capas['CAPA-005'].actionsAgreement = ag.id;
+      ag = pastAgreement({ stage: 'capa-plan', record: 'CAPA-007', kind: 'capa', subject: 'CAPA-007 · Patch missed on file server · Action plan', purpose: 'CAPA action plan approval', signers: [['u-tom', 'Process owner', 'Authored', 1, D(-27, 9, 0)], ['u-vic', 'Quality Manager', 'Approved', 2, D(-27, 10, 0)]] });
+      capas['CAPA-007'].planAgreement = ag.id;
+      actionSignOff(capas['CAPA-007'], 'capa-action', capas['CAPA-007'].actions[0], 'capa');
+      // Quality event closed without a CAPA
+      ag = pastAgreement({ stage: 'qe-closure', record: 'QE-014', kind: 'qe', subject: 'QE-014 · Visitor log not completed for one day · Closure without CAPA', purpose: 'Quality event closure', signers: [['u-grace', 'Event owner', 'Authored', 1, D(-24, 10, 0)], ['u-vic', 'QA approver', 'Approved', 2, D(-24, 10, 15)]] });
+      evs['QE-014'].closure.agreement = ag.id;
+      // Periodic review: no update needed
+      ag = pastAgreement({ stage: 'review', record: 'PR-029', kind: 'review', version: '1.3', subject: 'PR-029 · FRM-007 ' + docs['FRM-007'].title + ' · Periodic review', purpose: 'Periodic review: no update needed', signers: [['u-sam', 'Reviewer', 'Reviewed', 1, D(-30)]] });
+      S.reviews['PR-029'].agreement = ag.id;
+      // CR-016: the plan is out for signature now. Victoria (process owner) has signed; PJ is next.
+      var id = guid('CR-016:cr-plan');
+      ags.push({
+        id: id, stage: 'cr-plan', record: 'CR-016', ref: null, kind: 'cr', version: null, subject: 'CR-016 · Add supplier security clauses to contracts · Plan approval', purpose: 'Change request plan approval',
+        status: 'sent', sentBy: 'u-vic', sentAt: D(-4, 8, 50), completedAt: null,
+        signers: [{ u: 'u-vic', role: 'Process owner', meaning: 'Authored', order: 1, status: 'Signed', at: D(-4, 9, 0) }, { u: 'u-tom', role: 'Approver', meaning: 'Approved', order: 2, status: 'Sent', sentAt: D(-4, 9, 0) }],
+        pdf: { name: 'CR-016_cr-plan.pdf', hash: Q.sha256('pdf:' + id) }, signedPdf: null, auditReport: null,
+        verification: { footer: true, version: true, docId: true, dates: true, by: 'u-vic', at: D(-4, 8, 47) },
+        events: [{ at: D(-4, 8, 50), type: 'sent', detail: 'Agreement sent to 2 signers' }, { at: D(-4, 9, 0), type: 'signed', u: 'u-vic' }, { at: D(-4, 9, 1), type: 'delivered', u: 'u-tom', detail: 'Adobe Sign emailed the signing link' }],
+        correctionOf: null
+      });
+      crs['CR-016'].planAgreement = id; agIds['CR-016'] = id;
+      ags.forEach(function (a) { delete a.rows; });
+      ags.sort(function (a, b) { return a.sentAt < b.sentAt ? -1 : 1; });
+      S.agreements = ags;
+    })();
 
     // ---------------- Links (visible from both ends) ----------------
     S.links = [
@@ -566,17 +642,17 @@
 
     // ---------------- Tasks (My Work) ----------------
     S.tasks = [
-      { id: 'T-1', kind: 'ds-sign', record: 'POL-004', assignee: 'u-vic', due: D(-2), created: D(-5, 9, 31), status: 'open', note: 'QA approver 1 of 2 · author and reviewers have signed' },
+      { id: 'T-1', kind: 'esign-sign', ref: agIds['POL-004'], record: 'POL-004', assignee: 'u-vic', due: D(-2), created: D(-5, 9, 31), status: 'open', note: 'QA approver 1 of 2 · author and reviewers have signed' },
       { id: 'T-2', kind: 'training', record: 'SOP-012', assignee: 'u-vic', due: D(-1), created: D(-15), status: 'open', ref: 'SOP-012' },
       { id: 'T-3', kind: 'periodic', record: 'PR-031', assignee: 'u-vic', due: D(2), created: D(-58), status: 'open' },
       { id: 'T-4', kind: 'cr-review', record: 'CR-015', assignee: 'u-vic', due: D(1), created: D(-3), status: 'open' },
       { id: 'T-5', kind: 'capa-action', record: 'CAPA-007', assignee: 'u-vic', due: D(3), created: D(-25), status: 'open', ref: 'CA-2' },
-      { id: 'T-6', kind: 'fyi', record: 'SOP-020', assignee: 'u-vic', due: D(9), created: D(-3), status: 'open', fyi: true, note: 'You sign in DocuSign after review' },
+      { id: 'T-6', kind: 'fyi', record: 'SOP-020', assignee: 'u-vic', due: D(9), created: D(-3), status: 'open', fyi: true, note: 'You sign in Adobe Sign after review' },
       { id: 'T-7', kind: 'effectiveness', record: 'CAPA-005', assignee: 'u-vic', due: D(17), created: D(-30), status: 'open' },
       { id: 'T-8', kind: 'training', record: 'POL-009', assignee: 'u-vic', due: D(20), created: D(-9), status: 'open', ref: 'POL-009' },
       { id: 'T-9', kind: 'review-doc', record: 'SOP-020', assignee: 'u-priya', due: D(1), created: D(-3), status: 'open' },
-      { id: 'T-10', kind: 'fyi', record: 'POL-004', assignee: 'u-tom', due: D(4), created: D(-6), status: 'open', fyi: true, note: 'You sign in DocuSign after Victoria E.' },
-      { id: 'T-11', kind: 'cr-approve', record: 'CR-016', assignee: 'u-tom', due: D(2), created: D(-4), status: 'open' },
+      { id: 'T-10', kind: 'fyi', record: 'POL-004', assignee: 'u-tom', due: D(4), created: D(-6), status: 'open', fyi: true, note: 'You sign in Adobe Sign after Victoria E.' },
+      { id: 'T-11', kind: 'esign-sign', ref: agIds['CR-016'], record: 'CR-016', assignee: 'u-tom', due: D(2), created: D(-4, 9, 1), status: 'open', note: 'Approver · meaning: Approved' },
       { id: 'T-12', kind: 'cr-effectiveness', record: 'CR-010', assignee: 'u-tom', due: D(8), created: D(-36), status: 'open' },
       { id: 'T-13', kind: 'periodic', record: 'PR-036', assignee: 'u-tom', due: D(9), created: D(-51), status: 'open' },
       { id: 'T-14', kind: 'author', record: 'WI-003', assignee: 'u-sam', due: D(5), created: D(-5), status: 'open' },
@@ -596,11 +672,11 @@
       { id: 'T-29', kind: 'training', record: 'SOP-012', assignee: 'u-ruth', due: D(-1), created: D(-15), status: 'open', ref: 'SOP-012' },
       { id: 'T-30', kind: 'training', record: 'SOP-018', assignee: 'u-jake', due: D(-76), created: D(-90), status: 'open', ref: 'SOP-018' },
       { id: 'T-31', kind: 'cr-action', record: 'CR-012', assignee: 'u-sam', due: D(12), created: D(-30), status: 'open', ref: 'A-6' },
-      { id: 'T-32', kind: 'send-approval', record: 'POL-003', assignee: 'u-vic', due: D(2), created: D(-1, 10, 41), status: 'open', note: 'Review closed · verify the PDF, then send one DocuSign envelope' },
-      { id: 'T-33', kind: 'fyi', record: 'POL-003', assignee: 'u-tom', due: D(4), created: D(-1, 10, 41), status: 'open', fyi: true, note: 'You sign in DocuSign once the envelope is sent' },
+      { id: 'T-32', kind: 'send-approval', record: 'POL-003', assignee: 'u-vic', due: D(2), created: D(-1, 10, 41), status: 'open', stage: 'doc-approval', note: 'Review closed · verify the PDF, then send one Adobe Sign agreement' },
+      { id: 'T-33', kind: 'fyi', record: 'POL-003', assignee: 'u-tom', due: D(4), created: D(-1, 10, 41), status: 'open', fyi: true, note: 'You sign in Adobe Sign once the agreement is sent' },
       { id: 'T-34', kind: 'qe-assess', record: 'QE-017', assignee: 'u-grace', due: D(4), created: D(-6), status: 'open' },
       { id: 'T-35', kind: 'send-approval', record: 'VP-001', assignee: 'u-vic', due: D(3), created: D(-2, 16, 5), status: 'open', note: 'Review closed · QA approval of a validation plan' },
-      { id: 'T-36', kind: 'fyi', record: 'VP-001', assignee: 'u-priya', due: D(3), created: D(-2, 16, 5), status: 'open', fyi: true, note: 'You sign first, as author, once the envelope is sent' }
+      { id: 'T-36', kind: 'fyi', record: 'VP-001', assignee: 'u-priya', due: D(3), created: D(-2, 16, 5), status: 'open', fyi: true, note: 'You sign first, as author, once the agreement is sent' }
     ];
 
     // ---------------- Notifications ----------------

@@ -40,10 +40,10 @@
 
   // Shared rows for every training export (PDF and Excel).
   Q.trainingRows = function (list) {
-    var rows = [['Person', 'Account status', 'Document', 'Title', 'Version', 'Allocated by', 'Reason', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Record status', 'Statement', 'Knowledge check', 'Envelope ID', 'Correction of', 'Correction reason', 'Record ID']];
+    var rows = [['Person', 'Account status', 'Document', 'Title', 'Version', 'Allocated by', 'Reason', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Record status', 'Statement', 'Knowledge check', 'Agreement ID', 'Correction of', 'Correction reason', 'Record ID']];
     list.slice().sort(Q.by(function (a) { return Q.fullName(a.user) + a.doc + a.assigned; })).forEach(function (a) {
       var u = Q.user(a.user);
-      rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.title, a.ver, by(a), a.allocReason || '', Q.fmtUtc(a.assigned), a.due ? Q.fmtUtc(a.due) : '', a.completed ? Q.fmtUtc(a.completed) : '', Q.trStatus(a), a.statement || '', a.quiz || '', a.envelope || '', a.correctionOf || '', a.correctionReason || '', a.id]);
+      rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.title, a.ver, by(a), a.allocReason || '', Q.fmtUtc(a.assigned), a.due ? Q.fmtUtc(a.due) : '', a.completed ? Q.fmtUtc(a.completed) : '', Q.trStatus(a), a.statement || '', a.quiz || '', a.agreement || '', a.correctionOf || '', a.correctionReason || '', a.id]);
     });
     return rows;
   };
@@ -190,7 +190,7 @@
         href: function (a) { return '#/training?tab=records' + (q.u ? '&u=' + q.u : '') + (q.d ? '&d=' + q.d : '') + (q.all ? '&all=1' : '') + (q.st ? '&st=' + q.st : '') + '&rec=' + a.id; },
         cols: [{ key: 'name', label: 'Person' }, { key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} v${a.ver}`; } }, { key: 'allocReason', label: 'Allocated', render: function (a) { return h`<span class="small">${a.allocReason} · ${by(a)}</span>`; } },
           { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return a.due ? Q.fmtShort(a.due) : '—'; } },
-          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return h`${Q.chip(a.st)}${a.envelope ? h` <span class="small muted">· DocuSign</span>` : ''}`; } }] })}
+          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return h`${Q.chip(a.st)}${a.agreement ? h` <span class="small muted">· Adobe Sign</span>` : ''}`; } }] })}
       <p class="small muted mt-8">Completed records can’t be edited or deleted by anyone, administrators included. A correction is a new record with a reason; the original stays. Leavers’ records are kept.</p>`;
   }
   Q.on['tr-all'] = function (el) { Q.setQuery({ all: el.checked ? '1' : '' }); };
@@ -207,7 +207,7 @@
     Q.drawer.open({
       wide: true, kicker: 'Training record · ' + a.id, title: a.doc + ' v' + a.ver + ' · ' + Q.fullName(a.user),
       onClose: function () { if (Q.current.query.rec) Q.setQuery({ rec: '' }); },
-      body: h`<div class="row-wrap mb-16">${Q.chip(status)}${a.completed ? h`<span class="chip chip-outline">${Q.icon('lock', 'ico-sm')} Locked</span>` : ''}${a.envelope ? Q.chip('From DocuSign approval', 'chip-outline') : ''}</div>
+      body: h`<div class="row-wrap mb-16">${Q.chip(status)}${a.completed ? h`<span class="chip chip-outline">${Q.icon('lock', 'ico-sm')} Locked</span>` : ''}${a.agreement ? Q.chip('From Adobe Sign approval', 'chip-outline') : ''}</div>
         <dl class="dl mb-16"><div><dt>Person</dt><dd>${Q.fullName(a.user)}${a.leaver ? ' (left)' : ''}</dd></div><div><dt>Document</dt><dd>${Q.recLink(a.doc, { short: true })} · v${a.ver}</dd></div>
           <div style="grid-column:1/-1"><dt>Title</dt><dd>${a.title}</dd></div>
           <div><dt>Allocated by</dt><dd>${by(a)}</dd></div><div><dt>Reason</dt><dd>${a.allocReason}</dd></div>
@@ -215,7 +215,7 @@
           <div><dt>Completed (UTC)</dt><dd>${a.completed ? Q.fmtUtc(a.completed) : '—'}</dd></div><div><dt>Knowledge check</dt><dd>${a.quiz || '—'}</dd></div>
           ${a.statement ? h`<div style="grid-column:1/-1"><dt>Statement</dt><dd>${a.statement}</dd></div>` : ''}
           ${a.via ? h`<div><dt>Identity</dt><dd>${a.via}</dd></div>` : ''}
-          ${a.envelope ? h`<div style="grid-column:1/-1"><dt>DocuSign envelope</dt><dd><button type="button" class="btn-link mono" style="padding:0;min-height:0" data-act="ds-env" data-id="${a.envelope}">${a.envelope}</button></dd></div>` : ''}
+          ${a.agreement ? h`<div style="grid-column:1/-1"><dt>Adobe Sign agreement</dt><dd><button type="button" class="btn-link mono" style="padding:0;min-height:0" data-act="es-agreement" data-id="${a.agreement}">${a.agreement}</button></dd></div>` : ''}
           ${a.correctionOf ? h`<div style="grid-column:1/-1"><dt>Correction of</dt><dd><a href="#/training?tab=records&all=1&rec=${a.correctionOf}">${a.correctionOf}</a> · ${a.correctionReason}${a.noRetrain ? ' (recorded in error, no retraining)' : ''}</dd></div>` : ''}
           ${corr.length ? h`<div style="grid-column:1/-1"><dt>Corrected by</dt><dd>${corr.map(function (c) { return h`<a href="#/training?tab=records&all=1&rec=${c.id}">${c.id}</a> · ${c.correctionReason} `; })}</dd></div>` : ''}
           ${a.closed ? h`<div style="grid-column:1/-1"><dt>Closed</dt><dd>${Q.fmtUtc(a.closed.at)} · ${a.closed.reason}</dd></div>` : ''}</dl>

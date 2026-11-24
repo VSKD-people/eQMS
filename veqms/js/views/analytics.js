@@ -105,7 +105,7 @@
   }
   function overview(d) {
     var wk = weekly(d);
-    var avg = [['Draft', 6.2], ['In review', 4.1], ['Review closed (verify and send)', 0.8], ['In approval (DocuSign)', 3.4]];
+    var avg = [['Draft', 6.2], ['In review', 4.1], ['Review closed (verify and send)', 0.8], ['In approval (Adobe Sign)', 3.4]];
     var rAvg = rpt('Average days in each workflow state', [['State', 'Average days', 'Transitions measured']].concat(avg.map(function (a, i) { return [a[0], a[1], [14, 12, 11, 4][i]]; })));
     var rWk = rpt('Training due vs overdue by week', [['Week starting', 'Due', 'Overdue']].concat(wk.weeks.map(function (w) { return [w.label, w.due, w.od]; })));
     var openEv = d.evs.filter(function (e) { return e.state === 'Open' || e.state === 'Assessment'; });

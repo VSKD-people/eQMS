@@ -36,7 +36,8 @@
       })}</div>${Q.S.users.filter(function (u) { return u.roles.indexOf('admin') >= 0 && u.status === 'Active'; }).length < 2 ? h`<div class="callout warn mt-16"><strong>Only one System Administrator.</strong><p class="small" style="margin:4px 0 0">The two-person rule (Step 3, decision R3) needs at least two admins, so these requests can’t be approved yet.</p></div>` : ''}` : Q.empty('No role requests', '');
     } else if (tab === 'review') {
       var rows = Q.S.users.filter(function (u) { return u.status === 'Active'; });
-      body = h`<div class="spread mb-16" style="flex-wrap:wrap"><p class="muted" style="margin:0">Quarterly access review: managers confirm each person still needs their roles and clearance.</p><div class="btn-row"><button class="btn" data-act="ar-export">Export access review (CSV)</button><button class="btn btn-primary" data-act="ar-signoff">Sign off this quarter</button></div></div>
+      var arOut = Q.esign.active('ACCESS-REVIEW-Q4', 'access-review'), arDone = Q.S.accessReviews['ACCESS-REVIEW-Q4'];
+      body = h`<div class="spread mb-16" style="flex-wrap:wrap"><p class="muted" style="margin:0">Quarterly access review: managers confirm each person still needs their roles and clearance.</p><div class="btn-row"><button class="btn" data-act="ar-export">Export access review (CSV)</button>${arOut ? (Q.esign.myTurn(arOut) ? h`<button class="btn btn-primary" data-act="es-open-sign" data-id="${arOut.id}">Sign in Adobe Sign</button>` : Q.chip('Sign-off out for signature', 'chip-turn')) : arDone && arDone.signedAt ? Q.chip('Signed off ' + Q.fmtDate(arDone.signedAt), 'chip-done') : h`<button class="btn btn-primary" data-act="ar-signoff">Sign off this quarter</button>`}</div></div>
         ${Q.table({ id: 'ar', rows: rows.map(function (u) { return Object.assign({ mgr: u.manager ? Q.fullName(u.manager) : '—', rl: u.roles.map(function (r) { return Q.ROLE_LABEL[r]; }).join(', ') }, u); }), defaultSort: 'mgr',
           cols: [{ key: 'name', label: 'Person' }, { key: 'mgr', label: 'Manager' }, { key: 'rl', label: 'Roles' }, { key: 'clearance', label: 'Clearance', render: function (u) { return Q.cls(u.clearance); } }, { key: 'groups', label: 'Groups', sort: false, render: function (u) { return h`<span class="small">${u.groups.join(', ')}</span>`; } }, { key: 'site', label: 'Site' }] })}`;
     } else if (tab === 'delegations') {
@@ -111,10 +112,8 @@
     Q.S.users.forEach(function (u) { rows.push([u.name, u.email, u.status, u.manager ? Q.fullName(u.manager) : '', u.roles.map(function (r) { return Q.ROLE_LABEL[r]; }).join('; '), u.clearance, u.groups.join('; '), u.site]); });
     Q.exportCsv('access-review.csv', rows, 'quarterly access review');
   };
-  Q.act['ar-signoff'] = function () {
-    Q.sign({ items: [{ id: 'ACCESS-REVIEW-Q4', hash: Q.sha256(Q.canon(Q.S.users.map(function (u) { return [u.id, u.roles, u.clearance, u.status]; }))) }], meaning: 'Reviewed', meanings: ['Reviewed'], title: 'Sign off the Q4 access review',
-      onSigned: function () { Q.closeTasks(function (t) { return t.record === 'ADMIN-AR'; }); Q.toast('Access review signed off'); } });
-  };
+  // The quarterly access review is signed off in Adobe Sign by the person who reviewed it.
+  Q.act['ar-signoff'] = function () { Q.esign.openSend('ACCESS-REVIEW-Q4', 'access-review'); };
 
   // ---------- Audit trail ----------
   function audit(q) {
@@ -182,9 +181,10 @@
       ${tab === 'rules' ? h`<p class="muted">Event → condition → action. Rules are versioned, need Quality Manager approval before they go live, and every run is written to the audit trail.</p>` : ''}${body}`;
   }
   var EVENTS = ['Record created', 'State changed', 'Task assigned', 'Task completed', 'Task rejected or sent back', 'Due date approaching', 'Due date passed', 'Signature completed', 'Training rule activated', 'Periodic review due', 'Document became effective', 'Integration event received'];
-  var ACTIONS = ['Notify', 'Create task', 'Reassign', 'Escalate', 'Move to next workflow stage', 'Create calendar entry', 'Publish to SharePoint', 'Send for DocuSign signature', 'Call a webhook'];
+  var ACTIONS = ['Notify', 'Create task', 'Reassign', 'Escalate', 'Move to next workflow stage', 'Create calendar entry', 'Publish to SharePoint', 'Send for Adobe Sign signature', 'Call a webhook'];
   function openRule(r) {
-    var canApprove = r.status === 'Pending approval' && Q.hasRole('qm');
+    var ruleOut = Q.esign.active(r.id, 'rule');
+    var canApprove = r.status === 'Pending approval' && Q.hasRole('qm') && !ruleOut;
     Q.drawer.open({ wide: true, kicker: 'Automation rule · ' + r.id + ' v' + r.version, title: r.name,
       onClose: function () { if (Q.current.query.rule) Q.setQuery({ rule: '' }); },
       body: h`<div class="row-wrap mb-16">${Q.stateChip(r.status)}${r.mandatory ? Q.chip('Mandatory: users can’t switch it off', 'chip-outline') : ''}<span class="small muted">${r.approvedBy ? 'Approved by ' + Q.fullName(r.approvedBy) + ' · ' + Q.fmtDate(r.approvedAt) : 'Not approved yet'}</span></div>
@@ -192,13 +192,13 @@
         ${r.note ? h`<p class="small muted">${r.note}</p>` : ''}
         <dl class="dl"><div><dt>Runs</dt><dd>${r.runs}</dd></div><div><dt>Last run</dt><dd>${r.lastRun ? Q.fmtDateTime(r.lastRun) : '—'}</dd></div></dl>
         <hr><div class="label mb-8">Recent runs</div>${(function () { var rs = Q.S.runs.filter(function (x) { return x.rule === r.id; }).slice(0, 6); return rs.length ? rs.map(function (x) { return h`<div class="people-row small"><span>${Q.fmtDateTime(x.at)} · ${x.record || '—'} · ${x.detail}</span><span class="status-text ${x.result === 'Sent' || x.result === 'Done' ? 'st-done' : 'st-overdue'}">${x.result}</span></div>`; }) : h`<p class="small muted">No runs in this session.</p>`; })()}`,
-      foot: h`${canApprove ? h`<button class="btn btn-primary" type="button" data-act="rule-approve" data-id="${r.id}">Approve and activate</button>` : ''}${Q.can('admin.automations') && !r.mandatory && r.status !== 'Pending approval' ? h`<button class="btn" type="button" data-act="rule-toggle" data-id="${r.id}">${r.status === 'Active' ? 'Switch off (needs approval)' : 'Switch on (needs approval)'}</button>` : ''}<button class="btn" type="button" data-act="drawer-close">Close</button>` });
+      foot: h`${canApprove ? h`<button class="btn btn-primary" type="button" data-act="rule-approve" data-id="${r.id}">Approve in Adobe Sign</button>` : ''}${ruleOut && Q.esign.myTurn(ruleOut) ? h`<button class="btn btn-primary" type="button" data-act="es-open-sign" data-id="${ruleOut.id}">Sign in Adobe Sign</button>` : ''}${Q.can('admin.automations') && !r.mandatory && r.status !== 'Pending approval' ? h`<button class="btn" type="button" data-act="rule-toggle" data-id="${r.id}">${r.status === 'Active' ? 'Switch off (needs approval)' : 'Switch on (needs approval)'}</button>` : ''}<button class="btn" type="button" data-act="drawer-close">Close</button>` });
   }
+  // A new rule version is approved in Adobe Sign by the Quality Manager; it takes effect when the agreement completes.
   Q.act['rule-approve'] = function (el) {
-    var r = Q.S.rules.find(function (x) { return x.id === el.getAttribute('data-id'); });
+    var id = el.getAttribute('data-id');
     Q.drawer.close();
-    Q.sign({ items: [{ id: r.id, version: String(r.version), hash: Q.sha256(Q.canon(r)) }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve automation rule ' + r.id,
-      onSigned: function () { r.status = r.pendingOff ? 'Off' : 'Active'; r.pendingOff = false; r.approvedBy = Q.S.session.userId; r.approvedAt = new Date().toISOString(); Q.audit('state', 'Automation rule', r.id, r.id + ' v' + r.version + ' approved: ' + r.status); Q.toast(r.id + ' is ' + r.status.toLowerCase()); } });
+    Q.esign.openSend(id, 'rule');
   };
   Q.act['rule-toggle'] = function (el) {
     var r = Q.S.rules.find(function (x) { return x.id === el.getAttribute('data-id'); });
@@ -246,7 +246,7 @@
           <dl class="dl one"><div><dt>How it connects</dt><dd class="small">${i.mech}</dd></div><div><dt>Least permission</dt><dd class="small">${i.perms}</dd></div></dl>
           <dl class="dl mt-16"><div><dt>Last success</dt><dd>${i.lastOk ? Q.fmtDateTime(i.lastOk) : '—'}</dd></div><div><dt>Failures / retry queue</dt><dd>${i.failures} / ${i.queue}</dd></div></dl>
           ${i.note ? h`<p class="small muted mt-8" style="margin-bottom:0">${i.note}</p>` : ''}
-          ${i.id === 'docusign' ? h`<div class="mt-16"><div class="spread small"><span>Sends this year: <b>${Q.ds.used()} of ${Q.ds.cfg().allowance}</b></span><a href="#/approvals">Sends log</a></div><div class="progress mt-8"><div style="width:${Q.pct(Q.ds.used(), Q.ds.cfg().allowance)}%"></div></div></div>` : ''}
+          ${i.id === 'adobesign' ? h`<div class="mt-16"><div class="spread small"><span>Transactions this year: <b>${Q.esign.used()} of ${Q.esign.cfg().allowance}</b></span><a href="#/approvals">Transactions log</a></div><div class="progress mt-8"><div style="width:${Q.pct(Q.esign.used(), Q.esign.cfg().allowance)}%"></div></div></div>` : ''}
           <div class="btn-row mt-16"><button class="btn btn-sm" data-act="int-test" data-id="${i.id}">Test connection</button>${i.queue ? h`<button class="btn btn-sm" data-act="int-retry" data-id="${i.id}">Retry ${i.queue} queued</button>` : ''}</div></div>`;
       })}</div>`;
   }
@@ -283,16 +283,13 @@
   function workflows() {
     return h`<p class="muted">One engine drives every module. Definitions are versioned JSON; a new version needs Quality Manager approval, and running records keep the version they started on. Guards run in the API, never in the browser.</p>
       ${Q.S.workflows.map(function (w) {
-        return h`<div class="card card-pad mb-16"><div class="spread mb-8" style="flex-wrap:wrap"><div><h2>${w.name}</h2><div class="small muted">${w.module} · v${w.version}${w.approvedBy ? ' · approved by ' + Q.fullName(w.approvedBy) : ''}</div></div><div class="row-wrap">${Q.stateChip(w.status)}${w.status === 'Pending approval' && Q.hasRole('qm') ? h`<button class="btn btn-sm btn-primary" data-act="wf-approve" data-id="${w.id}">Approve and sign</button>` : ''}</div></div>
+        return h`<div class="card card-pad mb-16"><div class="spread mb-8" style="flex-wrap:wrap"><div><h2>${w.name}</h2><div class="small muted">${w.module} · v${w.version}${w.approvedBy ? ' · approved by ' + Q.fullName(w.approvedBy) : ''}</div></div><div class="row-wrap">${Q.stateChip(w.status)}${w.status === 'Pending approval' && Q.hasRole('qm') && !Q.esign.active(w.id, 'workflow') ? h`<button class="btn btn-sm btn-primary" data-act="wf-approve" data-id="${w.id}">Approve in Adobe Sign</button>` : ''}${Q.esign.active(w.id, 'workflow') && Q.esign.myTurn(Q.esign.active(w.id, 'workflow')) ? h`<button class="btn btn-sm btn-primary" data-act="es-open-sign" data-id="${Q.esign.active(w.id, 'workflow').id}">Sign in Adobe Sign</button>` : ''}</div></div>
           <div class="wf-states mb-16">${w.states.map(function (s, i) { return h`${i ? h`<span class="arrow">→</span>` : ''}${Q.chip(s, 'chip-outline')}`; })}</div>
           ${w.transitions.length ? h`<div class="table-wrap"><table class="t"><thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Who can</th><th scope="col">Signature</th><th scope="col">Segregation of duties</th><th scope="col">Required fields</th><th scope="col">SLA</th></tr></thead><tbody>${w.transitions.map(function (t) { return h`<tr><td>${t.from}</td><td>${t.to}</td><td class="small">${t.roles}</td><td class="small">${t.sig || '—'}</td><td class="small">${t.sod || '—'}</td><td class="small">${t.fields || '—'}</td><td class="small">${t.sla || '—'}</td></tr>`; })}</tbody></table></div>` : h`<p class="small muted" style="margin:0">Draft definition: adds a Legal review stage for contract documents.</p>`}</div>`;
       })}`;
   }
-  Q.act['wf-approve'] = function (el) {
-    var w = Q.S.workflows.find(function (x) { return x.id === el.getAttribute('data-id'); });
-    Q.sign({ items: [{ id: w.id, version: String(w.version), hash: Q.sha256(Q.canon(w)) }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve workflow ' + w.name,
-      onSigned: function () { w.status = 'Active'; w.approvedBy = Q.S.session.userId; Q.audit('state', 'Workflow', w.id, 'Workflow ' + w.id + ' v' + w.version + ' approved; new records use it, running ones keep their version'); Q.toast('Workflow approved'); } });
-  };
+  // A new workflow version is approved in Adobe Sign by the Quality Manager.
+  Q.act['wf-approve'] = function (el) { Q.esign.openSend(el.getAttribute('data-id'), 'workflow'); };
 
   // ---------- Settings ----------
   function settings() {
@@ -301,16 +298,16 @@
     var sw = function (key, val, dis) { return h`<label class="switch"><input type="checkbox" data-change="set-toggle" data-key="${key}" ${val ? 'checked' : ''} ${dis ? 'disabled' : ''} aria-label="${key}"></label>`; };
     return h`<div class="stack">
       <form class="card card-pad" data-submit="set-statement"><h2 class="mb-8">Electronic signatures</h2>
-        <div class="field"><label for="ss">Signature statement</label><textarea class="textarea" id="ss" name="statement" ${isQm ? '' : 'disabled'}>${st.statement}</textarea><div class="help">Use {meaning} where the meaning goes. Agreed by the Quality Manager.</div></div>
+        <div class="field"><label for="ss">Signature statement</label><textarea class="textarea" id="ss" name="statement" ${isQm ? '' : 'disabled'}>${st.statement}</textarea><div class="help">Printed on every Adobe Sign agreement PDF. Use {meaning} where the reason for signing goes. Agreed by the Quality Manager.</div></div>
         ${isQm ? h`<button class="btn mt-8" type="submit">Save statement</button>` : ''}
-        ${row('Fresh sign-in for every in-app signature', sw('x', true, true), 'Always on for signatures made in the app (change requests, CAPA plans and actions, periodic reviews, rules). Each signing action needs its own re-authentication with MFA.')}
-        ${row('Approvals go through DocuSign (Part 11 module)', sw('x2', true, true), 'Controlled documents, CAPA closures, deviations, vendor approvals and validation deliverables. One envelope per version: author, then reviewers, then QA approver.')}
+        ${row('Every signature goes through Adobe Sign', sw('x', true, true), 'Document approvals, change requests (plan, actions, completion), CAPAs (plan, actions, completed actions, closure), quality event closures, periodic reviews, making a document obsolete, access reviews, rule and workflow approvals. One agreement per sign-off, signers in order. Read-and-understood training is not a signature and stays in the app.')}
+        ${row('Identity check and reason for signing (Bio-Pharma settings)', sw('x2', true, true), 'Set on the Adobe Sign account: every signer confirms their identity when they sign and records a reason for signing, which supports Part 11. Check the settings against the account before go-live.')}
         ${row('Biometrics as part of a signature', sw('x3', false, true), 'Off by decision: face or fingerprint only unlocks the mobile app.')}</form>
-      <form class="card card-pad" data-submit="set-docusign"><h2 class="mb-8">DocuSign allowance</h2>
-        <div class="form-grid"><div class="field"><label for="dsal">Sends a year</label><input class="input" type="number" min="1" id="dsal" name="allowance" value="${st.docusign.allowance}" ${isQm ? '' : 'disabled'}></div>
-          <div class="field"><label for="dsym">Allowance year starts</label><select class="select" id="dsym" name="month" ${isQm ? '' : 'disabled'}>${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(function (m, i) { return h`<option value="${i + 1}" ${st.docusign.yearStartMonth === i + 1 ? 'selected' : ''}>${m}</option>`; })}</select></div>
-          <div class="field"><label for="dswa">Warn the Quality Manager when this many are left</label><input class="input" type="number" min="0" id="dswa" name="warnAt" value="${st.docusign.warnAt}" ${isQm ? '' : 'disabled'}></div></div>
-        <p class="small muted mt-8">This year: ${Q.ds.used()} used, ${Q.ds.remaining()} remaining (${Q.ds.yearRange().label}). Check the figure against the DocuSign contract.</p>
+      <form class="card card-pad" data-submit="set-esign"><h2 class="mb-8">Adobe Sign allowance</h2>
+        <div class="form-grid"><div class="field"><label for="esal">Transactions a year</label><input class="input" type="number" min="1" id="esal" name="allowance" value="${st.esign.allowance}" ${isQm ? '' : 'disabled'}></div>
+          <div class="field"><label for="esym">Allowance year starts</label><select class="select" id="esym" name="month" ${isQm ? '' : 'disabled'}>${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(function (m, i) { return h`<option value="${i + 1}" ${st.esign.yearStartMonth === i + 1 ? 'selected' : ''}>${m}</option>`; })}</select></div>
+          <div class="field"><label for="eswa">Warn the Quality Manager when this many are left</label><input class="input" type="number" min="0" id="eswa" name="warnAt" value="${st.esign.warnAt}" ${isQm ? '' : 'disabled'}></div></div>
+        <p class="small muted mt-8">This year: ${Q.esign.used()} used, ${Q.esign.remaining()} remaining (${Q.esign.yearRange().label}). Each agreement sent is one transaction. 500 is a placeholder until the Adobe Sign contract confirms the number.</p>
         ${isQm ? h`<button class="btn mt-8" type="submit">Save allowance</button>` : ''}</form>
       <div class="card card-pad"><h2 class="mb-8">Read and understood</h2>
         ${row('Statement people confirm', h`<span class="small">${st.ackStatement.replace('{doc}', 'WI-003').replace('{version}', '4.0')}</span>`, 'Not a Part 11 signature. Signed in through Microsoft 365; date and time set by the system; locked once made.')}
@@ -346,11 +343,11 @@
   }
   function setPath(obj, path, val) { var p = path.split('.'); var o = obj; for (var i = 0; i < p.length - 1; i++) o = o[p[i]]; var b = o[p[p.length - 1]]; o[p[p.length - 1]] = val; return b; }
   Q.on['set-toggle'] = function (el) { var k = el.getAttribute('data-key'); var b = setPath(Q.S.settings, k, el.checked); Q.audit('config', 'Setting', k, 'Changed setting ' + k + ' to ' + (el.checked ? 'on' : 'off'), { value: b }, { value: el.checked }); Q.toast('Setting saved · logged'); Q.refresh(); };
-  Q.on['set-docusign'] = function (form) {
-    var f = Q.formData(form), b = Q.clone(Q.S.settings.docusign);
+  Q.on['set-esign'] = function (form) {
+    var f = Q.formData(form), b = Q.clone(Q.S.settings.esign);
     var n = { allowance: Math.max(1, +f.allowance || b.allowance), yearStartMonth: +f.month || 1, warnAt: Math.max(0, +f.warnAt || 0) };
-    Q.S.settings.docusign.allowance = n.allowance; Q.S.settings.docusign.yearStartMonth = n.yearStartMonth; Q.S.settings.docusign.warnAt = n.warnAt;
-    Q.audit('config', 'Setting', 'docusign.allowance', 'Changed DocuSign allowance settings', { allowance: b.allowance, yearStartMonth: b.yearStartMonth, warnAt: b.warnAt }, n);
+    Q.S.settings.esign.allowance = n.allowance; Q.S.settings.esign.yearStartMonth = n.yearStartMonth; Q.S.settings.esign.warnAt = n.warnAt;
+    Q.audit('config', 'Setting', 'esign.allowance', 'Changed Adobe Sign allowance settings', { allowance: b.allowance, yearStartMonth: b.yearStartMonth, warnAt: b.warnAt }, n);
     Q.toast('Allowance saved'); Q.refresh();
   };
   Q.on['set-statement'] = function (form) { var f = Q.formData(form); if (!f.statement || f.statement.indexOf('{meaning}') < 0) return Q.fieldError(form, 'statement', 'Keep {meaning} in the statement.'); var b = Q.S.settings.statement; Q.S.settings.statement = f.statement; Q.audit('config', 'Setting', 'signature.statement', 'Changed the signature statement', { text: b }, { text: f.statement }); Q.toast('Statement saved'); Q.refresh(); };

@@ -29,7 +29,7 @@
     return h`
       <div class="page-head"><div><h1>Documents</h1><div class="sub">Controlled documents register · ${Q.plural(rows.length, 'document')}${hidden ? ' · ' + hidden + ' hidden by classification' : ''}</div></div>
         <div class="btn-row"><button class="btn" data-act="docs-export">${Q.icon('download', 'ico-sm')} Export CSV</button>${Q.can('doc.create') ? h`<button class="btn btn-primary" data-act="new-doc">${Q.icon('plus', 'ico-sm')} New document</button>` : ''}</div></div>
-      ${Q.tip('documents', h`<b>Document Control.</b> Every document moves Draft → In review → Review closed → In approval (one DocuSign envelope) → Effective. Open one to read it, compare versions, comment, or check its approval.`)}
+      ${Q.tip('documents', h`<b>Document Control.</b> Every document moves Draft → In review → Review closed → In approval (one Adobe Sign agreement) → Effective. Open one to read it, compare versions, comment, or check its approval.`)}
       <div class="toolbar" role="search">
         <input class="input search" type="search" placeholder="Search ID, title or tag" value="${q.q || ''}" data-input="docs-search" aria-label="Search documents">
         <select class="select" data-change="qfilter" data-key="type" aria-label="Type"><option value="">All types</option>${Q.DOC_TYPES.map(function (t) { return h`<option ${q.type === t.type ? 'selected' : ''}>${t.type}</option>`; })}</select>
@@ -78,10 +78,10 @@
     var tab = q.tab || 'document';
     var openComments = d.comments.filter(function (c) { return !c.resolved; }).length;
     var reviewer = d.reviewers.find(function (r) { return r.u === me; });
-    var env = Q.ds.active(d.id);
-    var labels = { 'Review closed': 'Review closed · verify and send', 'In approval': env ? 'DocuSign · ' + Q.ds.signedCount(env) + ' of ' + env.signers.length + ' signed' : 'In approval' };
-    var sendBlock = d.state === 'Review closed' ? Q.ds.cantSend(d.id) : 'n/a';
-    var sendPlan = d.state === 'Review closed' && !sendBlock ? Q.ds.plan(d.id) : null;
+    var env = Q.esign.active(d.id, 'doc-approval');
+    var labels = { 'Review closed': 'Review closed · verify and send', 'In approval': env ? 'Adobe Sign · ' + Q.esign.signedCount(env) + ' of ' + env.signers.length + ' signed' : 'In approval' };
+    var sendBlock = d.state === 'Review closed' ? Q.esign.cantSend(d.id, 'doc-approval') : 'n/a';
+    var sendPlan = d.state === 'Review closed' && !sendBlock ? Q.esign.plan(d.id, { stage: 'doc-approval' }) : null;
 
     // Actions in the header (one primary)
     var acts = [];
@@ -93,15 +93,17 @@
         acts.push(h`<button class="btn btn-primary" data-act="doc-submit" data-id="${d.id}">Submit for review</button>`);
       }
       if (d.state === 'In review' && reviewer && reviewer.status === 'Pending') acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="doc-review" data-id="${d.id}">Mark reviewed</button>`);
-      if (d.state === 'Review closed' && !sendBlock) acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="ds-send" data-id="${d.id}">${Q.icon('sign', 'ico-sm')} Verify and send to DocuSign</button>`);
-      if (d.state === 'In approval' && env && Q.ds.myTurn(env)) acts.push(h`<button class="btn btn-primary" data-act="ds-open-sign" data-id="${env.id}">${Q.icon('sign', 'ico-sm')} Sign in DocuSign</button>`);
-      if (d.state === 'In approval' && env && Q.ds.canVoid(env)) acts.push(h`<button class="btn" data-act="ds-void" data-id="${env.id}">Void envelope</button>`);
+      if (d.state === 'Review closed' && !sendBlock) acts.push(h`<button class="btn" data-act="doc-sendback" data-id="${d.id}">Send back to draft</button><button class="btn btn-primary" data-act="es-send" data-id="${d.id}" data-stage="doc-approval">${Q.icon('sign', 'ico-sm')} Verify and send to Adobe Sign</button>`);
+      if (d.state === 'In approval' && env && Q.esign.myTurn(env)) acts.push(h`<button class="btn btn-primary" data-act="es-open-sign" data-id="${env.id}">${Q.icon('sign', 'ico-sm')} Sign in Adobe Sign</button>`);
+      if (d.state === 'In approval' && env && Q.esign.canCancel(env)) acts.push(h`<button class="btn" data-act="es-cancel" data-id="${env.id}">Cancel agreement</button>`);
+      var obs = Q.esign.active(d.id, 'doc-obsolete');
+      if (obs && Q.esign.myTurn(obs)) acts.push(h`<button class="btn btn-primary" data-act="es-open-sign" data-id="${obs.id}">${Q.icon('sign', 'ico-sm')} Sign in Adobe Sign</button>`);
       if ((d.state === 'Effective') && (d.owner === me || d.author === me || Q.hasRole('qm'))) acts.push(h`<button class="btn" data-act="doc-newver" data-id="${d.id}">New version</button>`);
-      if (d.state === 'Effective' && Q.hasRole('qm')) acts.push(h`<button class="btn btn-danger" data-act="doc-obsolete" data-id="${d.id}">Make obsolete</button>`);
+      if (d.state === 'Effective' && Q.hasRole('qm') && !obs) acts.push(h`<button class="btn btn-danger" data-act="doc-obsolete" data-id="${d.id}">Make obsolete</button>`);
     }
     acts.push(h`<button class="btn" data-act="doc-download" data-id="${d.id}" data-v="${verSel.v}">${Q.icon('download', 'ico-sm')} PDF</button>`);
 
-    var tabs = [['document', 'Document'], ['compare', 'Compare versions'], ['comments', 'Comments · ' + d.comments.length], ['history', 'Version history'], ['approval', 'Approval · DocuSign'], ['training', 'Training']];
+    var tabs = [['document', 'Document'], ['compare', 'Compare versions'], ['comments', 'Comments · ' + d.comments.length], ['history', 'Version history'], ['approval', 'Approval · Adobe Sign'], ['training', 'Training']];
     var content;
     if (tab === 'compare') content = compareTab(d, q);
     else if (tab === 'comments') content = commentsTab(d, q);
@@ -122,7 +124,7 @@
         </div>
         <div class="btn-row">${acts}</div>
       </div>
-      ${sendPlan && sendPlan.problems.length ? h`<div class="callout warn mb-16"><strong>Check before sending to DocuSign.</strong>${sendPlan.problems.map(function (x) { return h` ${x}`; })}</div>` : ''}
+      ${sendPlan && sendPlan.problems.length ? h`<div class="callout warn mb-16"><strong>Check before sending to Adobe Sign.</strong>${sendPlan.problems.map(function (x) { return h` ${x}`; })}</div>` : ''}
       ${d.state === 'Review closed' && sendBlock && sendBlock !== 'n/a' && !Q.readOnly() && (d.owner === me || d.author === me) ? h`<div class="callout warn mb-16"><strong>Can’t send yet.</strong> ${sendBlock}</div>` : ''}
       ${d.state !== 'Obsolete' ? h`<div class="card mb-16">${Q.stepper(DOC_STATES, d.state, labels, { allDone: d.state === 'Effective' })}</div>` : h`<div class="callout warn mb-16"><strong>Obsolete.</strong> ${d.obsoleteReason || ''} Archived, not deleted; it stays in the register and audit trail.</div>`}
       <div class="split">
@@ -137,7 +139,7 @@
             ${d.state === 'In approval' ? h`<div><dt>Approval due</dt><dd class="${Q.daysFromToday(d.approvalDue) < 0 ? 'st-overdue' : ''}" style="font-weight:${Q.daysFromToday(d.approvalDue) < 0 ? 600 : 400}">${Q.fmtShort(d.approvalDue)}${Q.daysFromToday(d.approvalDue) < 0 ? ' · overdue' : ''}</dd></div>` : d.state === 'In review' ? h`<div><dt>Review due</dt><dd>${Q.fmtShort(d.reviewDue)}</dd></div>` : h`<div><dt>Effective date</dt><dd>${Q.fmtDate(d.effective)}</dd></div>`}
             <div><dt>Periodic review</dt><dd>${effMonths}${nextReview ? h`<br><a class="small" href="#/reviews/${nextReview.id}">Next: ${Q.fmtShort(nextReview.due)}</a>` : ''}</dd></div>
             <div><dt>Tags</dt><dd>${d.tags.join(', ') || '—'}</dd></div>
-            <div><dt>Approved</dt><dd>${v.approvedAt ? Q.fmtDate(v.approvedAt) + (v.envelope ? ' · DocuSign' : v.migrated ? ' · KSTARRS' : '') : '—'}</dd></div>
+            <div><dt>Approved</dt><dd>${v.approvedAt ? Q.fmtDate(v.approvedAt) + (v.agreement ? ' · Adobe Sign' : v.migrated ? ' · KSTARRS' : '') : '—'}</dd></div>
             <div><dt>Training audience</dt><dd>${Q.audienceText(Q.audienceOf(d))}</dd></div>
             <div><dt>Last review closed</dt><dd>${(function () { var rs = d.reviewers.filter(function (r) { return r.at; }).map(function (r) { return r.at; }).sort(); return rs.length ? Q.fmtShort(rs[rs.length - 1]) : '—'; })()}</dd></div>
           </dl></div>
@@ -145,12 +147,12 @@
             ${Q.peopleRow(d.author, 'Author', d.state === 'Draft' ? 'Drafting' : 'Submitted', 'st-wait')}
             ${d.reviewers.map(function (r, i) { return Q.peopleRow(r.u, 'Reviewer', r.status === 'Pending' ? (r.u === me ? 'Your turn' : 'Reviewing') : r.status, r.status === 'Reviewed' ? 'st-done' : r.status === 'Pending' ? 'st-turn' : 'st-wait'); })}
             ${d.approvers.map(function (a, i) {
-              var st = a.status === 'Waiting' && d.state !== 'Draft' && d.state !== 'Effective' ? 'Waiting · FYI sent' : a.status === 'Your turn' && a.u !== me ? 'Signing in DocuSign' : a.status;
+              var st = a.status === 'Waiting' && d.state !== 'Draft' && d.state !== 'Effective' ? 'Waiting · FYI sent' : a.status === 'Your turn' && a.u !== me ? 'Signing in Adobe Sign' : a.status;
               return Q.peopleRow(a.u, d.approvers.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', st, a.status === 'Signed' ? 'st-done' : a.status === 'Your turn' ? 'st-turn' : 'st-wait');
             })}
-            <div class="small muted mt-8">${d.reviewRoute === 'sequential' ? 'Sequential' : 'Parallel'} review · DocuSign signing order: author, reviewers, then QA approver</div>
+            <div class="small muted mt-8">${d.reviewRoute === 'sequential' ? 'Sequential' : 'Parallel'} review · Adobe Sign signing order: author, reviewers, then QA approver</div>
           </div>
-          ${Q.ds.recordCard(d.id)}
+          ${Q.esign.recordCard(d.id)}
           ${Q.linkedCard(d.id)}
           ${Q.activityCard(d.id)}
         </aside>
@@ -185,10 +187,10 @@
     };
     var manifest = sigs.length ? h`<div class="page" style="transform:scale(${zoom / 100})">
       ${wm ? h`<div class="watermark" aria-hidden="true">${wm}</div>` : ''}
-      <h2>Signature manifest</h2><div class="doc-meta"><span>${d.id} ${d.title} · v${v.v}</span><span>${v.envelope ? 'DocuSign envelope ' + v.envelope.slice(0, 8) + '…' : v.migrated ? 'Migrated from KSTARRS' : 'Content SHA-256 below'}</span></div>
+      <h2>Signature manifest</h2><div class="doc-meta"><span>${d.id} ${d.title} · v${v.v}</span><span>${v.agreement ? 'Adobe Sign agreement ' + v.agreement.slice(0, 8) + '…' : v.migrated ? 'Migrated from KSTARRS' : 'Content SHA-256 below'}</span></div>
       <p>Each row is rendered from the stored signature record, not typed. Signatures cannot be edited or detached from this version.</p>
       <table class="manifest-table"><thead><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr></thead><tbody>
-      ${sigs.map(function (s) { return h`<tr><td>${Q.fullName(s.user)}</td><td>${s.meaning}</td><td>${Q.fmtUtc(s.at)}</td><td>${s.source === 'DocuSign' ? 'DocuSign · ' + s.id : s.source === 'KSTARRS' ? 'KSTARRS · ' + s.id : s.id}</td></tr>`; })}</tbody></table>
+      ${sigs.map(function (s) { return h`<tr><td>${Q.fullName(s.user)}</td><td>${s.meaning}</td><td>${Q.fmtUtc(s.at)}</td><td>${s.source === 'Adobe Sign' ? 'Adobe Sign · ' + s.id : s.source === 'KSTARRS' ? 'KSTARRS · ' + s.id : s.id}</td></tr>`; })}</tbody></table>
       <h3>Signature statement</h3><p>${sigs[0].statement || Q.statementFor('Approved')}</p>
       <h3>Content fingerprint (SHA-256)</h3><p style="font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all">${v.hash}</p>
       <div class="footer-line">Viewed by ${me.name} on ${Q.fmtDate(new Date())}. · Page ${totalPages} of ${totalPages}</div></div>` : '';
@@ -266,20 +268,20 @@
         { key: 'createdBy', label: 'Author', render: function (x) { return Q.fullName(x.createdBy); } },
         { key: 'approvedAt', label: 'Approved', render: function (x) { return x.approvedAt ? Q.fmtDate(x.approvedAt) : '—'; } },
         { key: 'sig', label: 'Signatures', sort: false, render: function (x) { return x.signatures.length ? x.signatures.map(function (s) { return Q.user(s.user).initials; }).join(', ') : '—'; } },
-        { key: 'envelope', label: 'Approval record', sort: false, render: function (x) { return x.envelope ? h`<button class="btn-link" style="padding:0;min-height:0;font-size:13px" data-act="ds-env" data-id="${x.envelope}">DocuSign ${x.envelope.slice(0, 8)}…</button>` : x.migrated ? h`<span class="small muted">KSTARRS (migrated)</span>` : '—'; } },
+        { key: 'agreement', label: 'Approval record', sort: false, render: function (x) { return x.agreement ? h`<button class="btn-link" style="padding:0;min-height:0;font-size:13px" data-act="es-agreement" data-id="${x.agreement}">Adobe Sign ${x.agreement.slice(0, 8)}…</button>` : x.migrated ? h`<span class="small muted">KSTARRS (migrated)</span>` : '—'; } },
         { key: 'hash', label: 'SHA-256', sort: false, render: function (x) { return h`<span class="mono" title="${x.hash}">${x.hash.slice(0, 12)}…</span>`; } },
         { key: 'go', label: '', sort: false, render: function (x) { return h`<button class="btn btn-sm" data-act="tab" data-key="v" data-tab="${x.v}">View</button>`; } }
       ]
     });
   }
   function approvalTab(d) {
-    var envs = Q.ds.forRecord(d.id);
+    var envs = Q.esign.forRecord(d.id);
     var migrated = d.versions.filter(function (v) { return v.migrated; });
-    return h`${envs.length ? Q.table({ id: 'denv-' + d.id, rows: envs, defaultSort: 'sentAt', defaultDir: -1,
-        cols: [{ key: 'version', label: 'Version', render: function (e) { return 'v' + e.version; } }, { key: 'sentAt', label: 'Sent', render: function (e) { return Q.fmtDateTime(e.sentAt); } }, { key: 'sentBy', label: 'Sent by', render: function (e) { return Q.fullName(e.sentBy); } },
-          { key: 'status', label: 'Status', render: function (e) { return h`${Q.ds.statusChip(e)}${e.correctionOf ? h` <span class="chip chip-due">Correction</span>` : ''}`; } }, { key: 'signed', label: 'Signed', sort: false, render: function (e) { return Q.ds.signedCount(e) + ' of ' + e.signers.length; } },
-          { key: 'files', label: 'Stored files', sort: false, render: function (e) { return e.signedPdf ? h`<span class="row-wrap"><button class="btn btn-sm" data-act="ds-signed" data-id="${e.id}">Signed PDF</button><button class="btn btn-sm" data-act="ds-cert" data-id="${e.id}">Certificate</button></span>` : h`<span class="small muted">${e.status === 'sent' ? 'When completed' : e.declineReason || e.voidReason || '—'}</span>`; } },
-          { key: 'id', label: '', sort: false, render: function (e) { return h`<button class="btn btn-sm" data-act="ds-env" data-id="${e.id}">Details</button>`; } }] }) : Q.empty('No DocuSign envelopes yet', d.state === 'Review closed' ? 'Verify the PDF and send it to DocuSign.' : 'An envelope is sent once review closes.')}
+    return h`${envs.length ? Q.table({ id: 'dag-' + d.id, rows: envs, defaultSort: 'sentAt', defaultDir: -1,
+        cols: [{ key: 'version', label: 'Version', render: function (e) { return 'v' + e.version; } }, { key: 'purpose', label: 'Purpose' }, { key: 'sentAt', label: 'Sent', render: function (e) { return Q.fmtDateTime(e.sentAt); } }, { key: 'sentBy', label: 'Sent by', render: function (e) { return Q.fullName(e.sentBy); } },
+          { key: 'status', label: 'Status', render: function (e) { return h`${Q.esign.statusChip(e)}${e.correctionOf ? h` <span class="chip chip-due">Correction</span>` : ''}`; } }, { key: 'signed', label: 'Signed', sort: false, render: function (e) { return Q.esign.signedCount(e) + ' of ' + e.signers.length; } },
+          { key: 'files', label: 'Stored files', sort: false, render: function (e) { return e.signedPdf ? h`<span class="row-wrap"><button class="btn btn-sm" data-act="es-signed" data-id="${e.id}">Signed PDF</button><button class="btn btn-sm" data-act="es-audit-report" data-id="${e.id}">Audit report</button></span>` : h`<span class="small muted">${e.status === 'sent' ? 'When completed' : e.declineReason || e.cancelReason || '—'}</span>`; } },
+          { key: 'id', label: '', sort: false, render: function (e) { return h`<button class="btn btn-sm" data-act="es-agreement" data-id="${e.id}">Details</button>`; } }] }) : Q.empty('No Adobe Sign agreements yet', d.state === 'Review closed' ? 'Verify the PDF and send it to Adobe Sign.' : 'An agreement is sent once review closes.')}
       ${migrated.length ? h`<p class="small muted mt-16">${migrated.map(function (v) { return 'v' + v.v; }).join(', ')} ${migrated.length > 1 ? 'were' : 'was'} approved in KSTARRS before go-live. Those signatures are kept as migrated records on the version history.</p>` : ''}`;
   }
 
@@ -357,7 +359,7 @@
         <div class="form-grid mb-16"><div class="field"><label for="a1">QA approver</label><select class="select" id="a1" name="a1">${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[0] && d.approvers[0].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
           <div class="field"><label for="a2">Second QA approver (optional)</label><select class="select" id="a2" name="a2"><option value="">None</option>${approverUsers.map(function (u) { return h`<option value="${u.id}" ${d.approvers[1] && d.approvers[1].u === u.id ? 'selected' : ''}>${u.name}</option>`; })}</select></div>
           <div class="field"><label for="rd">Review due</label><input class="input" type="date" id="rd" name="reviewDue" value="${Q.dayIso(5).slice(0, 10)}"></div></div>
-        <div class="callout"><strong>What happens next</strong><p class="small" style="margin:4px 0 0">Reviewers comment and mark the document reviewed here. When review closes, the owner checks the PDF and sends one DocuSign envelope: you sign first as author, then the reviewers, then the QA approver. The document becomes effective when the envelope completes.</p></div>`,
+        <div class="callout"><strong>What happens next</strong><p class="small" style="margin:4px 0 0">Reviewers comment and mark the document reviewed here. When review closes, the owner checks the PDF and sends one Adobe Sign agreement: you sign first as author, then the reviewers, then the QA approver. The document becomes effective when the agreement completes.</p></div>`,
       submit: function (f, form) {
         if (f.a2 && f.a2 === f.a1) return Q.fieldError(form, 'a2', 'Choose two different approvers.');
         if ((f.reviewers || []).indexOf(f.a1) >= 0 || (f.a2 && (f.reviewers || []).indexOf(f.a2) >= 0)) return Q.toast('A QA approver can’t also be a reviewer.', 'warn');
@@ -365,7 +367,7 @@
         d.approvers = [f.a1].concat(f.a2 ? [f.a2] : []).map(function (u) { return { u: u, status: 'Waiting' }; });
         d.route = 'sequential';
         d.reviewDue = f.reviewDue ? new Date(f.reviewDue + 'T17:00:00').toISOString() : Q.dayIso(5);
-        Q.wf.doc.submitForReview(d); Q.drawer.close(); Q.toast(d.reviewers.length ? 'Submitted. ' + Q.plural(d.reviewers.length, 'reviewer') + ' notified.' : 'Submitted. Review closed: verify the PDF and send it to DocuSign.'); Q.refresh();
+        Q.wf.doc.submitForReview(d); Q.drawer.close(); Q.toast(d.reviewers.length ? 'Submitted. ' + Q.plural(d.reviewers.length, 'reviewer') + ' notified.' : 'Submitted. Review closed: verify the PDF and send it to Adobe Sign.'); Q.refresh();
       }
     });
   };
@@ -393,24 +395,30 @@
       kicker: d.id + ' · v' + v.v + ' effective', title: 'Start a new version', submitLabel: 'Start draft',
       body: h`<fieldset class="mb-16"><legend>Kind of change</legend><div class="radio-cards">
           <label class="radio-card"><input type="radio" name="kind" value="major" checked><span><b>Major</b><br><span class="small muted">Changes what people must do. Everyone in the training audience is allocated the new version.</span></span></label>
-          <label class="radio-card"><input type="radio" name="kind" value="minor"><span><b>Minor</b><br><span class="small muted">Wording, layout or corrections only. Still approved through DocuSign; the audience is allocated the new version.</span></span></label></div></fieldset>
+          <label class="radio-card"><input type="radio" name="kind" value="minor"><span><b>Minor</b><br><span class="small muted">Wording, layout or corrections only. Still approved through Adobe Sign; the audience is allocated the new version.</span></span></label></div></fieldset>
         <div class="field"><label for="ns">Why are you changing it? (required)</label><textarea class="textarea" id="ns" name="summary"></textarea></div>
         <p class="small muted mt-16">v${v.v} stays Effective until the new version is approved.</p>`,
       submit: function (f, form) { if (!f.summary) return Q.fieldError(form, 'summary', 'Say why the document is changing.'); var nv = Q.wf.doc.newVersion(d, f.kind, f.summary); Q.drawer.close(); Q.toast('Draft v' + nv.v + ' started and checked out to you'); Q.refresh(); }
     });
   };
+  // Making a document obsolete is a sign-off: write the reason, then sign it in Adobe Sign.
   Q.act['doc-obsolete'] = function (el) {
-    var d = D(el), v = Q.effVer(d) || Q.curVer(d);
-    Q.sign({ items: [{ id: d.id, version: v.v, hash: v.hash }], meaning: 'Approved', meanings: ['Approved'], title: 'Make ' + d.id + ' obsolete',
-      extra: function () { return h`<div class="callout warn mb-16"><strong>This can’t be undone from the app.</strong><p class="small" style="margin:4px 0 0">The document is archived, not deleted. Training rules stop assigning it.</p></div><div class="field mb-16"><label for="or">Reason (required)</label><textarea class="textarea" id="or" name="reason"></textarea></div>`; },
-      validate: function (f) { return f.reason ? null : { field: 'reason', msg: 'Give a reason.' }; },
-      onSigned: function (s, f) { Q.wf.doc.obsolete(d, f.reason); Q.toast(d.id + ' is obsolete'); } });
+    var d = D(el);
+    var block = Q.esign.cantSend(d.id, 'doc-obsolete'); if (block) { Q.toast(block, 'warn'); return; }
+    Q.drawer.open({ kicker: d.id + ' · obsolete', title: 'Make ' + d.id + ' obsolete', submitLabel: 'Continue to Adobe Sign',
+      body: h`<div class="callout warn mb-16"><strong>This can’t be undone from the app.</strong><p class="small" style="margin:4px 0 0">The document is archived, not deleted. Open training for it closes. It becomes obsolete when you sign the Adobe Sign agreement.</p></div><div class="field mb-16"><label for="or">Reason (required)</label><textarea class="textarea" id="or" name="reason">${(d.pendingObsolete || {}).reason || ''}</textarea></div>`,
+      submit: function (f, form) {
+        if (!f.reason) return Q.fieldError(form, 'reason', 'Give a reason.');
+        d.pendingObsolete = { reason: f.reason, by: Q.S.session.userId, at: new Date().toISOString() };
+        Q.audit('update', 'Document', d.id, 'Asked to make ' + d.id + ' obsolete (to be signed in Adobe Sign). Reason: ' + f.reason);
+        Q.save(); Q.drawer.close(); Q.esign.openSend(d.id, 'doc-obsolete');
+      } });
   };
-  function docHtml(d, v, bare) { // bare: the PDF that goes into the DocuSign envelope
+  function docHtml(d, v, bare) { // bare: the PDF that goes into the Adobe Sign agreement
     var me = Q.me(); var wm = bare ? null : WATERMARK[v.state];
     var body = '<h1>' + Q.esc(d.id + ' ' + d.title) + '</h1><p><b>Version ' + v.v + '</b> · ' + Q.esc(v.state) + ' · ' + Q.esc(d.classification.toUpperCase()) + ' · Owner: ' + Q.esc(Q.fullName(d.owner)) + '</p>' + (wm ? '<div class="wm">' + wm + '</div>' : '') +
       v.content.map(function (b) { return b.t === 'h' ? '<h2>' + Q.esc(b.x) + '</h2>' : '<p>' + Q.esc(b.x) + '</p>'; }).join('');
-    if (v.signatures.length && !bare) body += '<h2 style="page-break-before:always">Signature manifest</h2>' + (v.envelope ? '<p>Approved through DocuSign · envelope <span class="mono">' + v.envelope + '</span></p>' : v.migrated ? '<p>Approved in KSTARRS before go-live (migrated record).</p>' : '') + '<table><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr>' + v.signatures.map(function (s) { return '<tr><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + Q.esc(s.meaning) + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + (s.source ? s.source + ' · ' : '') + s.id + '</td></tr>'; }).join('') + '</table><p>' + Q.esc(v.signatures[0].statement || Q.statementFor('Approved')) + '</p><p>Content SHA-256: <span class="mono">' + v.hash + '</span></p>';
+    if (v.signatures.length && !bare) body += '<h2 style="page-break-before:always">Signature manifest</h2>' + (v.agreement ? '<p>Approved through Adobe Sign · agreement <span class="mono">' + v.agreement + '</span></p>' : v.migrated ? '<p>Approved in KSTARRS before go-live (migrated record).</p>' : '') + '<table><tr><th>Signer</th><th>Meaning</th><th>Signed (UTC)</th><th>Signature</th></tr>' + v.signatures.map(function (s) { return '<tr><td>' + Q.esc(Q.fullName(s.user)) + '</td><td>' + Q.esc(s.meaning) + '</td><td>' + Q.fmtUtc(s.at) + '</td><td>' + (s.source ? s.source + ' · ' : '') + s.id + '</td></tr>'; }).join('') + '</table><p>' + Q.esc(v.signatures[0].statement || Q.statementFor('Approved')) + '</p><p>Content SHA-256: <span class="mono">' + v.hash + '</span></p>';
     body += bare ? '<div class="foot">' + Q.esc(d.id) + ' · version ' + Q.esc(v.v) + ' · Page 1 of 1</div>' : '<div class="foot">Downloaded by ' + Q.esc(me.name) + ' on ' + Q.fmtDate(new Date()) + ' (' + Q.fmtUtc(new Date().toISOString()) + '). Uncontrolled when printed.</div>';
     return body;
   }
