@@ -6,7 +6,8 @@
 |---|---|---|
 | Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
 | Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, training-record locks, import mode refused for the API, agreement rules, allowance, version locks, insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, cancel, decline, correction transactions, closures, webhooks-style status sync, training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 69 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, cancel, decline, correction transactions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 73 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, and that a notification only triggers a status read: 7 checks | as the API flow test |
 | UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
 CI (`.github/workflows/platform-ci.yml`) runs all of them on every push: the first three with a PostgreSQL 16 service,
@@ -20,14 +21,17 @@ packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), a
 
 - **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
   the domain tests (15 of 15); the database invariants on PostgreSQL 16 (all 10 groups); migrate twice (the second run
-  is a no-op) and seed; the API flow test (69 of 69). These are the steps CI runs.
+  is a no-op) and seed; the API flow test (73 of 73) and the webhook route test (7 of 7). These are the steps CI runs.
+- **CI on GitHub:** both jobs (checks, and the browser tests against `docker compose`) passed on the pull request.
+- **Bicep:** `infra/main.bicep` compiles and lints with no errors or warnings (Bicep CLI 0.49.2). It has not been
+  deployed.
 - **Docker:** both images build, and `docker compose up --build` starts the database, runs the migrations and seed,
   and serves the API and web app.
 - **In a browser:** the nine UAT scenarios pass against that stack (Playwright, Chromium), and the audit chain
   verifies afterwards. A crawl of every page and every linked record as each of the 12 personas (1,086 page loads)
   found no server errors after the fixes below. One crawl run logged a 400 on a sub-resource for one persona on two
   pages, and one React hydration warning; neither came back on a rerun, and the cause isn't known.
-- **Not run yet:** CI on GitHub itself, the Bicep and the deploy workflow, Microsoft Entra sign-in, Adobe Sign live
+- **Not run yet:** deploying the Bicep, the deploy workflow, Microsoft Entra sign-in, Adobe Sign live
   mode, Microsoft Graph email, Azure Blob storage. Firefox, Safari and screen readers are untested.
 
 Found and fixed during that work:
@@ -53,7 +57,12 @@ Then upgraded to Next.js 16 and zod 4 to clear two package advisories (`postcss`
 memory-exhaustion issue in `zod` 3); `npm audit` reports none. The upgrade renamed `middleware.ts` to `proxy.ts`
 (Next.js 16), and the API now checks IDs with `z.guid()`: zod 4's `z.uuid()` refuses UUIDs whose version bits aren't
 RFC 9562 ones, which PostgreSQL accepts (the demo seed has many). Every check above passed again after the upgrade.
-Showing a transaction page that segregation of duties blocks is now logged (UAT scenario 1).
+Showing a send page that segregation of duties blocks is now logged (UAT scenario 1).
+
+Then switched from DocuSign to Adobe Sign (every signature except read-and-understood training). The mock path, which
+the tests and UAT use, is the same code as live apart from the Adobe Sign client. All the checks above passed again
+after the switch. The live Adobe Sign client has not run against Adobe Sign: see the "Verify before go-live" list in
+[06 · Adobe Sign](06-adobe-sign.md).
 
 ## Before go-live
 
@@ -75,13 +84,13 @@ Use the demo seed (`npm run db:seed`, never in production). Personas sign in wit
    the plan shows the problem and the Send button is disabled; being shown the block is logged (`sod.block`, "Send page
    shown with sending blocked"). If the form is sent anyway (the browser test does this), the API refuses it and that
    refusal is logged too.
-2. Victoria transactions VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
+2. Victoria sends VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
    becomes Effective; Carrie and Omar have completed training records; the IT team has VP-001 to read.
-3. Jim voids POL-004 with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim transactions a corrected
+3. Jim cancels POL-004's agreement with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim sends a corrected
    agreement (a new transaction, linked to the cancelled one). Carrie declines with a reason; POL-004 returns to Draft again.
 4. Daniel reads SOP-012, answers the quiz and confirms. He can't confirm twice. Victoria corrects his record with a
    reason and asks him to retrain: the original stays, marked Corrected.
-5. Carrie records the CAPA-005 effectiveness result and transactions the closure; Carrie and Victoria sign; CAPA-005 and
+5. Carrie records the CAPA-005 effectiveness result and sends the closure; Carrie and Victoria sign; CAPA-005 and
    QE-013 close.
 6. Louise writes the QE-017 justification and sends the closure; Victoria declines; Louise resends; both sign;
    QE-017 closes.
