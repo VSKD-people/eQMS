@@ -4,9 +4,11 @@
 // A reviewer or approver can return the draft to its author at any point before signing.
 import { createHash } from 'node:crypto';
 import { rows, one, maybe, type Db } from '@veqms/db';
-import { DOC_TYPES, can, canBeApprover, verificationComplete, type Role, type Verification } from '@veqms/domain';
+import { DOC_TYPES, can, canBeApprover, docx, verificationComplete, type Role, type Verification } from '@veqms/domain';
 import type { Storage } from '../integrations/storage.ts';
-import { checkPlan, documentPlan, renderDocumentPdf } from './plans.ts';
+import type { SharePoint } from '../integrations/sharepoint.ts';
+import { checkPlan, documentPlan, renderDocumentPdf, signerLines } from './plans.ts';
+import { wordPdfWithSignatures } from './pdf.ts';
 import { badRequest, conflict, forbidden, logged, notFound } from '../lib/http.ts';
 import { canSee, people, ref, type Person } from '../lib/people.ts';
 import { addTask, audit, closeTasks, notify, dueIn } from '../lib/work.ts';
@@ -18,9 +20,25 @@ export const sha256 = (v: unknown) => createHash('sha256').update(typeof v === '
 export interface DocRow {
   id: string; number: string; doc_type: string; title: string; state: string; classification: string; owner_id: string; author_id: string;
   process: string; tags: string[]; effective_at: Date | null; approval_due: Date | null; review_due: Date | null; updated_at: Date; periodic_months: number;
+  draft_item_id: string | null; draft_web_url: string | null; draft_edited_at: Date | null;
 }
 export interface VersionRow { id: string; version: string; kind: string; state: string; summary: string; content: Block[]; content_sha256: string; created_at: Date; approved_at: Date | null; agreement_id: string | null; migrated_from: string | null;
-  pdf_blob: string | null; verification: (Verification & { by: string; at: string }) | null; retrain: boolean; retrain_reason: string | null; change_request_id: string | null }
+  pdf_blob: string | null; verification: (Verification & { by: string; at: string }) | null; retrain: boolean; retrain_reason: string | null; change_request_id: string | null;
+  pdf_source_tag: string | null; published_item_id: string | null; published_web_url: string | null; published_at: Date | null; publish_status: string }
+
+// Live SharePoint: documents are written in Word, in the Drafts library. Each document has one Word file, edited
+// version after version; a new document starts from its template's headings with a footer the author keeps up to date.
+const wordMode = (sp: SharePoint | undefined, d: { draft_item_id: string | null }): sp is SharePoint => sp?.mode === 'live' && !!d.draft_item_id;
+async function ensureWordFile(db: Db, sp: SharePoint | undefined, d: { id: string; number: string; title: string; classification: string; owner_id: string }, version: string, sections: string[]): Promise<void> {
+  if (sp?.mode !== 'live') return;
+  const has = await maybe<{ draft_item_id: string | null }>(db, 'select draft_item_id from app.documents where id = $1', [d.id]);
+  if (has?.draft_item_id) return;
+  const [owner] = await people(db, [d.owner_id]);
+  const name = `${d.number} ${d.title}`.replace(/["*:<>?/\\|#%]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + '.docx';
+  const item = await sp.createDraft(name, docx({ number: d.number, title: d.title, version, classification: d.classification, owner: owner?.name ?? '', sections }));
+  await db.query('update app.documents set draft_item_id = $2, draft_web_url = $3 where id = $1', [d.id, item.id, item.webUrl]);
+  await audit(db, 'create', 'Document', d.number, `Created the Word file ${name} in the SharePoint Drafts library`, null, { itemId: item.id });
+}
 
 // Every amendment starts as a change request (Phase 1 keeps it minimal: it is opened with the version it produces and
 // closes when that version is Effective; full change control is Phase 2).
@@ -100,7 +118,9 @@ export async function detail(db: Db, me: Person, number: string, agreementSummar
   return {
     id: d.id, number: d.number, title: d.title, docType: d.doc_type, state: d.state, classification: d.classification, process: d.process, tags: d.tags,
     owner: ref(owner), author: ref(author), effectiveAt: d.effective_at, approvalDue: d.approval_due,
-    versions: versions.map((v) => ({ id: v.id, version: v.version, kind: v.kind, state: v.state, summary: v.summary, createdAt: v.created_at, approvedAt: v.approved_at, agreementId: v.agreement_id, migratedFrom: v.migrated_from })),
+    versions: versions.map((v) => ({ id: v.id, version: v.version, kind: v.kind, state: v.state, summary: v.summary, createdAt: v.created_at, approvedAt: v.approved_at, agreementId: v.agreement_id, migratedFrom: v.migrated_from,
+      published: v.publish_status === 'none' ? null : { status: v.publish_status, webUrl: v.published_web_url, at: v.published_at } })),
+    draft: d.draft_item_id ? { webUrl: d.draft_web_url, editedAt: d.draft_edited_at } : null,
     current: { version: cur.version, state: cur.state, summary: cur.summary, content: cur.content, contentSha256: cur.content_sha256,
       pdf: cur.pdf_blob ? { sha256: cur.content_sha256, checkedAt: cur.verification?.at ?? null } : null,
       retrain: cur.retrain, retrainReason: cur.retrain_reason, changeRequest: cr },
@@ -123,7 +143,7 @@ export async function detail(db: Db, me: Person, number: string, agreementSummar
 }
 
 export async function create(db: Db, me: Person, input: { docType: string; title: string; classification: string; ownerId: string; process: string; tags?: string[];
-  audience?: { groups: string[]; roles: Role[]; users: string[]; daysToComplete: number; quiz: boolean } }) {
+  audience?: { groups: string[]; roles: Role[]; users: string[]; daysToComplete: number; quiz: boolean } }, sp?: SharePoint) {
   if (!can(me.roles, 'doc.create')) throw forbidden('Your role can’t create documents.');
   const t = DOC_TYPES.find((x) => x.type === input.docType);
   if (!t) throw badRequest('Unknown document type.');
@@ -136,16 +156,24 @@ export async function create(db: Db, me: Person, input: { docType: string; title
     values (app.current_tenant(), $1, '0.1', 'major', 'Draft', 'First draft.', $2, $3, $4) returning id`, [d.id, JSON.stringify(content), sha256(content), me.id]);
   await audit(db, 'create', 'Document', number, `Created ${number} ${input.title}${tpl ? ' from the approved template' : ''}`, null, { title: input.title, classification: input.classification });
   await openChangeRequest(db, me, { number, title: input.title, process: input.process }, v0.id, '0.1', 'New document', 'Major');
+  await ensureWordFile(db, sp, { id: d.id, number, title: input.title, classification: input.classification, owner_id: input.ownerId }, '0.1', tpl?.sections ?? ['1. Purpose']);
   if (input.audience) await setAudience(db, me, d.id, input.audience);
   await addTask(db, { kind: 'author', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: me.id, dueAt: dueIn(7) });
   return { id: d.id, number };
 }
 
-export async function saveDraft(db: Db, me: Person, number: string, content: Block[], summary: string) {
+// content: the in-app text (mock SharePoint, development only). null: only the change summary (live: the text is in Word).
+export async function saveDraft(db: Db, me: Person, number: string, content: Block[] | null, summary: string, sp?: SharePoint) {
   const d = await docByNumber(db, number);
   if (d.state !== 'Draft') throw conflict('Only a draft can be edited.');
   if (![d.author_id, d.owner_id].includes(me.id)) throw forbidden('Only the author or owner can edit the draft.');
   const v = await currentVersion(db, d.id);
+  if (content === null || wordMode(sp, d)) {
+    if (content !== null) throw badRequest(`${number} is written in Word: open it from the SharePoint Drafts library.`);
+    await db.query('update app.document_versions set summary = $2 where id = $1', [v.id, summary]);
+    await audit(db, 'checkin', 'Document', number, `Change summary of v${v.version}: ${summary}`, { summary: v.summary }, { summary });
+    return;
+  }
   // A PDF made from the old text no longer matches it: it has to be made and checked again.
   await db.query('update app.document_versions set content = $2, content_sha256 = $3, summary = $4, pdf_blob = null, verification = null where id = $1', [v.id, JSON.stringify(content), sha256(content), summary]);
   await audit(db, 'checkin', 'Document', number, `Saved draft v${v.version}: ${summary}`, { sha256: v.content_sha256 }, { sha256: sha256(content) });
@@ -154,7 +182,7 @@ export async function saveDraft(db: Db, me: Person, number: string, content: Blo
 // Submit, step 1: choose reviewers and QA approvers, then convert the draft to PDF, hash it and lock it. The PDF carries
 // a signature field for each signer, so it is made once the signers are known. From here the locked PDF is what is
 // checked, reviewed, approved, signed and published; content_sha256 becomes its hash. Editing the draft clears it.
-export async function preparePdf(db: Db, me: Person, storage: Storage, number: string, reviewerIds: string[], approverIds: string[]) {
+export async function preparePdf(db: Db, me: Person, storage: Storage, number: string, reviewerIds: string[], approverIds: string[], sp?: SharePoint) {
   const d = await docByNumber(db, number);
   if (d.state !== 'Draft') throw conflict('Only a draft can be submitted.');
   if (![d.author_id, d.owner_id].includes(me.id)) throw forbidden('Only the author or owner can submit it.');
@@ -171,18 +199,31 @@ export async function preparePdf(db: Db, me: Person, storage: Storage, number: s
   await db.query('delete from app.document_approvers where document_id = $1', [d.id]);
   for (const r of reviewers) await db.query(`insert into app.document_reviewers (tenant_id, document_id, user_id) values (app.current_tenant(), $1, $2)`, [d.id, r]);
   for (const [i, a] of approverIds.entries()) await db.query(`insert into app.document_approvers (tenant_id, document_id, user_id, position) values (app.current_tenant(), $1, $2, $3)`, [d.id, a, i + 1]);
-  const pdf = await renderDocumentPdf(db, d, v, plan, ps);
+  let pdf: Uint8Array, source: string | null = null;
+  if (wordMode(sp, d)) {
+    // The Word file converted by SharePoint, then the signature page. Its change tag before and after the conversion
+    // must match, so the PDF is of one state of the file; submit checks the tag again.
+    const before = await sp.getItem('drafts', d.draft_item_id!);
+    if (!before) throw conflict(`The Word file of ${number} is missing from the SharePoint Drafts library.`);
+    const converted = await sp.pdfOf(d.draft_item_id!);
+    const after = await sp.getItem('drafts', d.draft_item_id!);
+    if (after?.cTag !== before.cTag) throw conflict('The Word file changed while it was being converted. Make the PDF again.');
+    pdf = await wordPdfWithSignatures(converted, { number: d.number, version: v.version, signers: signerLines(plan, ps) });
+    source = before.cTag;
+  } else {
+    pdf = await renderDocumentPdf(db, d, v, plan, ps);
+  }
   const sha = createHash('sha256').update(pdf).digest('hex');
   const key = `documents/${d.id}/v${v.version}-${sha.slice(0, 16)}.pdf`;
-  await storage.put(key, pdf, 'application/pdf');
-  await db.query('update app.document_versions set pdf_blob = $2, content_sha256 = $3, verification = null where id = $1', [v.id, key, sha]);
-  await audit(db, 'pdf.lock', 'Document', number, `Converted v${v.version} to PDF and locked it for checking`, { sha256: v.content_sha256 }, { pdfSha256: sha, signers: plan.signers.length });
+  await storage.put(key, pdf, 'application/pdf').catch((e: unknown) => { if (!/EEXIST|exists/i.test(String(e))) throw e; }); // the same bytes made again
+  await db.query('update app.document_versions set pdf_blob = $2, content_sha256 = $3, verification = null, pdf_source_tag = $4 where id = $1', [v.id, key, sha, source]);
+  await audit(db, 'pdf.lock', 'Document', number, `Converted v${v.version} to PDF${source ? ' from the Word file' : ''} and locked it for checking`, { sha256: v.content_sha256 }, { pdfSha256: sha, signers: plan.signers.length, wordTag: source });
   return { sha256: sha };
 }
 
 // Submit, step 2: the author has checked the locked PDF (footer, version, document ID, dates). pdfSha256 is the hash
 // of the PDF they were shown, so a PDF made again in the meantime is refused rather than submitted unchecked.
-export async function submit(db: Db, me: Person, number: string, verification: Verification, pdfSha256: string) {
+export async function submit(db: Db, me: Person, number: string, verification: Verification, pdfSha256: string, sp?: SharePoint) {
   const d = await docByNumber(db, number);
   if (d.state !== 'Draft') throw conflict('Only a draft can be submitted.');
   if (![d.author_id, d.owner_id].includes(me.id)) throw forbidden('Only the author or owner can submit it.');
@@ -190,6 +231,10 @@ export async function submit(db: Db, me: Person, number: string, verification: V
   const v = await currentVersion(db, d.id);
   if (!v.pdf_blob) throw conflict('Make the PDF and check it before submitting.');
   if (v.content_sha256 !== pdfSha256) throw conflict('The PDF changed after you opened it. Check the new PDF and submit again.');
+  if (v.pdf_source_tag && wordMode(sp, d)) {
+    const now = await sp.getItem('drafts', d.draft_item_id!);
+    if (now?.cTag !== v.pdf_source_tag) throw conflict('The Word file changed after the PDF was made. Make the PDF again and check it.');
+  }
   const { plan } = await documentPlan(db, d, v.version); // roles or accounts may have changed since the PDF was made
   await checkPlan(db, plan, 'document', d.number, 'Submit refused');
   const checks = { footer: true, version: true, documentId: true, dates: true, note: verification.note ?? '', by: me.id, at: new Date().toISOString() };
@@ -264,7 +309,7 @@ export async function sendBack(db: Db, me: Person, number: string, reason: strin
   await notify(db, { to: [d.author_id], kind: 'warn', title: `${number} was returned to you`, body: 'Reason: ' + reason, recordType: 'document', recordId: d.id, href: `/documents/${number}` });
 }
 
-export async function newVersion(db: Db, me: Person, number: string, kind: 'major' | 'minor', summary: string) {
+export async function newVersion(db: Db, me: Person, number: string, kind: 'major' | 'minor', summary: string, sp?: SharePoint) {
   const d = await docByNumber(db, number);
   if (d.state !== 'Effective') throw conflict('Start a new version from the effective one.');
   const cur = await currentVersion(db, d.id);
@@ -275,7 +320,9 @@ export async function newVersion(db: Db, me: Person, number: string, kind: 'majo
   await db.query(`update app.documents set state = 'Draft', author_id = $2 where id = $1`, [d.id, me.id]);
   await audit(db, 'version', 'Document', number, `Started ${kind} version v${nv} of ${number}: ${summary}`, { state: 'Effective' }, { state: 'Draft', version: nv });
   const cr = await openChangeRequest(db, me, d, v.id, nv, summary, kind === 'major' ? 'Major' : 'Minor');
-  await addTask(db, { kind: 'author', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: me.id, dueAt: dueIn(7) });
+  await ensureWordFile(db, sp, d, nv, cur.content.filter((b) => b.t === 'h').map((b) => b.x));
+  await addTask(db, { kind: 'author', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: me.id, dueAt: dueIn(7),
+    note: sp?.mode === 'live' ? `Edit the Word file; update the version to v${nv} on the cover and in the footer` : undefined });
   return { version: nv, changeRequest: cr };
 }
 
@@ -286,6 +333,8 @@ export async function makeEffective(db: Db, documentId: string, versionId: strin
   await db.query(`update app.document_versions set state = 'Superseded' where document_id = $1 and state = 'Effective' and id <> $2`, [documentId, versionId]);
   await db.query('update app.documents set effective_at = now() where id = $1', [documentId]);
   await setState(db, d, v, 'Effective', `${d.number} v${v.version} is Effective`);
+  // The locked PDF goes to the controlled SharePoint library after this transaction (services/sharepoint.ts).
+  await db.query(`update app.document_versions set publish_status = 'pending' where id = $1`, [versionId]);
   await closeTasks(db, { recordId: documentId, kinds: ['fyi', 'esign', 'approve-doc'] });
   if (v.change_request_id) {
     const cr = await maybe<{ number: string }>(db, `update app.change_requests set state = 'Closed', closed_at = now() where id = $1 and state <> 'Closed' returning number`, [v.change_request_id]);

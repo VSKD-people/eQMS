@@ -19,8 +19,15 @@ import { createAdobeSign } from '../src/integrations/adobesign.ts';
 import { sendQueuedEmail } from '../src/integrations/mail.ts';
 import { HttpError } from '../src/lib/http.ts';
 import { anchor, checkLatest } from '../src/services/anchor.ts';
+import * as sp from '../src/services/sharepoint.ts';
+import { createSharePoint } from '../src/integrations/sharepoint.ts';
+import { loadConfig } from '../src/config.ts';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 
-test('API flow: Adobe Sign approvals, training records, closures, admin', { skip: process.env.DATABASE_URL ? false : 'set DATABASE_URL to a freshly seeded database' }, async () => {
+test('API flow: Adobe Sign approvals, training records, closures, SharePoint, admin', { skip: process.env.DATABASE_URL ? false : 'set DATABASE_URL to a freshly seeded database' }, async () => {
   // Act as the API's database role, whatever login the test connects with. The role is set when each connection
   // starts (PostgreSQL's `-c role=` startup option), so no query runs ahead of the test's own.
   const url = new URL(process.env.DATABASE_URL!);
@@ -284,6 +291,62 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   await sys((db) => signing.fromProvider(db, ldeps, e8.id, 'webhook'));
   const d8 = await as('vic', (db, me) => signing.detail(db, me, e8.id));
   ok(d8.status === 'declined' && d8.reason === 'Section 3 contradicts the handling standard.' && (await docState('POL-003')) === 'Draft', 'rejected in Adobe Sign (reported as CANCELLED): declined with the signer’s reason; POL-003 back to Draft');
+
+  console.log('SharePoint (mock): publishing, sync, integrity alerts, hash check');
+  const spm = createSharePoint(loadConfig({ DATABASE_URL: 'unused', LOCAL_STORAGE_DIR: await mkdtemp(join(tmpdir(), 'veqms-sp-')) }));
+  const spDeps = { sharepoint: spm, storage: storage as any };
+  const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
+  const r0 = await sys((db) => sp.runSync(db, spDeps));
+  ok(r0.publish.published === 3 && r0.publish.failed === 0, `Effective versions published to the controlled library: ${r0.publish.published} (VP-001 v1.0, ${nd.number} v0.1 and v0.2)`);
+  const vpPub = await versionOf('VP-001');
+  ok(vpPub.publish_status === 'published' && sha(await spm.download('controlled', vpPub.published_item_id)) === vpPub.content_sha256, 'the published file is the locked PDF, byte for byte');
+  const cols = await spm.fields('controlled', vpPub.published_item_id);
+  ok(cols.DocumentNumber === 'VP-001' && cols.DocumentVersion === '1.0' && cols.DocumentStatus === 'Effective' && cols.SHA256 === vpPub.content_sha256, 'its columns: number, version, status, effective date, hash');
+  const sup01 = await sys((db) => one<any>(db, `select v.publish_status, v.published_item_id from app.document_versions v join app.documents d on d.id = v.document_id where d.number = $1 and v.version = '0.1'`, [nd.number]));
+  ok(r0.publish.superseded === 1 && sup01.publish_status === 'superseded' && (await spm.fields('controlled', sup01.published_item_id)).DocumentStatus === 'Superseded', 'the superseded version’s file stays in the library, marked Superseded');
+  ok(r0.drafts.outcome === 'ok' && r0.controlled.outcome === 'ok' && r0.controlled.alerts === 0, 'first sync of both libraries: a starting point, no alerts');
+  const r1 = await sys((db) => sp.syncLibrary(db, spm, 'controlled'));
+  ok(r1.alerts === 0, 'VeQMS’s own writes to the controlled library raise nothing');
+  await sys((db) => sp.simulateOutsideEdit(db, spm, 'VP-001', 'a SharePoint user (simulated)'));
+  const r2 = await sys((db) => sp.syncLibrary(db, spm, 'controlled'));
+  ok(r2.outcome === 'ok' && r2.alerts === 1, 'an edit made outside VeQMS raises an integrity alert');
+  ok((await sys((db) => sp.syncLibrary(db, spm, 'controlled'))).changes === 0, 'the next sync resumes from its token');
+  const h = await sys((db) => sp.hashCheck(db, spm));
+  ok(h.checked === 2 && h.mismatches === 1, `nightly hash check: ${h.checked} published files, ${h.mismatches} no longer matches its locked PDF`);
+  const al = await sys((db) => rows<any>(db, `select id, kind from app.integrity_alerts where resolved_at is null order by raised_at`));
+  ok(al.map((a) => a.kind).join() === 'outside-change,hash-mismatch', 'two open alerts: outside change and hash mismatch');
+  const qmNote = await sys((db) => rows<any>(db, `select title from app.notifications where user_id = $1 and title = 'Integrity alert: VP-001'`, [ids.vic]));
+  ok(qmNote.length === 2, 'the Quality Manager is told of each');
+  await as('vic', (db, me) => sp.resolveAlert(db, me, al[0].id, 'Restored the file from the locked PDF; the user was reminded the library is read-only.'));
+  await fails(as('vic', (db, me) => sp.resolveAlert(db, me, al[0].id, 'Resolving it a second time.')), /already resolved/, 'an alert is resolved once');
+  await fails(sys((db) => db.query(`update app.integrity_alerts set detail = 'nothing' where id = $1`, [al[1].id])), /only the resolution/, 'the database refuses to change what an alert says');
+  await sys((db) => db.query(`update app.document_versions set publish_status = 'pending' where id = (select v.id from app.document_versions v join app.documents d on d.id = v.document_id where d.number = 'SOP-012' and v.version = '3.0')`));
+  for (let i = 0; i < sp.MAX_PUBLISH_ATTEMPTS; i++) await sys((db) => sp.publishPending(db, spDeps));
+  const pf = await sys((db) => one<any>(db, `select v.publish_status, v.publish_attempts, (select count(*)::int from app.dead_letters where job = 'sharepoint-publish') as dead,
+    (select count(*)::int from app.integrity_alerts where kind = 'publish-failed' and resolved_at is null) as alerts
+    from app.document_versions v join app.documents d on d.id = v.document_id where d.number = 'SOP-012' and v.version = '3.0'`));
+  ok(pf.publish_status === 'failed' && pf.publish_attempts === sp.MAX_PUBLISH_ATTEMPTS && pf.dead === 1 && pf.alerts === 1, 'a publish that keeps failing is retried, then goes to dead letters and alerts QA');
+
+  console.log('SharePoint live path (Graph faked): Word file, conversion, change checks');
+  let wordTag = '"c:1"';
+  const made: { name: string; bytes: Uint8Array }[] = [];
+  const onePage = await (async () => { const p = await PDFDocument.create(); p.addPage(); return p.save(); })();
+  const fakeLive = { ...spm, mode: 'live' as const, appId: 'veqms-app',
+    createDraft: async (name: string, bytes: Uint8Array) => { made.push({ name, bytes }); return { id: 'word-1', name, webUrl: 'https://example.sharepoint.com/Drafts/' + name, cTag: wordTag }; },
+    getItem: async (_lib: string, id: string) => ({ id, name: 'word.docx', webUrl: 'https://example.sharepoint.com/Drafts/word.docx', cTag: wordTag }),
+    pdfOf: async () => onePage,
+    delta: async () => ({ changes: [{ id: 'word-1', name: 'word.docx', deleted: false, folder: false, modifiedAt: new Date().toISOString(), cTag: wordTag, byApp: null, byUser: 'u1', byName: 'Jim Speir' }], token: 't1' }) };
+  const wd = await as('sam', (db, me) => docs.create(db, me, { docType: 'Work instruction', title: 'Badge printer setup', classification: 'Internal', ownerId: ids.sam!, process: 'ISMS · Physical security', audience: noAudience }, fakeLive as any));
+  ok(made.length === 1 && made[0]!.name === `${wd.number} Badge printer setup.docx` && Buffer.from(made[0]!.bytes).subarray(0, 2).toString() === 'PK', 'a new document starts as a Word file in the Drafts library');
+  await fails(as('sam', (db, me) => docs.saveDraft(db, me, wd.number, [{ t: 'p', x: 'Typed in VeQMS' }], 'x', fakeLive as any)), /written in Word/, 'its text is written in Word, not in VeQMS');
+  const wp = await as('sam', (db, me) => docs.preparePdf(db, me, storage as any, wd.number, [], [ids.tom!], fakeLive as any));
+  const wv = await versionOf(wd.number);
+  ok(wv.pdf_source_tag === '"c:1"' && (await PDFDocument.load(files.get(wv.pdf_blob)!)).getPageCount() === 2, 'the PDF is the converted Word file plus the signature page, tied to that state of the file');
+  wordTag = '"c:2"';
+  await fails(as('sam', (db, me) => docs.submit(db, me, wd.number, V, wp.sha256, fakeLive as any)), /Word file changed after the PDF/, 'submit refused when the Word file changed after its PDF was made');
+  await sys((db) => sp.syncLibrary(db, fakeLive as any, 'drafts'));
+  const wv2 = await versionOf(wd.number);
+  ok(!wv2.pdf_blob && !wv2.pdf_source_tag, 'the drafts sync clears a PDF made from an older state of the Word file');
 
   console.log('Admin, email, register, audit');
   await as('hannah', async (db) => admin.setStatus(db, (await people(db, [ids.jake!]))[0]!, 'left', 'Left the company'));

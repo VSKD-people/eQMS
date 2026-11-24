@@ -11,7 +11,8 @@ export const PERMISSIONS = {
   'approvals.view': ['qm', 'auditor', 'process', 'admin', 'approver', 'author', 'reviewer'],
   'admin.users': ['admin'],
   'admin.settings': ['admin', 'qm'],
-  'audit.read': ['admin', 'qm', 'auditor']
+  'audit.read': ['admin', 'qm', 'auditor'],
+  'integrity.resolve': ['qm']
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

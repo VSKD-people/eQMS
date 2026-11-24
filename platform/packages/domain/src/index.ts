@@ -5,3 +5,4 @@ export * from './allowance.ts';
 export * from './training.ts';
 export * from './webhook.ts';
 export * from './xlsx.ts';
+export * from './docx.ts';

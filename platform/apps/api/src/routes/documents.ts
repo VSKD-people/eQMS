@@ -33,15 +33,16 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
       docType: z.string(), title: z.string().min(3).max(200), classification: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']),
       ownerId: uuid, process: z.string().min(1).max(100), tags: z.array(z.string().max(40)).max(20).optional(), audience: audience.optional()
     }), req.body);
-    return docs.create(db, me, b);
+    return docs.create(db, me, b, ctx.sharepoint);
   }));
 
   api.get('/documents/:number', (req) => ctx.run(req, (db, me) => docs.detail(db, me, param(p, req.params).number, signing.latestFor)));
 
   api.put('/documents/:number/draft', async (req, reply) => {
     const { number: n } = param(p, req.params);
-    const b = body(z.object({ content: z.array(block).min(1).max(500), summary: z.string().min(1).max(500) }), req.body);
-    await ctx.run(req, (db, me) => docs.saveDraft(db, me, n, b.content, b.summary));
+    // content: the in-app text (mock SharePoint only); left out, only the change summary is saved (the text is in Word).
+    const b = body(z.object({ content: z.array(block).min(1).max(500).optional(), summary: z.string().min(1).max(500) }), req.body);
+    await ctx.run(req, (db, me) => docs.saveDraft(db, me, n, b.content ?? null, b.summary, ctx.sharepoint));
     return noContent(reply);
   });
 
@@ -49,14 +50,14 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.post('/documents/:number/pdf', (req) => ctx.run(req, (db, me) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ reviewers: z.array(uuid).max(20), approvers: z.array(uuid).min(1).max(2) }), req.body);
-    return docs.preparePdf(db, me, ctx.storage, n, b.reviewers, b.approvers);
+    return docs.preparePdf(db, me, ctx.storage, n, b.reviewers, b.approvers, ctx.sharepoint);
   }));
 
   // Submit, step 2: the four checks on the locked PDF (pdfSha256 is the hash of the PDF the author was shown).
   api.post('/documents/:number/submit', async (req, reply) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ verification, pdfSha256: z.string().regex(/^[0-9a-f]{64}$/) }), req.body);
-    await ctx.run(req, (db, me) => docs.submit(db, me, n, b.verification, b.pdfSha256));
+    await ctx.run(req, (db, me) => docs.submit(db, me, n, b.verification, b.pdfSha256, ctx.sharepoint));
     return noContent(reply);
   });
 
@@ -84,7 +85,7 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.post('/documents/:number/versions', (req) => ctx.run(req, (db, me) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ kind: z.enum(['major', 'minor']), summary: z.string().min(3).max(500) }), req.body);
-    return docs.newVersion(db, me, n, b.kind, b.summary);
+    return docs.newVersion(db, me, n, b.kind, b.summary, ctx.sharepoint);
   }));
 
   // What the agreement will look like: signers in order, problems that block it, and the allowance.

@@ -13,7 +13,8 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx): void {
     permissions: (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(me.roles, p)),
     tenant: { id: auth.tenantId, name: auth.tenantName },
     via: auth.via,
-    esignMode: ctx.esign.mode
+    esignMode: ctx.esign.mode,
+    sharepointMode: ctx.sharepoint.mode
   })));
 
   api.get('/tasks', (req) => ctx.run(req, async (db, me) => {

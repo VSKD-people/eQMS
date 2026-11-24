@@ -5,6 +5,7 @@ import { withTenant, type Db, type Pool } from '@veqms/db';
 import type { Config } from './config.ts';
 import type { ESign } from './integrations/adobesign.ts';
 import type { Storage } from './integrations/storage.ts';
+import type { SharePoint } from './integrations/sharepoint.ts';
 import { createAuthenticator, getAuth, setAuth, type Auth } from './lib/auth.ts';
 import { forbidden, HttpError, toHttp } from './lib/http.ts';
 import { audit } from './lib/work.ts';
@@ -21,7 +22,8 @@ import { webhookRoutes } from './routes/webhooks.ts';
 import { scimRoutes } from './routes/scim.ts';
 
 // inbox: the webhook queue worker (services/inbox.ts). Optional, so tests can drain the queue themselves.
-export interface AppDeps { cfg: Config; pool: Pool; esign: ESign; storage: Storage; inbox?: { kick(): void } }
+// publisher: publishes Effective versions to SharePoint (services/sharepoint.ts). Optional, like inbox.
+export interface AppDeps { cfg: Config; pool: Pool; esign: ESign; storage: Storage; sharepoint: SharePoint; inbox?: { kick(): void }; publisher?: { kick(): void } }
 export type Run = <T>(req: FastifyRequest, fn: (db: Db, me: Person, auth: Auth) => Promise<T>) => Promise<T>;
 export interface Ctx extends AppDeps { run: Run }
 

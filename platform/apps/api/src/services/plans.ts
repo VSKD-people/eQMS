@@ -49,6 +49,10 @@ export async function documentPlan(db: Db, d: DocLike, version: string, choose?:
 // PDF that is locked: reviewed, approved, signed and published exactly as it is.
 export async function renderDocumentPdf(db: Db, d: DocLike, v: { version: string; content: Block[] }, plan: SigningPlan | null, ps: Person[]): Promise<Uint8Array> {
   const owner = await person(db, d.owner_id);
-  const signers: SignerLine[] = (plan?.signers ?? []).map((s, i) => ({ name: ps.find((p) => p.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
-  return documentPdf({ number: d.number, title: d.title, version: v.version, classification: d.classification, owner: owner?.name ?? '', generatedAt: new Date(), blocks: v.content, signers });
+  return documentPdf({ number: d.number, title: d.title, version: v.version, classification: d.classification, owner: owner?.name ?? '', generatedAt: new Date(), blocks: v.content, signers: signerLines(plan, ps) });
+}
+
+// One line per signer on the signature page, each with its Adobe Sign text tag.
+export function signerLines(plan: SigningPlan | null, ps: Person[]): SignerLine[] {
+  return (plan?.signers ?? []).map((s, i) => ({ name: ps.find((p) => p.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
 }

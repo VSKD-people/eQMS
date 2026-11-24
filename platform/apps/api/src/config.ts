@@ -34,6 +34,18 @@ const schema = z.object({
   LOCAL_STORAGE_DIR: z.string().default('./storage-local'),
   SCIM_TOKEN: z.string().default(''),
   GRAPH_MAIL_FROM: z.string().default(''),
+  // SharePoint as the file store (docs/10-sharepoint.md). live: Microsoft Graph, app-only, Sites.Selected with write on
+  // the one site. mock: a folder under LOCAL_STORAGE_DIR stands in for both libraries (development and tests).
+  SHAREPOINT_MODE: z.enum(['live', 'mock']).default('mock'),
+  SHAREPOINT_SITE_ID: z.string().default(''),
+  SHAREPOINT_DRAFTS_DRIVE_ID: z.string().default(''),
+  SHAREPOINT_CONTROLLED_DRIVE_ID: z.string().default(''),
+  // The VeQMS app's ID as Graph reports it in lastModifiedBy.application.id: changes by this app are VeQMS's own.
+  SHAREPOINT_APP_ID: z.string().default(''),
+  // Controlled library columns VeQMS sets on each published file (internal names). Placeholders until the library exists.
+  SHAREPOINT_COLUMNS: z.string().default('{"number":"DocumentNumber","version":"DocumentVersion","status":"DocumentStatus","effective":"EffectiveDate","sha256":"SHA256"}'),
+  // Today's library columns, for the one-off import (internal names). Placeholders: the real names are still needed.
+  SHAREPOINT_IMPORT_MAP: z.string().default('{"number":"DocumentNumber","title":"Title","type":"DocumentType","version":"DocumentVersion","owner":"OwnerEmail","classification":"Classification","process":"QualityProcess","effective":"EffectiveDate"}'),
   APP_BASE_URL: z.string().default('http://localhost:3000')
 });
 
@@ -45,6 +57,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (production && c.DEV_AUTH) throw new Error('DEV_AUTH must not be set in production');
   if (production && c.ADOBE_SIGN_MODE !== 'live') throw new Error('ADOBE_SIGN_MODE must be live in production');
   if (production && (!c.ENTRA_TENANT_ID || !c.ENTRA_API_AUDIENCE)) throw new Error('ENTRA_TENANT_ID and ENTRA_API_AUDIENCE are required in production');
+  if (production && c.SHAREPOINT_MODE !== 'live') throw new Error('SHAREPOINT_MODE must be live in production');
+  if (c.SHAREPOINT_MODE === 'live' && (!c.SHAREPOINT_SITE_ID || !c.SHAREPOINT_DRAFTS_DRIVE_ID || !c.SHAREPOINT_CONTROLLED_DRIVE_ID || !c.SHAREPOINT_APP_ID)) {
+    throw new Error('SharePoint live mode needs SHAREPOINT_SITE_ID, SHAREPOINT_DRAFTS_DRIVE_ID, SHAREPOINT_CONTROLLED_DRIVE_ID and SHAREPOINT_APP_ID');
+  }
+  for (const k of ['SHAREPOINT_COLUMNS', 'SHAREPOINT_IMPORT_MAP'] as const) {
+    try { if (typeof JSON.parse(c[k]) !== 'object') throw new Error(); } catch { throw new Error(`${k} must be a JSON object of column names`); }
+  }
   if (c.ADOBE_SIGN_MODE === 'live') {
     if (c.ADOBE_SIGN_AUTH === 'integration-key' && !c.ADOBE_SIGN_INTEGRATION_KEY) throw new Error('Adobe Sign live mode with an integration key needs ADOBE_SIGN_INTEGRATION_KEY');
     if (c.ADOBE_SIGN_AUTH === 'oauth' && (!c.ADOBE_SIGN_CLIENT_ID || !c.ADOBE_SIGN_CLIENT_SECRET || !c.ADOBE_SIGN_REFRESH_TOKEN || !c.ADOBE_SIGN_API_ACCESS_POINT)) {

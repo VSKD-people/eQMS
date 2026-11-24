@@ -73,8 +73,21 @@ export async function documentPdf(d: DocumentPdfInput): Promise<Uint8Array> {
   return w.doc.save();
 }
 
-function signaturePage(w: Writer, what: string, signers: SignerLine[]): void {
-  w.newPage();
+// Live SharePoint mode: the author's Word file converted to PDF, followed by the VeQMS signature page (one Adobe Sign
+// field per signer). The Word pages are kept exactly as converted; their footer is the author's, which they check.
+export async function wordPdfWithSignatures(converted: Uint8Array, d: { number: string; version: string; signers: SignerLine[] }): Promise<Uint8Array> {
+  const w = await start();
+  signaturePage(w, `${d.number} version ${d.version}`, d.signers, false);
+  footer(w, `${d.number} · version ${d.version} · signature page`);
+  const sig = await PDFDocument.load(await w.doc.save());
+  const out = await PDFDocument.load(converted);
+  const pages = await out.copyPages(sig, sig.getPageIndices());
+  for (const pg of pages) out.addPage(pg);
+  return out.save();
+}
+
+function signaturePage(w: Writer, what: string, signers: SignerLine[], onNewPage = true): void {
+  if (onNewPage) w.newPage();
   w.text('Approval signatures', 14, { bold: true });
   w.text(`Signed in Adobe Sign (Part 11). Each signer signs ${what} in the order below and chooses the meaning shown.`, 9, { gap: 12 });
   for (const s of signers) {

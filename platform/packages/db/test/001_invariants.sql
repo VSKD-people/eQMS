@@ -219,7 +219,26 @@ do $$ begin
   assert app.next_number('WI') = 'WI-005' and app.next_number('WI') = 'WI-006', 'numbering not sequential';
 end $$;
 
-\echo '10. Audit chain still verifies after all the tests (except the deliberate tamper, entry 5)'
+\echo '10. SharePoint: a published file never moves; a finished sync run and a resolved integrity alert are fixed; neither is ever deleted'
+do $$ declare v uuid; r uuid; a uuid; begin
+  select id into v from app.document_versions where document_id = pg_temp.k('VEN-001');
+  update app.document_versions set published_item_id = 'item-1', published_at = now(), publish_status = 'published' where id = v;
+  perform pg_temp.expect_error(format($q$update app.document_versions set published_item_id = 'item-2' where id = %L$q$, v), 'published file');
+  perform pg_temp.expect_error(format($q$update app.document_versions set published_at = now() - interval '1 day' where id = %L$q$, v), 'publish time');
+  perform pg_temp.expect_error(format($q$update app.document_versions set pdf_source_tag = 'x' where id = %L$q$, v), 'PDF source');
+  insert into app.sync_runs (tenant_id, library) values (app.current_tenant(), 'controlled') returning id into r;
+  update app.sync_runs set finished_at = now(), outcome = 'ok', delta_token = 't1' where id = r;
+  perform pg_temp.expect_error(format($q$update app.sync_runs set delta_token = 't2' where id = %L$q$, r), 'finished sync run');
+  perform pg_temp.expect_error(format($q$delete from app.sync_runs where id = %L$q$, r), 'permission denied|cannot be deleted');
+  insert into app.integrity_alerts (tenant_id, kind, library, item_id, detail) values (app.current_tenant(), 'outside-change', 'controlled', 'item-1', 'Changed outside VeQMS') returning id into a;
+  perform pg_temp.expect_error(format($q$update app.integrity_alerts set detail = 'Nothing to see' where id = %L$q$, a), 'only the resolution');
+  perform pg_temp.expect_error(format($q$update app.integrity_alerts set resolved_at = now() where id = %L$q$, a), 'integrity_alerts_check');
+  update app.integrity_alerts set resolved_at = now(), resolved_by = pg_temp.k('vic'), resolution = 'Restored from the locked PDF' where id = a;
+  perform pg_temp.expect_error(format($q$update app.integrity_alerts set resolution = 'Changed my mind' where id = %L$q$, a), 'resolved integrity alert');
+  perform pg_temp.expect_error(format($q$delete from app.integrity_alerts where id = %L$q$, a), 'permission denied|cannot be deleted');
+end $$;
+
+\echo '11. Audit chain still verifies after all the tests (except the deliberate tamper, entry 5)'
 do $$ declare r record; begin select * into r from app.verify_audit_chain(); assert r.broken_at = 5, 'unexpected chain state'; end $$;
 reset role;
 \echo 'All database invariants hold.'

@@ -39,6 +39,13 @@ export async function preparePdf(number: string, fd: FormData) {
 }
 
 // Submit, step 2: the four checks on the locked PDF the author was shown (sha256 identifies it).
+// Live SharePoint: the text is in Word, so only the change summary is saved here.
+export async function saveSummary(number: string, fd: FormData) {
+  const summary = str(fd, 'summary');
+  if (!summary) redirect(withMsg(`/documents/${number}/edit`, 'err', 'A change summary is required for every version.'));
+  await mutate(`/documents/${number}/draft`, { method: 'PUT', body: { summary } }, `/documents/${number}`, 'Change summary saved.', `/documents/${number}/edit`);
+}
+
 export async function submitForReview(number: string, sha256: string, fd: FormData) {
   const page = `/documents/${number}/submit`;
   const v = { footer: bool(fd, 'footer'), version: bool(fd, 'version'), documentId: bool(fd, 'documentId'), dates: bool(fd, 'dates'), note: str(fd, 'note') };

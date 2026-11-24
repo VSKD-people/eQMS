@@ -40,7 +40,8 @@ const STATE_CLS: Record<string, string> = {
   'Effectiveness check': 'chip-due', Assessment: 'chip-due', Superseded: 'chip-due', 'Not allocated': 'chip-overdue',
   Overdue: 'chip-overdue', declined: 'chip-overdue', Declined: 'chip-overdue',
   Draft: 'chip-outline', Obsolete: 'chip-outline', Withdrawn: 'chip-outline', Corrected: 'chip-outline', Correction: 'chip-outline',
-  cancelled: 'chip-outline', waiting: 'chip-outline', Waiting: 'chip-outline', 'Not required': 'chip-outline'
+  cancelled: 'chip-outline', waiting: 'chip-outline', Waiting: 'chip-outline', 'Not required': 'chip-outline',
+  OK: 'chip-done', Published: 'chip-done', 'Marked superseded': 'chip-outline', Failed: 'chip-overdue', Running: 'chip-turn'
 };
 export function chipClass(state: string): string { return STATE_CLS[state] ?? 'chip-outline'; }
 

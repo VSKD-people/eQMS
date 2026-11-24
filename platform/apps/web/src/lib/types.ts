@@ -8,6 +8,16 @@ export type Me = {
   permissions: string[];
   tenant: { id: string; name: string };
   esignMode?: 'live' | 'mock';   // 'mock' only in development (ADOBE_SIGN_MODE=mock)
+  sharepointMode?: 'live' | 'mock';   // 'mock': a local folder stands in for SharePoint, and drafts are written in VeQMS
+};
+
+// GET /sharepoint (Administration): last sync of each library, publishing, integrity alerts.
+export type SharePointOverview = {
+  mode: 'live' | 'mock';
+  runs: { library: string; startedAt: string; finishedAt: string | null; outcome: string; changes: number; alerts: number; error: string | null }[];
+  alerts: { id: string; raisedAt: string; kind: string; library: string | null; detail: string; document: string | null; version: string | null;
+    resolvedAt: string | null; resolution: string | null; resolvedBy: string | null }[];
+  publishing: { versionId: string; number: string; version: string; status: string; attempts: number; error: string | null; publishedAt: string | null; webUrl: string | null }[];
 };
 
 export type Task = {
@@ -47,7 +57,9 @@ export type Block = { t: 'h' | 'p'; x: string };
 export type DocumentDetail = {
   id: string; number: string; title: string; docType: string; state: string; classification: string; process: string; tags: string[];
   owner: Person; author: Person; effectiveAt: string | null; approvalDue: string | null;
-  versions: { id: string; version: string; kind: string; state: string; summary: string; createdAt: string; approvedAt: string | null; agreementId: string | null; migratedFrom: string | null }[];
+  versions: { id: string; version: string; kind: string; state: string; summary: string; createdAt: string; approvedAt: string | null; agreementId: string | null; migratedFrom: string | null;
+    published: { status: string; webUrl: string | null; at: string | null } | null }[];
+  draft: { webUrl: string | null; editedAt: string | null } | null;   // the Word file in the SharePoint Drafts library
   // pdf: the locked PDF made at submit (its hash is contentSha256); checkedAt: when the author made the four checks.
   current: { version: string; state: string; summary: string; content: Block[]; contentSha256: string; pdf: { sha256: string; checkedAt: string | null } | null;
     retrain: boolean; retrainReason: string | null; changeRequest: { number: string; state: string } | null };

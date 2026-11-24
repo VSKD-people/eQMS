@@ -32,7 +32,8 @@ export default async function DocumentPage({ params, searchParams }: Props) {
           <h1>{d.title}</h1>
         </div>
         <div className="btn-row">
-          {d.can.edit ? <a className="btn" href={`/documents/${d.number}/edit`}>Edit draft</a> : null}
+          {d.can.edit && d.draft?.webUrl && me.sharepointMode === 'live' ? <a className="btn" href={d.draft.webUrl} target="_blank" rel="noreferrer">Open in Word</a> : null}
+          {d.can.edit ? <a className="btn" href={`/documents/${d.number}/edit`}>{me.sharepointMode === 'live' && d.draft ? 'Change summary' : 'Edit draft'}</a> : null}
           {d.can.submit ? <a className="btn btn-primary" href={`/documents/${d.number}/submit`}>Submit for review</a> : null}
           <a className="btn" href={`/files/documents/${d.number}/pdf`}>PDF</a>
         </div>
@@ -96,6 +97,8 @@ export default async function DocumentPage({ params, searchParams }: Props) {
             <div><dt>Quality process</dt><dd>{d.process}</dd></div><div><dt>Effective</dt><dd>{fmtDate(d.effectiveAt)}</dd></div>
             {d.current.changeRequest ? <div><dt>Change request</dt><dd>{d.current.changeRequest.number} · {d.current.changeRequest.state}</dd></div> : null}
             {d.current.pdf ? <div><dt>Locked PDF</dt><dd className="mono small">{d.current.pdf.sha256.slice(0, 16)}…</dd></div> : null}
+            {d.draft ? <div><dt>Word file</dt><dd>{d.draft.webUrl?.startsWith('https://') ? <a href={d.draft.webUrl} target="_blank" rel="noreferrer">Drafts library</a> : 'Drafts library'}{d.draft.editedAt ? <span className="small muted"> · edited {fmtDate(d.draft.editedAt)}</span> : null}</dd></div> : null}
+            <PublishedRow d={d} />
             {['Signing', 'Effective'].includes(d.current.state) ? <div><dt>Retraining</dt><dd>{d.current.retrain ? 'Needed' : `Not needed: ${d.current.retrainReason ?? ''}`}</dd></div> : null}
             {d.approvalDue && d.state === 'Signing' ? <div><dt>Signing due</dt><dd>{fmtDate(d.approvalDue)}</dd></div> : null}
             <div><dt>Tags</dt><dd>{d.tags.join(', ') || '—'}</dd></div>
@@ -111,6 +114,15 @@ export default async function DocumentPage({ params, searchParams }: Props) {
       </div>
     </>
   );
+}
+
+// Where the effective version's locked PDF is in the controlled SharePoint library.
+function PublishedRow({ d }: { d: DocumentDetail }) {
+  const v = d.versions.find((x) => x.state === 'Effective');
+  if (!v?.published) return null;
+  const p = v.published;
+  return <div><dt>Published</dt><dd>{p.status === 'published' ? (p.webUrl?.startsWith('https://') ? <a href={p.webUrl} target="_blank" rel="noreferrer">v{v.version} in SharePoint</a> : `v${v.version} (mock SharePoint)`)
+    : p.status === 'pending' ? 'Waiting to publish' : p.status === 'failed' ? 'Publishing failed: see Administration' : p.status}</dd></div>;
 }
 
 function DocumentBody({ d }: { d: DocumentDetail }) {

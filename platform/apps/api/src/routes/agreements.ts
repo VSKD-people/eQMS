@@ -30,11 +30,15 @@ export function agreementRoutes(api: FastifyInstance, ctx: Ctx): void {
   }));
 
   // Fallback for a missed webhook notification: ask Adobe Sign for the agreement's status now.
-  api.post('/agreements/:id/refresh', (req) => ctx.run(req, async (db) => {
-    const e = param(id, req.params).id;
-    if (ctx.esign.mode === 'live') await signing.fromProvider(db, ctx, e, 'poll');
-    return signing.summary(db, await signing.byId(db, e));
-  }));
+  api.post('/agreements/:id/refresh', async (req) => {
+    const out = await ctx.run(req, async (db) => {
+      const e = param(id, req.params).id;
+      if (ctx.esign.mode === 'live') await signing.fromProvider(db, ctx, e, 'poll');
+      return signing.summary(db, await signing.byId(db, e));
+    });
+    ctx.publisher?.kick(); // a document that became Effective is published to SharePoint
+    return out;
+  });
 
   api.get('/agreements/:id/files/:kind', async (req, reply) => {
     const p = param({ id: uuid, kind: z.enum(['original', 'signed', 'audit-report']) }, req.params);
@@ -45,10 +49,14 @@ export function agreementRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.get('/approvals/register', (req) => ctx.run(req, (db, me) => { need(me, 'approvals.view'); return signing.register(db); }));
 
   // Development and UAT only. In live mode signers sign in Adobe Sign from the Adobe Sign email.
-  api.post('/agreements/:id/mock/sign', (req) => ctx.run(req, (db, me) => {
-    if (ctx.esign.mode !== 'mock') throw forbidden('Signers sign in Adobe Sign.');
-    return signing.mockAct(db, ctx, me, param(id, req.params).id, 'sign');
-  }));
+  api.post('/agreements/:id/mock/sign', async (req) => {
+    const out = await ctx.run(req, (db, me) => {
+      if (ctx.esign.mode !== 'mock') throw forbidden('Signers sign in Adobe Sign.');
+      return signing.mockAct(db, ctx, me, param(id, req.params).id, 'sign');
+    });
+    ctx.publisher?.kick();
+    return out;
+  });
   api.post('/agreements/:id/mock/decline', (req) => ctx.run(req, (db, me) => {
     if (ctx.esign.mode !== 'mock') throw forbidden('Signers decline in Adobe Sign.');
     const b = body(z.object({ reason: z.string().min(5).max(200) }), req.body);

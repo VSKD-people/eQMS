@@ -1,4 +1,4 @@
-// Users and roles, settings, and the audit trail.
+// Users and roles, settings, the audit trail, and SharePoint (sync, publishing, integrity alerts).
 import type { FastifyInstance } from 'fastify';
 import { maybe, one, rows, type Db } from '@veqms/db';
 import { ROLES, type Role } from '@veqms/domain';
@@ -9,6 +9,7 @@ import { checkLatest } from '../services/anchor.ts';
 import { audit, notify } from '../lib/work.ts';
 import { body, need, param, query, uuid, z } from '../lib/params.ts';
 import { reconcileUser } from '../services/training.ts';
+import * as sp from '../services/sharepoint.ts';
 
 const id = { id: uuid };
 
@@ -139,5 +140,31 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
     const anchorNote = !anchorCheck.anchored ? 'no anchor yet' : anchorCheck.matches ? `latest anchor (entry ${anchorCheck.seq}) matches` : `ANCHOR MISMATCH: ${anchorCheck.problem}`;
     await audit(db, 'audit.verify', 'Audit trail', '*', r?.ok ? `Verified the audit chain: ${r.entries} entries intact; ${anchorNote}` : `Audit chain check FAILED at entry ${r?.broken_at}; ${anchorNote}`);
     return { ok: !!r?.ok && anchorCheck.matches !== false, entries: Number(r?.entries ?? 0), brokenAt: r?.broken_at ? Number(r.broken_at) : null, anchor: anchorCheck };
+  }));
+
+  // SharePoint: last sync of each library, publishing, and integrity alerts (QA resolves them).
+  api.get('/sharepoint', (req) => ctx.run(req, (db, me) => { need(me, 'audit.read'); return sp.overview(db, ctx.sharepoint); }));
+  // Publish what is waiting, then sync both libraries now (the job does this every 15 minutes).
+  api.post('/sharepoint/sync', (req) => ctx.run(req, (db, me) => { need(me, 'admin.settings'); return sp.runSync(db, ctx); }));
+  api.post('/sharepoint/alerts/:id/resolve', (req) => ctx.run(req, async (db, me) => {
+    need(me, 'integrity.resolve');
+    const b = body(z.object({ note: z.string().trim().min(10).max(2000) }), req.body);
+    await sp.resolveAlert(db, me, param(id, req.params).id, b.note);
+    return { ok: true };
+  }));
+  api.post('/sharepoint/versions/:id/republish', (req) => ctx.run(req, async (db, me) => {
+    need(me, 'integrity.resolve');
+    const v = param(id, req.params).id;
+    await sp.republish(db, v);
+    await audit(db, 'publish', 'SharePoint', v, `${me.name} asked for a failed publish to be tried again`);
+    return { ok: true };
+  }));
+  // Mock SharePoint only (development, UAT and demonstrations): someone edits a published file outside VeQMS.
+  api.post('/sharepoint/mock/outside-edit', (req) => ctx.run(req, async (db, me) => {
+    need(me, 'admin.settings');
+    if (ctx.sharepoint.mode !== 'mock') throw forbidden('Only mock SharePoint can simulate an outside edit.');
+    const b = body(z.object({ number: z.string().regex(/^[A-Z]+-\d+$/) }), req.body);
+    await sp.simulateOutsideEdit(db, ctx.sharepoint, b.number, 'a SharePoint user (simulated)');
+    return { ok: true };
   }));
 }

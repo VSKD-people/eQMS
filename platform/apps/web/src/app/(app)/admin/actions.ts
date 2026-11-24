@@ -30,6 +30,23 @@ export async function saveSettings(fd: FormData) {
   }, BACK, 'Settings saved. The change is logged with the old and new values.');
 }
 
+// ---------- SharePoint ----------
+const SP_TAB = '/admin?tab=sharepoint';
+export async function syncNow() {
+  await mutate('/sharepoint/sync', { method: 'POST' }, SP_TAB, 'Synced: waiting versions published, and both libraries checked for changes.');
+}
+export async function resolveAlert(id: string, fd: FormData) {
+  const note = str(fd, 'note');
+  if (note.length < 10) redirect(withMsg(SP_TAB, 'err', 'Say what was found and what was done (at least a short sentence).'));
+  await mutate(`/sharepoint/alerts/${id}/resolve`, { method: 'POST', body: { note } }, SP_TAB, 'Alert resolved. Your note is in the audit trail.');
+}
+export async function republish(versionId: string) {
+  await mutate(`/sharepoint/versions/${versionId}/republish`, { method: 'POST' }, SP_TAB, 'Queued to publish again. Sync now to try at once.');
+}
+export async function simulateOutsideEdit(fd: FormData) {
+  await mutate('/sharepoint/mock/outside-edit', { method: 'POST', body: { number: str(fd, 'number').toUpperCase() } }, SP_TAB, 'Simulated an outside edit. Sync now to see the alert.');
+}
+
 // ---------- Users and roles (System Administrator) ----------
 const USERS = '/admin?tab=users';
 const ROLES = ['admin', 'qm', 'author', 'reviewer', 'approver', 'process', 'employee', 'auditor'];

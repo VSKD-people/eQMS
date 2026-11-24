@@ -9,6 +9,7 @@ import { createPool, withTenant, rows } from '@veqms/db';
 import { loadConfig } from '../src/config.ts';
 import { buildApp } from '../src/app.ts';
 import { drainInbox } from '../src/services/inbox.ts';
+import { createSharePoint } from '../src/integrations/sharepoint.ts';
 
 const TOKEN = 'test-webhook-token-0123456789abcdef0123456789';
 const CLIENT = 'test-client-id';
@@ -23,7 +24,7 @@ test('Adobe Sign webhook: secret URL, client ID, echo, and status read from Adob
   const esign = { mode: 'live' as const, createAgreement: async () => 'x', cancelAgreement: async () => {}, getState: async () => { asked++; return null; },
     downloadSigned: async () => null, downloadAuditReport: async () => null, checkSignIn: async () => {} };
   const storage = { put: async () => {}, get: async () => new Uint8Array() };
-  const app = buildApp({ cfg, pool, esign, storage: storage as any });
+  const app = buildApp({ cfg, pool, esign, storage: storage as any, sharepoint: createSharePoint(cfg) });
   try {
     const path = `/webhooks/adobe-sign/${TOKEN}`;
     const hdr = { 'x-adobesign-clientid': CLIENT };
