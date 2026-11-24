@@ -19,7 +19,7 @@ signature, and not a Part 11 signature. The database enforces the rule: a signat
 
 | Record | Agreement | Signers, in order | Built |
 |---|---|---|---|
-| Controlled document version (policies, procedures, vendor approvals, validation plans and reports, and the other document types) | One per version, sent when review is closed | 1 author (Authored) · 2 each reviewer (Reviewed, in parallel) · 3 QA approver (Approved) · 4 second QA approver if chosen | Phase 1 |
+| Controlled document version (policies, procedures, vendor approvals, validation plans and reports, and the other document types) | One per version, sent automatically when the last QA approver approves in VeQMS | 1 author (Authored) · 2 each reviewer (Reviewed, in parallel) · 3 QA approver (Approved) · 4 second QA approver if chosen | Phase 1 |
 | CAPA closure | One, after the effectiveness result is recorded as effective | 1 CAPA owner (Authored) · 2 QA approver (Approved) | Phase 1 |
 | Deviation closure without a CAPA | One, after the justification is written | 1 deviation owner (Authored) · 2 QA approver (Approved) | Phase 1 |
 | Change requests: plan approval, and sign-off that the changes were made | One per sign-off | To be set in Phase 2 | Phase 2 |
@@ -30,19 +30,27 @@ Each new kind of sign-off adds its record type to `agreements.record_type` and a
 
 ## Rules
 
+- **Documents: review and approval first, then one agreement.** Every amendment starts as a change request. At
+  submit the draft is converted to PDF (with a signature field per signer), hashed and locked, and the author ticks
+  four checks against that PDF (footer, version, document ID, dates). Reviewers then mark it reviewed and the QA
+  approvers approve it in VeQMS, each deciding whether the change needs retraining (yes by default; no needs a
+  reason). Anyone on it can return it to the author before signing. When the last QA approver approves, the locked
+  PDF goes to Adobe Sign at once in one agreement with every signer, in order. Nobody is added later.
 - **Segregation of duties.** The author and reviewers can't be the QA approver; the owner can't approve their own
-  closure; approvers must hold Approver or Quality Manager. The plan shows problems before anything is sent, and
-  showing a blocked plan is logged (`sod.block`). If the send is attempted anyway, the API refuses it and logs that too.
-- **Verify before you send.** The sender ticks four checks against the PDF (footer, version, document ID, dates).
-  The database refuses an agreement without them. A correction after sending uses a second transaction.
+  closure; approvers must hold Approver or Quality Manager. For documents this is checked at submit, where the
+  approvers are chosen; a refusal is logged (`sod.block`, "Submit refused"). For closures the plan shows problems
+  before anything is sent, showing a blocked plan is logged, and a send attempted anyway is refused and logged.
+- **Verify before you send.** The four checks above (for closures, the sender makes them on the send page). The
+  database refuses an agreement without them. A correction after sending uses a second transaction.
 - **One open agreement per record.** Fixed once sent: name, PDF, signers, sender.
 - **Every agreement is one transaction.** Adobe counts one transaction per agreement sent, whatever the number of
   signers. Each agreement takes the next number in the allowance year (`settings.signing_allowance`, default 500,
   year starting in `allowance_year_start_month`), and the database refuses one beyond the allowance. Quality Managers
   are told when the remaining number reaches the warning level. The 500 is a placeholder: set it to the contract's
   number (to be confirmed; pricing goes to **PJ Walters**).
-- **Declined or cancelled:** the record goes back to its owner with the reason (documents return to Draft). A corrected
-  agreement is a new transaction and links to the one it replaces (`correction_of`).
+- **Declined or cancelled:** the record goes back to its owner with the reason. Documents return to Draft, the
+  approvals and the retraining decision are undone, and the document goes through review and approval again. A
+  corrected agreement is a new transaction and links to the one it replaces (`correction_of`).
 - **Completed:** the API stores the signed PDF and Adobe Sign's audit report with SHA-256 hashes, writes one signature
   row per signer (`source = 'adobe'`, agreement ID, hash of the PDF signed), and then: documents become Effective
   (previous version Superseded, periodic review scheduled, author and reviewers get completed training records, the

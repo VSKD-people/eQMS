@@ -47,8 +47,9 @@ flows; the specs in `../specs/` win where they disagree with either.
    - **Route 1, Adobe Sign with its Bio-Pharma settings:** every signature except read-and-understood training. Built
      in Phase 1: approvals of controlled documents (including vendor approvals and validation plans and reports), CAPA
      closures and deviation closures; later phases add change requests, periodic reviews and the other sign-offs. One
-     agreement per sign-off holds every signer in order (for a document: author, reviewers, QA approver). Every
-     agreement sent counts as one transaction against the yearly allowance. See [06 · Adobe Sign](06-adobe-sign.md).
+     agreement per sign-off holds every signer in order (for a document: author, reviewers, QA approver). A document
+     is reviewed and approved in VeQMS first; the last approval sends the agreement. Every agreement sent counts as
+     one transaction against the yearly allowance. See [06 · Adobe Sign](06-adobe-sign.md).
    - **Route 2, in the app:** read-and-understood training. The trainee confirms a statement; the system sets the
      dates; corrections are new records.
 4. **The webhook notifies, the API confirms.** An Adobe Sign webhook notification only tells the API to look: the API reads the

@@ -88,17 +88,18 @@ Manager (segregation of duties). Every change is audited with old and new values
 |---|---|---|---|
 | GET | `/documents?state=&type=&q=` | | `DocumentSummary[]` (classification-filtered) |
 | GET | `/document-types` | | `{ type, prefix }[]` |
-| POST | `/documents` | `{ docType, title, classification, ownerId, process, tags?, audience? }` | `{ id, number }` |
+| POST | `/documents` | `{ docType, title, classification, ownerId, process, tags?, audience? }` | `{ id, number }`; opens a change request for v0.1 |
 | GET | `/documents/:number` | | document detail (below) |
-| PUT | `/documents/:number/draft` | `{ content: {t:'h'|'p', x:string}[], summary }` | `204` (draft only) |
-| POST | `/documents/:number/submit` | `{ reviewers: string[], approvers: string[] }` | `204` → In review, or Review closed if no reviewers |
-| POST | `/documents/:number/review` | `{ comment? }` | `204` (last reviewer closes review) |
-| POST | `/documents/:number/send-back` | `{ reason }` | `204` → Draft |
-| POST | `/documents/:number/versions` | `{ kind: 'major'|'minor', summary }` | `{ version }` |
-| GET | `/documents/:number/approval-plan?approvers=id,id` | | `{ subject, signers: Signer[], problems: string[], allowance: Allowance }` |
-| POST | `/documents/:number/agreements` | `{ verification: { footer, version, documentId, dates, note? }, approvers: string[] }` | `AgreementSummary` (one transaction) |
+| PUT | `/documents/:number/draft` | `{ content: {t:'h'|'p', x:string}[], summary }` | `204` (draft only; clears a PDF made from the old text) |
+| POST | `/documents/:number/pdf` | `{ reviewers: string[], approvers: string[] }` | `{ sha256 }`. Submit, step 1: saves the people, converts the draft to PDF with a signature field per signer, hashes and locks it (the version hash becomes the PDF hash). Segregation-of-duties problems are refused here and logged |
+| POST | `/documents/:number/submit` | `{ verification: { footer, version, documentId, dates, note? }, pdfSha256 }` | `204` → In review, or In approval if no reviewers. Submit, step 2: the four checks on the locked PDF; `pdfSha256` must be the PDF the author was shown |
+| POST | `/documents/:number/review` | `{ comment? }` | `204` (the last reviewer moves it to In approval) |
+| POST | `/documents/:number/approve` | `{ retrain: boolean, reason?, comment? }` | `{ sent }`. A QA approver approves in VeQMS. `retrain: false` needs a reason. The last approval sends the locked PDF to Adobe Sign at once (one transaction, every signer) → Signing; if the send fails, the approval rolls back |
+| POST | `/documents/:number/send-back` | `{ reason }` | `204` → Draft. A reviewer, approver, the owner, the author or a Quality Manager, while In review or In approval |
+| POST | `/documents/:number/versions` | `{ kind: 'major'|'minor', summary }` | `{ version, changeRequest }` (opens a change request) |
+| GET | `/documents/:number/approval-plan?reviewers=id,id&approvers=id,id` | | `{ subject, signers: Signer[], problems: string[], allowance: Allowance }` (the saved people when the lists are left out) |
 | PUT | `/documents/:number/audience` | `{ groups, roles, users: string[], daysToComplete, quiz }` | `{ added, closed }` |
-| GET | `/documents/:number/pdf?version=` | | `application/pdf` (the exact PDF that goes into the agreement) |
+| GET | `/documents/:number/pdf?version=` | | `application/pdf`: the locked PDF (the one checked, signed and published); a draft not yet converted gets a preview without signature fields |
 | GET | `/documents/:number/training?all=1` | | `TrainingRecord[]` for the effective version (all versions with `all=1`) |
 | GET | `/documents/:number/quiz` | | `{ questions: { q: string; options: string[] }[] }` (no answers) |
 
@@ -106,10 +107,12 @@ Document detail:
 ```ts
 { id, number, title, docType, state, classification, process, tags, owner: Person, author: Person, effectiveAt, approvalDue,
   versions: { id, version, kind, state, summary, createdAt, approvedAt, agreementId, migratedFrom }[],
-  current: { version, state, summary, content: { t: 'h'|'p'; x: string }[], contentSha256 },
-  reviewers: { user: Person; status; reviewedAt }[], approvers: { user: Person; position: 1|2; status }[],
+  current: { version, state, summary, content: { t: 'h'|'p'; x: string }[], contentSha256,
+    pdf: { sha256, checkedAt } | null /* the locked PDF */, retrain, retrainReason, changeRequest: { number, state } | null },
+  reviewers: { user: Person; status; reviewedAt }[],
+  approvers: { user: Person; position: 1|2; status /* Waiting, To approve, Approved, Signed */; decidedAt; retrain; retrainReason }[],
   audience: Audience, agreement: AgreementSummary | null /* open or most recent */,
-  can: { edit, submit, review, sendBack, send, sign, cancel, newVersion, changeAudience: boolean } }
+  can: { edit, submit, review, approve, sendBack, sign, cancel, newVersion, changeAudience: boolean } }
 ```
 
 ### CAPA and deviation closure (Route 1)

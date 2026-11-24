@@ -48,7 +48,7 @@ test('2 · VP-001: Carrie checks the locked PDF and submits, Omar reviews, Victo
   await mockSign(omar, '/documents/VP-001', 'Reviewed');
   await mockSign(vic, '/documents/VP-001', 'Approved');
   await expectDocState(vic, 'VP-001', 'Effective');
-  await expect(vic.locator('.ctx-card')).toContainText('CR-019 · Closed');
+  await expect(vic.locator('.ctx-card').first()).toContainText('CR-019 · Closed');
 
   // Signing the agreement counts as training for the author and reviewer.
   await vic.goto('/documents/VP-001?tab=training');

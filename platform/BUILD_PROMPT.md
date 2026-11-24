@@ -51,6 +51,10 @@ Not run yet: Microsoft Entra sign-in, live Adobe Sign, Microsoft Graph email, Az
    order, a segregation-of-duties check in the signing plan, every agreement one transaction against the allowance.
    Never change those records' state by hand: the agreement completing does it. Read-and-understood training stays in
    the app and is a training record, not a signature. The database allows no other signature source.
+   Documents follow PJ Walters' amendment flow (24 November 2026): change request first; at submit the PDF is made,
+   hashed and locked, and the author makes the four checks on it; review, then approval in VeQMS with the retraining
+   decision; the last approval sends the agreement; anyone on it can return the draft before signing. What is signed
+   and published is the locked PDF.
 5. **Training records are locked once completed.** Only the trainee confirms; the system sets dates; corrections are
    new records; audience changes are logged with old and new values.
 6. **The webhook notifies, the API confirms.** Never act on a webhook body alone.
@@ -97,7 +101,9 @@ after Phase 1 and its security testing, because real quality records go in from 
 | **Phase 7** | Hardening and full go-live (Gate 3) | Phase 8 |
 
 ### Phase 2: change control and periodic reviews
-Tables exist: `change_requests`, `cr_actions`, `periodic_reviews`, `record_links`. Build API routes, services and
+Tables exist: `change_requests`, `cr_actions`, `periodic_reviews`, `record_links`. Phase 1 already opens a minimal
+change request for every new document or version (`document_versions.change_request_id`) and closes it when that
+version is Effective; Phase 2 adds the change control screens and approvals around it. Build API routes, services and
 screens following the prototype (`../veqms/js/views/changes.js`, `reviews.js`). Decided: change request approvals,
 sign-off of the changes made, and periodic review outcomes are Adobe Sign agreements (each uses a transaction): add
 their record types to `agreements.record_type`, a signing plan for each in `packages/domain/src/signing.ts`, and reuse

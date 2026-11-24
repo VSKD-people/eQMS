@@ -13,9 +13,12 @@ and flows; the specs are in `../specs/`.
 ## What Phase 1 does
 
 - Microsoft Entra ID sign-in; users and groups from Entra (SCIM); roles granted in VeQMS.
-- Documents: draft, review, then approval through **Adobe Sign** (one agreement per version: author, reviewers,
-  QA approver, in order). Verification check before sending, every transaction counted against the yearly allowance,
-  cancel and decline back to draft, corrections as new transactions, signed PDF and Adobe Sign audit report stored.
+- Documents, by the amendment flow: every amendment starts as a change request; at submit the draft becomes a
+  locked, hashed PDF that the author checks (footer, version, document ID, dates); review and approval in VeQMS, where
+  each QA approver decides whether retraining is needed; the last approval sends one **Adobe Sign** agreement with
+  every signer (author, reviewers, QA approvers, in order). Returns to the author at any point before signing; every
+  transaction counted against the yearly allowance; cancel and decline back to draft; corrections as new
+  transactions; signed PDF and Adobe Sign audit report stored.
 - CAPA and deviation closure through Adobe Sign. Every signature goes through Adobe Sign except read-and-understood
   training; change requests and the other sign-offs follow in later phases.
 - Read-and-understood training in the app: audiences per document, allocation, confirmation with optional quiz,

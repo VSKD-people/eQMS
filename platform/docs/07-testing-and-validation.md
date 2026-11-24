@@ -5,9 +5,9 @@
 | Suite | What it proves | Run |
 |---|---|---|
 | Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
-| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, training-record locks, import mode refused for the API, agreement rules, allowance, version locks, insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, cancel, decline, correction transactions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 73 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
-| Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, and that a notification only triggers a status read: 7 checks | as the API flow test |
+| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, IP and device kept apart and purged, training-record locks, import mode refused for the API, agreement rules, allowance, version locks (content, locked PDF, checks, retraining decision, change request), insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor: 109 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, queueing with de-duplication, and that the queue worker only reads the status from Adobe Sign: 12 checks | as the API flow test |
 | UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
 CI (`.github/workflows/platform-ci.yml`) runs all of them on every push: the first three with a PostgreSQL 16 service,
@@ -21,7 +21,7 @@ packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), a
 
 - **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
   the domain tests (15 of 15); the database invariants on PostgreSQL 16 (all 10 groups); migrate twice (the second run
-  is a no-op) and seed; the API flow test (73 of 73) and the webhook route test (7 of 7). These are the steps CI runs.
+  is a no-op) and seed; the API flow test (109 of 109) and the webhook route test (12 of 12). These are the steps CI runs.
 - **CI on GitHub:** both jobs (checks, and the browser tests against `docker compose`) passed on the pull request.
 - **Bicep:** `infra/main.bicep` compiles and lints with no errors or warnings (Bicep CLI 0.49.2). It has not been
   deployed.
@@ -64,6 +64,13 @@ the tests and UAT use, is the same code as live apart from the Adobe Sign client
 after the switch. The live Adobe Sign client has not run against Adobe Sign: see the "Verify before go-live" list in
 [06 · Adobe Sign](06-adobe-sign.md).
 
+Then changed the document flow to PJ Walters' amendment flow of 24 November 2026: a change request first; at submit
+the PDF is made, hashed and locked, and the author checks it; review, then approval in VeQMS with the retraining
+decision; the agreement goes to Adobe Sign on the last approval; anyone on it can return the draft before signing. The
+send page is gone. The invariants, the API flow test (109 checks) and the nine browser scenarios (1 to 3 rewritten for
+the new flow) pass. If Adobe Sign can't be reached when the last approver approves, the approval rolls back and they
+approve again later; the browser shows the error.
+
 ## Before go-live
 
 1. **CI green** with real packages, lockfile committed.
@@ -80,14 +87,17 @@ after the switch. The live Adobe Sign client has not run against Adobe Sign: see
 
 Use the demo seed (`npm run db:seed`, never in production). Personas sign in with the development picker.
 
-1. Victoria tries to send POL-003 for approval with herself as QA approver: refused (segregation of duties). On screen
-   the plan shows the problem and the Send button is disabled; being shown the block is logged (`sod.block`, "Send page
-   shown with sending blocked"). If the form is sent anyway (the browser test does this), the API refuses it and that
-   refusal is logged too.
-2. Victoria sends VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
-   becomes Effective; Carrie and Omar have completed training records; the IT team has VP-001 to read.
-3. Jim cancels POL-004's agreement with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim sends a corrected
-   agreement (a new transaction, linked to the cancelled one). Carrie declines with a reason; POL-004 returns to Draft again.
+1. Victoria tries to submit POL-003, which she wrote, with herself as QA approver. The submit page doesn't offer her.
+   If the form is sent anyway (the browser test does this), the API refuses it (segregation of duties) and the refusal
+   is logged (`sod.block`, "Submit refused").
+2. Carrie makes the VP-001 PDF, opens it, ticks the four checks and submits. Omar marks it reviewed. Victoria approves
+   (retraining needed), and the agreement goes to Adobe Sign at once. Carrie signs, then Omar, then Victoria. VP-001
+   becomes Effective and its change request CR-019 closes; Carrie and Omar have completed training records; the IT
+   team has VP-001 to read.
+3. Jim cancels POL-004's agreement with a reason; it returns to Draft. He makes the PDF again and resubmits; Carrie
+   reviews; PJ returns it to Jim with a reason. Jim checks the PDF again and resubmits; Carrie reviews; Victoria and PJ
+   approve with no retraining (each gives a reason), which sends a corrected agreement (a new transaction, linked to
+   the cancelled one). Carrie declines with a reason; POL-004 returns to Draft again.
 4. Daniel reads SOP-012, answers the quiz and confirms. He can't confirm twice. Victoria corrects his record with a
    reason and asks him to retrain: the original stays, marked Corrected.
 5. Carrie records the CAPA-005 effectiveness result and sends the closure; Carrie and Victoria sign; CAPA-005 and
