@@ -1,7 +1,7 @@
 // Route 1: approvals through DocuSign. One envelope per version; every send is numbered by the database against
 // the yearly allowance; status comes from DocuSign (Connect notifies, the API then reads the envelope to confirm).
 import { createHash, randomUUID } from 'node:crypto';
-import { rows, one, maybe, type Db } from '@veqms/db';
+import { rows, one, maybe, mapSeq, type Db } from '@veqms/db';
 import { can, planDocumentEnvelope, planClosureEnvelope, verificationComplete, currentOrder, allowanceState, allowanceYear, mapEnvelopeStatus, mapRecipientStatus, type EnvelopePlan, type Verification } from '@veqms/domain';
 import type { DocuSign } from '../integrations/docusign.ts';
 import type { Storage } from '../integrations/storage.ts';
@@ -74,11 +74,11 @@ export async function allowance(db: Db) {
 export async function list(db: Db, f: { year?: number; status?: string; record?: string }) {
   const es = await rows<EnvRow>(db, ENV_SELECT + ` where ($1::int is null or s.allowance_year = $1) and ($2::text is null or e.status = $2) and ($3::text is null or e.record_number = $3) order by e.sent_at desc`,
     [f.year ?? null, f.status ?? null, f.record ?? null]);
-  return Promise.all(es.map((e) => summary(db, e)));
+  return mapSeq(es, (e) => summary(db, e));
 }
 export async function register(db: Db) {
   const es = await rows<EnvRow>(db, ENV_SELECT + ` where e.status = 'completed' order by e.completed_at desc`);
-  return Promise.all(es.map((e) => summary(db, e)));
+  return mapSeq(es, (e) => summary(db, e));
 }
 
 // ---------- Planning ----------
@@ -304,11 +304,17 @@ async function complete(db: Db, deps: Deps, envelopeId: string, source: Source):
   } else if (e.record_type === 'capa') {
     await db.query(`update app.capas set state = 'Closed', closed_at = now() where id = $1`, [e.record_id]);
     await audit(db, 'state', 'CAPA', e.record_number, `${e.record_number} closed: closure approved through DocuSign`, { state: 'Effectiveness check' }, { state: 'Closed' });
+    // The event that raised the CAPA closes with it. Every state change is audited, this one included.
     const c = await one<{ source_event_id: string | null }>(db, 'select source_event_id from app.capas where id = $1', [e.record_id]);
-    if (c.source_event_id) await db.query(`update app.quality_events set state = 'Closed', closed_at = now() where id = $1 and state <> 'Closed'`, [c.source_event_id]);
+    const src = c.source_event_id ? await maybe<{ number: string; state: string }>(db, 'select number, state from app.quality_events where id = $1', [c.source_event_id]) : null;
+    if (c.source_event_id && src && src.state !== 'Closed') {
+      await db.query(`update app.quality_events set state = 'Closed', closed_at = now() where id = $1`, [c.source_event_id]);
+      await audit(db, 'state', 'Quality event', src.number, `${src.number} closed: its CAPA ${e.record_number} closed through DocuSign`, { state: src.state }, { state: 'Closed' });
+    }
   } else {
+    const prev = await one<{ state: string }>(db, 'select state from app.quality_events where id = $1', [e.record_id]);
     await db.query(`update app.quality_events set state = 'Closed', closed_at = now() where id = $1`, [e.record_id]);
-    await audit(db, 'state', 'Quality event', e.record_number, `${e.record_number} closed without a CAPA: approved through DocuSign`, null, { state: 'Closed' });
+    await audit(db, 'state', 'Quality event', e.record_number, `${e.record_number} closed without a CAPA: approved through DocuSign`, { state: prev.state }, { state: 'Closed' });
   }
   await closeTasks(db, { recordId: e.record_id, kinds: ['ds-sign', 'fyi'] });
   await notify(db, { to: [e.sent_by], kind: 'info', title: `DocuSign envelope completed: ${e.subject.split(' · ')[0]}`, body: 'Signed PDF and certificate of completion are stored against the record.', recordType: e.record_type, recordId: e.record_id });

@@ -9,7 +9,12 @@ const PEOPLE: [string, string, string][] = [
   ['dev-grace', 'Louise Harvey', 'Process owner'],
   ['dev-daniel', 'Daniel Greenwood', 'Employee'],
   ['dev-hannah', 'Lucy Parkin', 'System Administrator'],
-  ['dev-aud', 'Fraser Scott', 'Auditor (read-only)']
+  ['dev-aud', 'Fraser Scott', 'Auditor (read-only)'],
+  // The rest of the seeded people, so every UAT step (docs/07) can be done through the screens.
+  ['dev-omar', 'Omar Haddad', 'Reviewer · author'],
+  ['dev-mia', 'Mia Santos', 'Employee · author'],
+  ['dev-lena', 'Lena Novak', 'Employee'],
+  ['dev-jake', 'Jake Turner', 'Employee']
 ];
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; err?: string }> }) {

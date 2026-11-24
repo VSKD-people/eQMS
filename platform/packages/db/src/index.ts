@@ -12,16 +12,22 @@ export interface DbConfig {
   ssl?: boolean;
   // Azure Database for PostgreSQL with Entra authentication: a function returning a fresh access token.
   password?: string | (() => Promise<string>);
+  // Called when an idle connection fails (database restart, failover, or a connection closed by the server).
+  onError?: (err: Error) => void;
 }
 
 export function createPool(cfg: DbConfig): Pool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: cfg.connectionString,
     max: cfg.max ?? 10,
     ssl: cfg.ssl ? { rejectUnauthorized: true } : undefined,
     password: cfg.password,
     application_name: 'veqms-api'
   });
+  // Without a listener, an idle connection dropped by the server is an unhandled 'error' event and the process
+  // exits. pg has already removed the broken connection; the next request opens a new one.
+  pool.on('error', cfg.onError ?? ((err) => console.error('Database connection lost; it will be replaced:', err.message)));
+  return pool;
 }
 
 export interface TxContext {
@@ -59,6 +65,14 @@ export async function one<T extends QueryResultRow>(db: Db, sql: string, params:
 export async function maybe<T extends QueryResultRow>(db: Db, sql: string, params: unknown[] = []): Promise<T | null> {
   const r = await db.query<T>(sql, params);
   return r.rows[0] ?? null;
+}
+
+// One transaction is one connection, so per-row lookups run one after another. pg queues concurrent queries on a
+// client today but has deprecated it (removed in pg 9), and it gives no speed-up on a single connection anyway.
+export async function mapSeq<T, R>(items: readonly T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (const item of items) out.push(await fn(item));
+  return out;
 }
 
 export class NotFound extends Error {

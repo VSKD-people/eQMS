@@ -1,12 +1,48 @@
-import { load, loadOrNull } from '@/lib/page';
-import type { ApprovalPlan, UserRow } from '@/lib/types';
-import { Notice } from '@/components/ui';
+import { getMe, load, loadOrNull } from '@/lib/page';
+import type { ApprovalPlan, ClosureRecord, UserRow } from '@/lib/types';
+import { fmtUtc } from '@/lib/format';
+import { Chip, Notice } from '@/components/ui';
 import { SendForm } from '@/components/SendForm';
+import { EnvelopeCard, EnvelopeFiles } from '@/components/envelope';
+import { MockSignPanel } from '@/components/MockSign';
 import { recordEffectiveness, sendClosure, writeJustification } from './actions';
 
-// CAPA closure and deviation closure share one page: write the closure text, then verify and send one envelope.
+// CAPA closure and deviation closure share one page: write the closure text, verify and send one envelope, then
+// follow it until it completes. While the envelope is out, the signer whose turn it is can sign here in mock mode.
 export async function ClosurePage({ kind, number, sp }: { kind: 'capas' | 'quality-events'; number: string; sp: { a0?: string; ok?: string; err?: string } }) {
   const page = kind === 'capas' ? `/quality/capas/${number}` : `/quality/events/${number}`;
+  const [rec, me] = await Promise.all([load<ClosureRecord>(`/${kind}/${encodeURIComponent(number)}`), getMe()]);
+  const env = rec.envelope;
+  const out = env?.status === 'sent' ? env : null;
+  const closed = rec.state === 'Closed';
+  // Only deviations close here without a CAPA; other quality events close when their CAPA closes.
+  const notHere = kind === 'quality-events' && rec.type !== 'Deviation';
+  const canSend = !closed && !out && !notHere;
+
+  const header = (
+    <>
+      <nav className="breadcrumb" aria-label="Breadcrumb"><a href="/quality">Quality</a><span>/</span><span>{number}</span></nav>
+      <div className="page-head"><div>
+        <div className="record-meta"><span>{kind === 'capas' ? 'CAPA' : rec.type} · {number}</span><Chip text={rec.state} cls={closed ? 'chip-done' : 'chip-outline'} /></div>
+        <h1>{rec.title}</h1>
+        <div className="sub">Owner: {rec.owner.name}{rec.closedAt ? ` · closed ${fmtUtc(rec.closedAt)}` : ''}</div>
+      </div></div>
+      <Notice ok={sp.ok} err={sp.err} />
+    </>
+  );
+
+  if (!canSend) {
+    return (
+      <>
+        {header}
+        {out ? <MockSignPanel e={out} me={me} back={page} /> : null}
+        {closed ? <div className="callout ok mb-16" role="status"><strong>Closed.</strong> {env?.status === 'completed' ? 'The closure was approved through DocuSign; the signed PDF and certificate are stored with the envelope.' : ''}</div> : null}
+        {notHere && !closed ? <div className="callout mb-16"><strong>This {rec.type?.toLowerCase()} closes when its CAPA closes.</strong> Only deviations without a CAPA are closed here.</div> : null}
+        {env ? <EnvelopeCard e={env}>{env.status === 'completed' ? <EnvelopeFiles e={env} /> : null}</EnvelopeCard> : null}
+      </>
+    );
+  }
+
   const plan = await load<ApprovalPlan>(`/${kind}/${encodeURIComponent(number)}/approval-plan${sp.a0 ? `?approver=${encodeURIComponent(sp.a0)}` : ''}`);
   const users = await loadOrNull<UserRow[]>('/users');
   const candidates = (users ?? []).filter((u) => u.status === 'active' && (u.roles.includes('qm') || u.roles.includes('approver')));
@@ -14,11 +50,11 @@ export async function ClosurePage({ kind, number, sp }: { kind: 'capas' | 'quali
   const needsText = plan.problems.some((p) => /Record the effectiveness result first|Write the closure justification first/.test(p));
   return (
     <>
-      <nav className="breadcrumb" aria-label="Breadcrumb"><a href="/quality">Quality</a><span>/</span><span>{number}</span></nav>
-      <h1 className="mb-16">{kind === 'capas' ? `Close ${number}: effectiveness check` : `Close ${number} without a CAPA`}</h1>
-      <Notice ok={sp.ok} err={sp.err} />
+      {header}
       <div className="callout mb-16"><strong>{kind === 'capas' ? 'CAPA closure is approved in DocuSign (Part 11)' : 'Deviations close through DocuSign (Part 11)'}</strong>
         <p className="small" style={{ margin: '4px 0 0' }}>One envelope: the owner signs first, then the QA approver. The record closes when the envelope completes.</p></div>
+      {/* After a decline or void, show what happened so the owner can fix it before sending again. */}
+      {env && (env.status === 'declined' || env.status === 'voided') ? <div className="mb-16"><EnvelopeCard e={env} /></div> : null}
       {needsText ? (kind === 'capas' ? (
         <form action={recordEffectiveness.bind(null, number)} className="card card-pad">
           <div className="field mb-16"><label htmlFor="res">Result</label><textarea className="textarea" id="res" name="result" required placeholder="What the evidence shows" /></div>

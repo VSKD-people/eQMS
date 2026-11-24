@@ -124,7 +124,10 @@ export async function getRecord(db: Db, id: string): Promise<RecordRow> {
 export async function listRecords(db: Db, f: { userId?: string; documentNumber?: string; status?: string; all?: boolean }) {
   const list = await rows<RecordRow>(db, RECORD_SELECT + ` where ($1::uuid is null or r.user_id = $1) and ($2::text is null or r.document_number = $2) order by r.assigned_at desc`,
     [f.userId ?? null, f.documentNumber ?? null]);
-  return list.map(toApi).filter((r) => (f.all || !['Superseded', 'Withdrawn', 'Corrected', 'Correction', 'Obsolete'].includes(r.status)) && (!f.status || r.status === f.status));
+  // By default only live records show. Choosing a status shows every record with it (asking for Withdrawn must find
+  // withdrawn records even without "include earlier versions").
+  const hidden = ['Superseded', 'Withdrawn', 'Corrected', 'Correction', 'Obsolete'];
+  return list.map(toApi).filter((r) => (f.status ? r.status === f.status : f.all || !hidden.includes(r.status)));
 }
 
 export async function quiz(db: Db, documentId: string) {

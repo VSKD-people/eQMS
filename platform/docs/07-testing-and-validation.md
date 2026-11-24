@@ -6,26 +6,52 @@
 |---|---|---|
 | Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Connect HMAC, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
 | Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, training-record locks, import mode refused for the API, envelope rules, allowance, version locks, insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, void, decline, correction sends, closures, Connect-style status sync, training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 68 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, void, decline, correction sends, closures, Connect-style status sync, training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 69 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with DocuSign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
-CI (`.github/workflows/platform-ci.yml`) runs all of them on every push, with a PostgreSQL 16 service.
+CI (`.github/workflows/platform-ci.yml`) runs all of them on every push: the first three with a PostgreSQL 16 service,
+the browser tests in a second job against `docker compose`. Both the API flow test and the browser tests change data,
+so each needs a freshly seeded database.
 
 ## What has actually run so far
 
-The build sandbox had no access to the npm registry, so no package could be installed. In that sandbox:
+Phase 1 was first written in a sandbox without npm access. It has since been installed and built with the real
+packages (Node 22, TypeScript 5.9, Next.js 15.5, Fastify 5.12, pg 8), and `package-lock.json` is committed.
 
-- **Ran for real:** the domain tests (15 of 15 pass); the database migrations, seed and invariant tests on
-  PostgreSQL 16 (all 10 groups pass); the API flow test (68 of 68 pass) and a route-level check (1,068 requests, every
-  read route as each of 12 personas, no server errors; plus permissions, refusals reaching the audit trail, the
-  webhook HMAC check and SCIM provisioning: 24 checks). For those two, a test-only Postgres client and a miniature
-  stand-in for Fastify replaced the npm packages; the API code, SQL and database were real.
-- **Type-checked only**, against hand-written stand-ins for the package types: the API and the web app. The first
-  `npm install` and `npm run typecheck` in CI may still find mismatches with the real package types.
-- **Not run at all:** the web app in a browser, the Docker images, the Bicep, the deploy workflow, Microsoft Entra
-  sign-in, DocuSign live mode, Microsoft Graph email, Azure Blob storage.
+- **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
+  the domain tests (15 of 15); the database invariants on PostgreSQL 16 (all 10 groups); migrate twice (the second run
+  is a no-op) and seed; the API flow test (69 of 69). These are the steps CI runs.
+- **Docker:** both images build, and `docker compose up --build` starts the database, runs the migrations and seed,
+  and serves the API and web app.
+- **In a browser:** the nine UAT scenarios pass against that stack (Playwright, Chromium), and the audit chain
+  verifies afterwards. A crawl of every page and every linked record as each of the 12 personas (1,086 page loads)
+  found no server errors after the fixes below. One crawl run logged a 400 on a sub-resource for one persona on two
+  pages, and one React hydration warning; neither came back on a rerun, and the cause isn't known.
+- **Not run yet:** CI on GitHub itself, the Bicep and the deploy workflow, Microsoft Entra sign-in, DocuSign live
+  mode, Microsoft Graph email, Azure Blob storage. Firefox, Safari and screen readers are untested.
 
-So the first job is: run CI, commit `package-lock.json`, fix what the real compilers report, then deploy to a
-non-production subscription.
+Found and fixed during that work:
+
+- Type-checking needed `@veqms/domain` and `@veqms/db` built first; `npm run typecheck` now builds them.
+- The API process exited when the database dropped an idle connection (restart or failover). The pool now logs it
+  and opens a new connection.
+- In Docker, the API couldn't write to its storage volume, so every DocuSign send failed. The image now creates the
+  folder for the `node` user.
+- A document's Training tab crashed for anyone who isn't its owner or a training manager. It now explains who can
+  see the records.
+- A revoked user got a blank error page. They are now signed out and told their access has been removed.
+- The closure pages showed nothing once a closure was sent. They now show the envelope, let the signer sign in mock
+  mode, and show the closed state. The Quality page lists CAPAs and quality events.
+- Closing a CAPA closed its source quality event without an audit entry. It is now logged with the previous state.
+- Filtering training records by Withdrawn, Corrected or Superseded found nothing unless "include earlier versions"
+  was ticked.
+- Concurrent queries on one transaction (deprecated in `pg`, removed in `pg` 9) now run one after another.
+- The development sign-in lists all twelve demo people, so every UAT step can be done on screen (Omar signs in
+  scenario 2).
+
+Two package advisories are open: `next` 15 depends on a `postcss` version with published advisories (fixed only in
+`next` 16), and `zod` 3 has a memory-exhaustion advisory (fixed in `zod` 4). Both fixes are major upgrades and are
+left for a decision.
 
 ## Before go-live
 
@@ -42,8 +68,9 @@ non-production subscription.
 
 Use the demo seed (`npm run db:seed`, never in production). Personas sign in with the development picker.
 
-1. Victoria tries to send POL-003 for approval with herself as QA approver: refused (segregation of duties); the
-   refusal is in the audit trail.
+1. Victoria tries to send POL-003 for approval with herself as QA approver: refused (segregation of duties). On screen
+   the plan shows the problem and the Send button is disabled, so nothing reaches the API and nothing is logged. If the
+   form is sent anyway (the browser test does this), the API refuses it and the refusal is in the audit trail.
 2. Victoria sends VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
    becomes Effective; Carrie and Omar have completed training records; the IT team has VP-001 to read.
 3. Jim voids POL-004 with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim sends a corrected

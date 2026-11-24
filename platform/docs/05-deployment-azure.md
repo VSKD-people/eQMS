@@ -3,8 +3,9 @@
 This takes an empty Azure subscription to a live VeQMS with Microsoft Entra ID sign-in, PostgreSQL, DocuSign
 approvals and daily training reminders.
 
-> **Status: not tested.** The infrastructure code (`infra/`), Dockerfiles and workflows were written without
-> access to Azure, the Bicep compiler, a container registry or npm. Treat the first deployment as a dry run in a
+> **Status: not tested in Azure.** Both Dockerfiles build and run locally (`docker compose up --build`, with the UAT
+> browser tests passing against it). The infrastructure code (`infra/`) and the deploy workflow were written without
+> access to Azure, the Bicep compiler or a container registry. Treat the first deployment as a dry run in a
 > non-production subscription, and fix anything the tools reject before you deploy to production.
 > Each step below says what still needs checking.
 

@@ -17,10 +17,15 @@ import { sendQueuedEmail } from '../src/integrations/mail.ts';
 import { HttpError } from '../src/lib/http.ts';
 
 test('API flow: DocuSign approvals, training records, closures, admin', { skip: process.env.DATABASE_URL ? false : 'set DATABASE_URL to a freshly seeded database' }, async () => {
-  const pool = createPool({ connectionString: process.env.DATABASE_URL! });
-  // Act as the API's database role, whatever login the test connects with.
-  pool.on('connect', (c) => { void c.query('set role veqms_app'); });
+  // Act as the API's database role, whatever login the test connects with. The role is set when each connection
+  // starts (PostgreSQL's `-c role=` startup option), so no query runs ahead of the test's own.
+  const url = new URL(process.env.DATABASE_URL!);
+  url.searchParams.set('options', '-c role=veqms_app');
+  const pool = createPool({ connectionString: url.toString() });
   const tenantId = (await pool.query('select tenant_id from app.tenant_directory where entra_tenant_id = $1', ['dev-tenant'])).rows[0].tenant_id;
+  // The test changes data, so it needs a freshly seeded database. Say so plainly rather than fail halfway through.
+  const fresh = (await withTenant(pool, { tenantId, userId: null }, (db) => rows<{ state: string }>(db, "select state from app.documents where number = 'VP-001'")))[0];
+  assert.equal(fresh?.state, 'Review closed', 'This test needs a freshly migrated and seeded database (npm run db:migrate && npm run db:seed on an empty database).');
   const files = new Map<string, Buffer>();
   const storage = { put: async (k: string, b: Uint8Array) => { if (files.has(k)) throw new Error('exists ' + k); files.set(k, Buffer.from(b)); }, get: async (k: string) => files.get(k)! };
   const deps = { docusign: createDocuSign({ DOCUSIGN_MODE: 'mock' } as any), storage };
@@ -150,6 +155,8 @@ test('API flow: DocuSign approvals, training records, closures, admin', { skip: 
   await signAll(ce.id, ['priya', 'vic']);
   const capa = await sys((db) => one<any>(db, `select c.state, q.state as qe from app.capas c join app.quality_events q on q.id = c.source_event_id where c.number = 'CAPA-005'`));
   ok(capa.state === 'Closed' && capa.qe === 'Closed', 'CAPA-005 closed, and its source event QE-013');
+  const qeAudit = await sys((db) => rows<{ before: { state: string } | null }>(db, `select before from app.audit_log where object_type = 'Quality event' and object_id = 'QE-013' and action = 'state'`));
+  ok(qeAudit.length === 1 && qeAudit[0]!.before?.state === 'CAPA raised', 'QE-013 closing is in the audit trail with its previous state');
   await fails(as('grace', (db, me) => env.sendClosure(db, deps, me, 'quality_event', 'QE-017', { verification: V, approverId: ids.vic! })), /justification/, 'deviation closure needs a justification');
   await as('grace', (db, me) => closures.recordClosureJustification(db, me, 'QE-017', 'One-off delay; the test passed and the schedule stays the same.'));
   await fails(as('grace', (db, me) => env.sendClosure(db, deps, me, 'quality_event', 'QE-017', { verification: V, approverId: ids.grace! })), /owns this record/, 'owner cannot approve their own closure');

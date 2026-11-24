@@ -52,6 +52,9 @@ COPY --from=build --chown=node:node /app/packages/db/seed ./packages/db/seed
 COPY --from=build --chown=node:node /app/apps/api/package.json ./apps/api/package.json
 COPY --from=build --chown=node:node /app/apps/api/dist ./apps/api/dist
 COPY --chown=node:node infra/scripts/with-pg-token.mjs infra/scripts/grant-app-role.mjs ./
+# Local file storage (STORAGE_MODE=local, docker compose only). A named volume mounted here takes this folder's owner
+# when it is first created, so the API can write to it as the node user. Azure uses Blob storage instead.
+RUN mkdir -p /data/storage && chown node:node /data/storage
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

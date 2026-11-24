@@ -28,6 +28,15 @@ export async function loadOrNull<T>(path: string): Promise<T | null> {
   }
 }
 
-export const getMe = cache(async () => load<Me>('/me'));
+// Every signed-in page loads /me first (in the app layout). The API answers 403 when the person's access has been
+// removed or their account isn't set up; sign them out with an explanation instead of failing the layout.
+export const getMe = cache(async () => {
+  try {
+    return await load<Me>('/me');
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403) redirect('/auth/logout?reason=no-access');
+    throw e;
+  }
+});
 
 export function has(me: Me, perm: string): boolean { return me.permissions.includes(perm); }

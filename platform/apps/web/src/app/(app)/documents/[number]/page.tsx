@@ -145,8 +145,10 @@ async function Approval({ d }: { d: DocumentDetail }) {
 }
 
 async function Training({ d, all }: { d: DocumentDetail; all: boolean }) {
+  // The API shows other people's training records only to the document owner and to people with organisation-wide
+  // training access; anyone else gets 403, so load with loadOrNull and say so instead of failing the page.
   const [records, groups, users] = await Promise.all([
-    load<TrainingRecord[]>(`/documents/${d.number}/training${all ? '?all=1' : ''}`),
+    loadOrNull<TrainingRecord[]>(`/documents/${d.number}/training${all ? '?all=1' : ''}`),
     d.can.changeAudience ? load<Group[]>('/groups') : Promise.resolve([] as Group[]),
     d.can.changeAudience ? loadOrNull<UserRow[]>('/users') : Promise.resolve(null)
   ]);
@@ -163,6 +165,9 @@ async function Training({ d, all }: { d: DocumentDetail; all: boolean }) {
               <p className="small muted mt-8">New members are allocated the effective version now; open allocations for people no longer in the audience close. The change is logged with the old and new audience.</p>
             </form></details>) : null}
       </div>
+      {records === null ? (
+        <div className="callout"><strong>Training records for this document are visible to its owner and to training managers.</strong> Your own training is under <a href="/training">Training</a>.</div>
+      ) : (<>
       <div className="spread mb-8"><a className="small" href={`/documents/${d.number}?tab=training${all ? '' : '&all=1'}`}>{all ? 'Show the effective version only' : 'Show earlier versions, withdrawn and corrected records'}</a>
         <div className="btn-row"><a className="btn btn-sm" href={`/reports/document-status.pdf?documentNumber=${d.number}`}>Export PDF</a><a className="btn btn-sm" href={`/reports/document-status.xlsx?documentNumber=${d.number}`}>Export Excel</a></div></div>
       <div className="table-wrap"><table className="t"><caption className="sr-only">Training records</caption>
@@ -171,6 +176,7 @@ async function Training({ d, all }: { d: DocumentDetail; all: boolean }) {
           <tr key={r.id}><td><a href={`/training/records/${r.id}`}>{r.user.name}</a></td><td>v{r.version}</td><td className="small">{r.allocReason} · {r.allocatedBy?.name ?? 'System'}</td>
             <td>{fmtDate(r.dueAt)}</td><td>{r.completedAt ? fmtUtc(r.completedAt) : '—'}</td><td><Chip text={r.status} /></td></tr>
         )) : <tr><td colSpan={6}><div className="empty">No training allocated for this version.</div></td></tr>}</tbody></table></div>
+      </>)}
     </>
   );
 }

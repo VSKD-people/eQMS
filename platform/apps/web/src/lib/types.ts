@@ -58,6 +58,13 @@ export type DocumentDetail = {
 
 export type ApprovalPlan = { subject: string; signers: Signer[]; problems: string[]; allowance: Allowance };
 
+// GET /capas/:number and /quality-events/:number. `envelope` is the latest closure envelope, if any.
+export type ClosureRecord = {
+  id: string; number: string; title: string; state: string; severity: string; owner: Person; closedAt: string | null; envelope: EnvelopeSummary | null;
+  effectivenessResult?: string | null; effectivenessVerdict?: string | null; // CAPA
+  type?: string; closureJustification?: string | null; // quality event
+};
+
 export type TrainingStatus = 'Assigned' | 'Overdue' | 'Complete' | 'Superseded' | 'Withdrawn' | 'Corrected' | 'Correction' | 'Obsolete';
 
 export type TrainingRecord = {

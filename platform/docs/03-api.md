@@ -150,7 +150,7 @@ DocuSign account.
 |---|---|---|---|
 | GET | `/training/my` | | `{ open: TrainingRecord[]; history: TrainingRecord[] }` |
 | POST | `/training/records/:id/complete` | `{ confirm: true, quizAnswers?: number[] }` | `TrainingRecord` (trainee only; system time) |
-| GET | `/training/records?userId=&documentNumber=&status=&all=1` | | `TrainingRecord[]` (training.org) |
+| GET | `/training/records?userId=&documentNumber=&status=&all=1` | | `TrainingRecord[]` (training.org). Without `status`, only live records unless `all=1`; with `status`, every record in that status |
 | GET | `/training/records/:id` | | `{ record: TrainingRecord; corrections: TrainingRecord[]; audit: AuditEntry[] }` |
 | POST | `/training/records/:id/corrections` | `{ reason, retrain: boolean }` | `TrainingRecord` (Quality Manager) |
 | GET | `/training/matrix?group=` | | `{ documents: {id, number, title, currentVersion}[]; people: {id, name, jobTitle}[]; cells: Record<userId, Record<documentId, { status, versionTrained, currentVersion, recordId } | null>> }` |

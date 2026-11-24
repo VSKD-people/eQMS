@@ -4,10 +4,10 @@ The live, full-stack version of VeQMS: a PostgreSQL database, a Node API, a Next
 infrastructure to run them in UK South. The clickable prototype in `../veqms/` stays as the reference for screens
 and flows; the specs are in `../specs/`.
 
-> **Status.** Written and partly tested in a sandbox without npm access. The database, its rules and the API logic
-> have run against PostgreSQL 16 and pass their tests. The API and web app have been type-checked against stand-in
-> types, not built with the real packages. The web app has not been opened in a browser, and nothing has been
-> deployed to Azure. Start with "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
+> **Status.** Built with the real packages (lockfile committed). Type-check, build, the domain tests, the database
+> invariants and the API flow test pass. `docker compose up --build` runs the whole stack, and the nine UAT scenarios
+> pass in a browser (Playwright, `e2e/`). Not yet run: Microsoft Entra sign-in, live DocuSign, Microsoft Graph email,
+> Azure Blob storage, the Bicep and the deploy workflow. Next steps are in "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
 > Details: [07 · Testing and validation](docs/07-testing-and-validation.md).
 
 ## What Phase 1 does
@@ -84,6 +84,14 @@ npm run db:test
 
 The API flow test needs `DATABASE_URL` pointing at a freshly migrated and seeded database (it changes data). CI runs
 everything on each push: `.github/workflows/platform-ci.yml`.
+
+Browser tests for the UAT scenarios, against a freshly started local stack (`docker compose up --build`):
+
+```bash
+cd e2e && npm ci && npx playwright install chromium && npx playwright test
+```
+
+They change data too: to run them again, start from a fresh database (`docker compose down -v`, then up again).
 
 ## Documentation
 

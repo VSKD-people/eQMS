@@ -3,11 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "description": "VeQMS electronic quality management system: full-stack platform (Phase 1)",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=22.12" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
+    "build:packages": "npm run build -w @veqms/domain -w @veqms/db",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "db:migrate": "npm run migrate --workspace @veqms/db",
     "db:seed": "npm run seed --workspace @veqms/db",

@@ -21,7 +21,7 @@ export async function refreshStatus(id: string) {
 // Development only (DocuSign mock mode). The API refuses both with 403 when DocuSign is live.
 export async function mockSign(id: string, back: string) {
   const to = inApp(back);
-  await mutate(`/envelopes/${id}/mock/sign`, { method: 'POST' }, to, 'Signed (mock DocuSign). The next signer is up.');
+  await mutate(`/envelopes/${id}/mock/sign`, { method: 'POST' }, to, 'Signed (mock DocuSign). The envelope goes to the next signer, or completes if you were the last.');
 }
 
 export async function mockDecline(id: string, back: string, fd: FormData) {

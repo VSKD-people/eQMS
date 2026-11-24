@@ -31,11 +31,11 @@ Rules:
 |---|---|
 | Database (`packages/db`) | 43 tables for every module; row-level security; append-only hash-chained audit log; insert-only signatures; locked training records; DocuSign envelope and allowance rules; demo seed; invariant tests. **Run and passing** on PostgreSQL 16 |
 | Domain rules (`packages/domain`) | Permissions, signing plan, allowance years, training status, Connect HMAC, Excel writer. **15 unit tests passing** |
-| API (`apps/api`) | Fastify 5. Sign-in (Entra ID, development personas), documents, the DocuSign route (send, status sync, completion, void, decline, mock signing), CAPA and deviation closure, training (allocation, confirmation, quiz, corrections, matrix, reminders), approvals register and sends log, reports (Excel, PDF), users and roles, settings, audit trail, SCIM, daily job. **Services and routes run against the real database** through test stand-ins for the npm packages (68 + 24 checks); **type-checked only** against stand-in types |
-| Web (`apps/web`) | Next.js 15. Sign-in, Today, documents (list, new, edit, submit, send with verification), approvals, envelope view with mock signing, quality closures, training (mine, confirm, matrix, records), administration (audit, settings, users and roles). **Type-checked only**; never run in a browser |
-| Azure (`infra`, workflows) | Bicep for UK South, Dockerfiles, CI and deploy workflows, deployment guide, runbook. **Never run** |
+| API (`apps/api`) | Fastify 5. Sign-in (Entra ID, development personas), documents, the DocuSign route (send, status sync, completion, void, decline, mock signing), CAPA and deviation closure, training (allocation, confirmation, quiz, corrections, matrix, reminders), approvals register and sends log, reports (Excel, PDF), users and roles, settings, audit trail, SCIM, daily job. **Built with the real packages; API flow test passing (69 checks)** |
+| Web (`apps/web`) | Next.js 15. Sign-in, Today, documents (list, new, edit, submit, send with verification), approvals, envelope view with mock signing, quality (CAPA and event lists, closures), training (mine, confirm, matrix, records), administration (audit, settings, users and roles). **Built; the nine UAT scenarios pass in a browser** (`e2e/`, Playwright) |
+| Azure (`infra`, workflows) | Bicep for UK South, Dockerfiles, CI and deploy workflows, deployment guide, runbook. **Dockerfiles and `docker compose` run locally; Bicep and the deploy workflow never run** |
 
-The build sandbox could not reach the npm registry, so nothing has been installed or built with real packages.
+Not run yet: Microsoft Entra sign-in, live DocuSign, Microsoft Graph email, Azure Blob storage, anything in Azure.
 
 ## 3. Rules to keep (don't break these)
 
@@ -60,13 +60,14 @@ The build sandbox could not reach the npm registry, so nothing has been installe
 
 ## 4. First tasks (before any new feature)
 
-1. `npm install` at `platform/`, commit `package-lock.json`.
-2. `npm run typecheck` and `npm run build`; fix whatever the real package types report. Don't weaken types to get
-   past an error; find out why.
+Tasks 1 to 4 are done (see `docs/07`, "What has actually run so far"); CI has still to run on GitHub for the first time.
+
+1. ~~`npm install` at `platform/`, commit `package-lock.json`.~~ Done.
+2. ~~`npm run typecheck` and `npm run build`; fix whatever the real package types report.~~ Done.
 3. Run CI (`.github/workflows/platform-ci.yml`) to green: domain tests, database invariants, migrate and seed, API
-   flow test.
-4. `docker compose up --build`, open http://localhost:3000, walk the UAT scenarios in `docs/07-testing-and-validation.md`
-   as each persona. Fix what fails. Add a browser test (Playwright) for each scenario.
+   flow test, and the browser tests (`e2e` job). All pass locally; check the first run on GitHub.
+4. ~~`docker compose up --build`, walk the UAT scenarios as each persona, fix what fails, add a Playwright test for
+   each scenario.~~ Done: `e2e/tests/uat.spec.ts`.
 5. Deploy to a non-production Azure subscription by `docs/05-deployment-azure.md`; fix what the tools reject.
 6. Switch DocuSign to live against a DocuSign developer account and test the route end to end (`docs/06-docusign.md`).
 

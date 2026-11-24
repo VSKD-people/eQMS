@@ -1,7 +1,7 @@
 // CAPA and deviation closure (Route 1). Phase 1 has the closure path only; the full CAPA and quality event screens
 // come in Phase 2 (see BUILD_PROMPT.md).
 import type { FastifyInstance } from 'fastify';
-import { maybe, rows, type Db } from '@veqms/db';
+import { mapSeq, maybe, rows, type Db } from '@veqms/db';
 import type { Ctx } from '../app.ts';
 import { conflict, forbidden, notFound } from '../lib/http.ts';
 import type { Person } from '../lib/people.ts';
@@ -85,7 +85,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
     });
   }
 
-  api.get('/capas', (req) => ctx.run(req, async (db) => Promise.all((await rows<Capa>(db, CAPA + ' order by c.number')).map((c) => capaApi(db, c)))));
+  api.get('/capas', (req) => ctx.run(req, async (db) => mapSeq(await rows<Capa>(db, CAPA + ' order by c.number'), (c) => capaApi(db, c))));
   api.get('/capas/:number', (req) => ctx.run(req, async (db) => capaApi(db, await capa(db, param(p, req.params).number))));
 
   api.post('/capas/:number/effectiveness', async (req, reply) => {
@@ -106,7 +106,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
     return env.sendClosure(db, ctx, me, 'capa', param(p, req.params).number, b);
   }));
 
-  api.get('/quality-events', (req) => ctx.run(req, async (db) => Promise.all((await rows<Qe>(db, QE + ' order by q.number')).map((q) => qeApi(db, q)))));
+  api.get('/quality-events', (req) => ctx.run(req, async (db) => mapSeq(await rows<Qe>(db, QE + ' order by q.number'), (q) => qeApi(db, q))));
   api.get('/quality-events/:number', (req) => ctx.run(req, async (db) => qeApi(db, await qe(db, param(p, req.params).number))));
 
   api.post('/quality-events/:number/closure', async (req, reply) => {

@@ -1,7 +1,7 @@
 // Read-and-understood training (Route 2). The trainee confirms their own record; the system sets the dates; a
 // completed record is never edited (corrections are new records). The database enforces all three.
 import type { FastifyInstance } from 'fastify';
-import { rows } from '@veqms/db';
+import { mapSeq, rows } from '@veqms/db';
 import type { Ctx } from '../app.ts';
 import { forbidden } from '../lib/http.ts';
 import { body, need, param, query, uuid, z } from '../lib/params.ts';
@@ -36,7 +36,7 @@ export function trainingRoutes(api: FastifyInstance, ctx: Ctx): void {
       `select seq, at, actor_label, action, summary, before, after from app.audit_log where object_type = 'Training record' and object_id = $1 order by seq`, [rid]);
     return {
       record: training.toApi(r),
-      corrections: await Promise.all(corrections.map(async (c) => training.toApi(await training.getRecord(db, c.id)))),
+      corrections: await mapSeq(corrections, async (c) => training.toApi(await training.getRecord(db, c.id))),
       audit: audit.map((a) => ({ seq: Number(a.seq), at: new Date(a.at).toISOString(), actor: a.actor_label, action: a.action, objectType: 'Training record', objectId: rid, summary: a.summary, before: a.before, after: a.after }))
     };
   }));

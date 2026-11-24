@@ -4,7 +4,7 @@ import { setSession } from '@/lib/session';
 import { env } from '@/lib/env';
 import { safeNext } from '@/lib/oidc';
 
-const PERSONAS = ['dev-vic', 'dev-tom', 'dev-sam', 'dev-priya', 'dev-grace', 'dev-daniel', 'dev-hannah', 'dev-aud'];
+const PERSONAS = ['dev-vic', 'dev-tom', 'dev-sam', 'dev-priya', 'dev-grace', 'dev-daniel', 'dev-hannah', 'dev-aud', 'dev-omar', 'dev-mia', 'dev-lena', 'dev-jake'];
 
 // Development only: sign in as a seeded persona. The API also refuses X-Dev-User in production.
 export async function devSignIn(fd: FormData) {

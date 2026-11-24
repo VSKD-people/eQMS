@@ -52,17 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Add `cache: npm` and `cache-dependency-path: platform/package-lock.json` once the lockfile is committed.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else
-            echo "::warning::No package-lock.json yet. Commit one so CI installs exactly what was tested."
-            npm install
-          fi
+        run: npm ci
 
       - name: Type-check
         run: npm run typecheck
@@ -94,3 +91,58 @@ jobs:
           STORAGE_MODE: local
           LOCAL_STORAGE_DIR: ${{ runner.temp }}/veqms-storage
         run: npm test --workspaces --if-present
+
+  # The UAT scenarios (docs/07) in a browser, against the Docker stack: fresh database, demo seed, DocuSign mock.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: ci
+    defaults:
+      run:
+        working-directory: platform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the local stack
+        run: docker compose up -d --build
+
+      - name: Wait for the web app
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:3000/login; then exit 0; fi
+            sleep 5
+          done
+          docker compose ps -a
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: platform/e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: platform/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: UAT scenarios in the browser
+        working-directory: platform/e2e
+        env:
+          CI: '1'
+        run: npx playwright test
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            platform/e2e/playwright-report
+            platform/e2e/test-results
+          retention-days: 14

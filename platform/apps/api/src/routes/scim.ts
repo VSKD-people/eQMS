@@ -3,9 +3,9 @@
 // Run Microsoft's SCIM validator against this endpoint before go-live; Entra's exact PATCH shapes vary.
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
-import { maybe, one, rows, withTenant, type Db } from '@veqms/db';
+import { mapSeq, maybe, one, rows, withTenant, type Db } from '@veqms/db';
 import type { Ctx } from '../app.ts';
-import { HttpError } from '../lib/http.ts';
+import { HttpError, toHttp } from '../lib/http.ts';
 import { people, type Person } from '../lib/people.ts';
 import { audit } from '../lib/work.ts';
 import { reconcileUser } from '../services/training.ts';
@@ -53,10 +53,11 @@ export function scimRoutes(scim: FastifyInstance, ctx: Ctx): void {
     const want = Buffer.from(ctx.cfg.SCIM_TOKEN);
     if (!want.length || given.length !== want.length || !timingSafeEqual(given, want)) throw new HttpError(401, 'SCIM token refused.');
   });
+  // Fastify 5 types the error as unknown (anything can be thrown); toHttp maps it the same way as the main API.
   scim.setErrorHandler((err, req, reply) => {
-    const status = err instanceof HttpError ? err.status : 500;
-    if (status >= 500) req.log.error({ err }, 'SCIM request failed');
-    void scimError(reply, status, status >= 500 ? 'Something went wrong.' : err.message);
+    const h = toHttp(err);
+    if (h.status >= 500) req.log.error({ err }, 'SCIM request failed');
+    void scimError(reply, h.status, h.body.error.message);
   });
 
   // One deployment serves the tenant named by ENTRA_TENANT_ID.
@@ -166,7 +167,7 @@ export function scimRoutes(scim: FastifyInstance, ctx: Ctx): void {
     const out = await tx(async (db) => {
       const name = eqFilter(q.filter, 'displayName'), ext = eqFilter(q.filter, 'externalId');
       const gs = await rows<G>(db, 'select id, name, entra_group_id from app.groups where ($1::text is null or name = $1) and ($2::text is null or entra_group_id = $2) order by name', [name, ext]);
-      return Promise.all(gs.map((g) => groupRes(db, g)));
+      return mapSeq(gs, (g) => groupRes(db, g));
     });
     return send(reply, 200, { schemas: [LIST], totalResults: out.length, startIndex: 1, itemsPerPage: out.length, Resources: out });
   });
