@@ -44,10 +44,11 @@ points, not tested values; tune them after the first month.
 | Database health | PostgreSQL CPU, storage used, failed connections | Storage nearing the limit; repeated failed connections |
 | Key Vault denied | Key Vault diagnostic logs, `Forbidden` results | Any (usually a role assignment or secret name problem) |
 | Adobe Sign webhooks refused, or the daily Adobe Sign sign-in failing | API logs ("Adobe Sign webhook notification refused"); the reminders job's `adobe-sign-sign-in` line | Any refused notification (wrong token or client ID); any failed sign-in (expired or revoked refresh token or key). Adobe disables a webhook after 72 hours of failed deliveries |
+| Adobe Sign webhook queue stuck | `webhook_inbox` rows not processed after 15 minutes; API log "Adobe Sign webhook queue failed"; new `dead_letters` rows with job `adobe-sign-webhook` | Any. Quality Managers are also told in VeQMS when a notification is given up on |
 | Sign-in anomalies | Entra ID sign-in logs for the two app registrations | Per your Entra ID Protection policies |
 | Azure service issues | Azure Service Health for UK South, PostgreSQL, Container Apps, Key Vault, Storage | Any |
 
-Finding logs (*check* the table and column names; they depend on how the environment transactions logs to the workspace):
+Finding logs (*check* the table and column names; they depend on how the environment sends logs to the workspace):
 
 ```kusto
 ContainerAppConsoleLogs_CL
@@ -262,6 +263,23 @@ people can reach without VeQMS.
 - Database backups: 35 days. Log Analytics: 90 days (set in the Bicep). Change these only through change control.
 - Legal hold: if records are needed for a dispute or investigation, a legal hold on the blob container stops changes
   regardless of the retention period. Agree with legal who can set and lift it.
+
+## Repository security
+
+The repository holds the threat model, the infrastructure design and colleagues' names. Someone with administrator
+rights on it does these; they can't be done from a build session.
+
+1. Make it private:
+
+```bash
+gh repo edit VSKD-people/eQMS --visibility private --accept-visibility-change-consequences
+```
+
+2. Transfer it to the Katalyze-Data organisation (repository Settings → Transfer).
+3. Run a secret scanner over the full history (for example gitleaks or TruffleHog) and rotate anything it finds,
+   including anything that was ever committed and later removed.
+4. Branch protection on a private repository needs a GitHub plan upgrade for Katalyze-Data. Pricing approval goes to
+   **PJ Walters**. Until then, CI must be green and a reviewer must approve before merging, by agreement.
 
 ## Change control for VeQMS itself
 

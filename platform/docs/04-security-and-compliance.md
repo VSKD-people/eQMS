@@ -16,6 +16,11 @@ the Bio-Pharma settings (Part 11 support). As R8 says, formal validation is then
 in [07 · Testing and validation](07-testing-and-validation.md). Read-and-understood training confirmations stay in
 the app and are not treated as Part 11 signatures (the brief's decision).
 
+VeQMS signs nothing itself: every signature, including later phases' periodic reviews and change request and CAPA
+actions marked `needs_signature`, goes through Adobe Sign, whose Bio-Pharma settings check the signer's identity at
+the moment of signing. So no Entra authentication context (step-up sign-in) is set up for signing in VeQMS. The
+database refuses any signature that didn't come from Adobe Sign (or KSTARRS, for migrated approvals).
+
 ## Threats and controls
 
 | Threat (Step 3) | Control in Phase 1 | Status |

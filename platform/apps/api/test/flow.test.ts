@@ -121,6 +121,10 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const nd = await as('sam', (db, me) => docs.create(db, me, { docType: 'Procedure', title: 'Firewall Change Procedure', classification: 'Internal', ownerId: ids.sam!, process: 'ISMS · Network',
     audience: { groups: ['Support team'], roles: [], users: [ids.lena!], daysToComplete: 10, quiz: false } }));
   ok(/^SOP-\d+$/.test(nd.number), `numbered ${nd.number}`);
+  const noAudience = { groups: [], roles: [], users: [], daysToComplete: 14, quiz: false };
+  const uar = await as('vic', (db, me) => docs.create(db, me, { docType: 'User access review', title: 'Q4 access review: finance systems', classification: 'Confidential', ownerId: ids.vic!, process: 'ISMS · Access control', audience: noAudience }));
+  const ra = await as('vic', (db, me) => docs.create(db, me, { docType: 'Risk assessment', title: 'Cloud backup provider risk assessment', classification: 'Confidential', ownerId: ids.vic!, process: 'ISMS · Risk', audience: noAudience }));
+  ok(uar.number === 'UAR-001' && ra.number === 'RA-001', `new document types: ${uar.number} and ${ra.number}, approved through Adobe Sign like any controlled document`);
   await as('sam', (db, me) => docs.saveDraft(db, me, nd.number, [{ t: 'h', x: '1. Purpose' }, { t: 'p', x: 'Control firewall changes.' }], 'First draft'));
   await as('sam', (db, me) => docs.submit(db, me, nd.number, [], [ids.tom!]));
   ok(await docState(nd.number) === 'Review closed', 'no reviewers: straight to Review closed');

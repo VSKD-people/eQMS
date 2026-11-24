@@ -59,21 +59,25 @@ Each new kind of sign-off adds its record type to `agreements.record_type` and a
    the expected `X-AdobeSign-ClientId`. Anything else gets a plain 404. Every accepted request is answered with the
    client ID echoed back (header and JSON body), which Adobe Sign requires; this includes the "verification of
    intent" GET Adobe sends when the webhook is created.
-3. The API finds the agreement through `agreement_directory`, records that a notification arrived (with the payload's
-   SHA-256), then **reads the agreement and its events from the Adobe Sign API** and applies that status. It never acts
-   on the notification body alone.
-4. Adobe Sign reports both a cancellation and a signer's rejection as `CANCELLED` (newer accounts: `ABORTED`). A
+3. The route only queues the notification in `webhook_inbox` and answers at once: Adobe Sign expects a reply within
+   5 seconds. A repeated notification ID (`webhookNotificationId`, **verify**) is recorded once.
+4. A worker in the API works through the queue: it finds the agreement through `agreement_directory`, records that a
+   notification arrived (with the payload's SHA-256), then **reads the agreement and its events from the Adobe Sign
+   API** and applies that status. It never acts on the notification body alone. A failure is retried with back-off;
+   after 8 attempts the notification goes to `dead_letters` and Quality Managers are told.
+5. Adobe Sign reports both a cancellation and a signer's rejection as `CANCELLED` (newer accounts: `ABORTED`). A
    `REJECTED` event in the agreement's history makes it a decline, with the signer's comment as the reason. `EXPIRED`
    is handled like a cancellation.
-5. Repeats are harmless: a signer already signed or an agreement already final is left alone. Adobe Sign retries a
-   failed delivery 15 times over 72 hours and then disables the webhook, so watch the API's error rate (runbook).
-6. Fallbacks: anyone can press *Check status with Adobe Sign* on an agreement (`POST /agreements/:id/refresh`), and the
-   daily job checks every agreement that has been out for more than 24 hours.
+6. Repeats are harmless: a signer already signed or an agreement already final is left alone. Adobe Sign retries a
+   failed delivery for up to 72 hours and then disables the webhook, so watch the refused-webhook log (runbook).
+7. Fallbacks: anyone can press *Check status with Adobe Sign* on an agreement (`POST /agreements/:id/refresh`), and the
+   daily job works through anything left in the queue and checks every agreement out for more than 24 hours.
 
 ## Setting up the Adobe Sign account
 
-1. **Plan.** Adobe's guidance for FDA-regulated customers needs a Business or Enterprise plan; Adobe's validation
-   pack assumes Enterprise with single sign-on. Confirm the plan and the yearly transactions with **PJ Walters**.
+1. **Plan.** Acrobat Sign Enterprise with the Part 11 module: Part 11 is only available on Enterprise (Adobe call,
+   20 November 2026). Set up SAML single sign-on with Entra ID as well; Adobe's validation pack assumes both. Confirm
+   the yearly transactions with **PJ Walters**.
 2. **Data centre.** Adobe Sign accounts live in one data centre (for example EU1 Frankfurt or EU2 Amsterdam). No UK
    data centre was found in Adobe's list. Signed documents and audit reports are held by Adobe in that data centre as
    well as in VeQMS's UK South storage. **Decide** whether that is acceptable before go-live.
@@ -92,7 +96,9 @@ Each new kind of sign-off adds its record type to `agreements.record_type` and a
 5. **Webhook**: account or group scope, events `AGREEMENT_ACTION_COMPLETED`, `AGREEMENT_WORKFLOW_COMPLETED`,
    `AGREEMENT_REJECTED`, `AGREEMENT_RECALLED` and `AGREEMENT_EXPIRED`, URL
    `https://<api address>/webhooks/adobe-sign/<ADOBE_SIGN_WEBHOOK_TOKEN>`. Set `ADOBE_SIGN_WEBHOOK_CLIENT_ID` if
-   Adobe sends a client ID other than the OAuth app's.
+   Adobe sends a client ID other than the OAuth app's. Don't include documents in the payload (leave the signed and
+   detailed document options off): VeQMS downloads the files itself. Two-way TLS is available for webhooks; consider
+   it once the account is set up.
 6. **Allowance**: set the transactions per year and the allowance year start month in VeQMS Settings to match the
    contract.
 

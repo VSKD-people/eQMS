@@ -33,7 +33,9 @@ export const DOC_TYPES = [
   { type: 'Policy', prefix: 'POL' }, { type: 'Procedure', prefix: 'SOP' }, { type: 'Work instruction', prefix: 'WI' },
   { type: 'Form', prefix: 'FRM' }, { type: 'Register', prefix: 'REG' }, { type: 'Plan', prefix: 'PLN' },
   { type: 'Specification', prefix: 'SPEC' }, { type: 'Statement of Applicability', prefix: 'SOA' }, { type: 'Template', prefix: 'TPL' },
-  { type: 'Vendor approval', prefix: 'VEN' }, { type: 'Validation plan', prefix: 'VP' }, { type: 'Validation report', prefix: 'VR' }
+  { type: 'Vendor approval', prefix: 'VEN' }, { type: 'Validation plan', prefix: 'VP' }, { type: 'Validation report', prefix: 'VR' },
+  // Signed through Adobe Sign like vendor approvals (PJ, 24 Nov 2026). They replace sign-offs done in Monday.com.
+  { type: 'User access review', prefix: 'UAR' }, { type: 'Risk assessment', prefix: 'RA' }
 ] as const;
 
 export type Meaning = 'Authored' | 'Reviewed' | 'Approved';

@@ -33,7 +33,7 @@ approvals and daily training reminders.
 | Azure subscription and budget | Finance / IT | Running costs need approval. Send pricing questions to **PJ Walters**. Check costs in the Azure pricing calculator for the SKUs in `main.parameters.json`; this guide does not quote prices. |
 | Who approves Entra ID app registrations | IT | **Open question 10** in the spec. Settle it before step 3. |
 | Data residency | IT + Legal / DPO | Spec open question 8: UK South primary, backups to UK West. Confirm geo-redundant backup lands in UK West for your subscription. |
-| Adobe Sign account: plan, API access, Bio-Pharma settings, data centre | Quality + Finance | Confirm the plan (Business or Enterprise), API access, the Bio-Pharma settings, and the yearly transactions (the app assumes 500). Adobe Sign holds signed documents in its own data centre (EU1 or EU2; no UK data centre was found): agree that with Legal / DPO. Pricing approval: **PJ Walters**. |
+| Adobe Sign account: plan, API access, Bio-Pharma settings, data centre | Quality + Finance | Confirm Acrobat Sign Enterprise with the Part 11 module and SAML single sign-on with Entra ID, API access, the Bio-Pharma settings, and the yearly transactions (the app assumes 500). Adobe Sign holds signed documents in its own data centre (EU1 or EU2; no UK data centre was found): agree that with Legal / DPO. Pricing approval: **PJ Walters**. |
 | Who reviews production deployments | Quality Manager | Set as required reviewers on the GitHub `production` environment. |
 
 **People and access**

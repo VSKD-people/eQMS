@@ -137,7 +137,7 @@ Phase 1 has the closure path only. The full CAPA and quality event screens are P
 | POST | `/agreements/:id/refresh` | | `AgreementSummary` (polls Adobe Sign: fallback for a missed webhook) |
 | GET | `/agreements/:id/files/:kind` | kind = `original` · `signed` · `audit-report` | `application/pdf` |
 | GET | `/approvals/register` | | `AgreementSummary[]` (completed approvals) |
-| GET, POST | `/webhooks/adobe-sign/:token` (no prefix, no bearer) | Adobe Sign webhook notification (POST) or verification of intent (GET) | `200` with the `X-AdobeSign-ClientId` echoed (header and `{ xAdobeSignClientId }`) when the token and client ID match; plain `404` otherwise. The API then reads the agreement from Adobe Sign and acts on that |
+| GET, POST | `/webhooks/adobe-sign/:token` (no prefix, no bearer) | Adobe Sign webhook notification (POST) or verification of intent (GET) | `200` with the `X-AdobeSign-ClientId` echoed (header and `{ xAdobeSignClientId }`) when the token and client ID match; plain `404` otherwise. POST answers at once with `{ xAdobeSignClientId, queued }` (`queued: false` for a repeated notification ID); the queue worker then reads the agreement from Adobe Sign and acts on that |
 | POST | `/agreements/:id/mock/sign` | | `AgreementSummary`. **Mock mode only** (`ADOBE_SIGN_MODE=mock`): signs as the caller when it is their turn; `403` in live mode |
 | POST | `/agreements/:id/mock/decline` | `{ reason }` | `AgreementSummary`. Mock mode only |
 

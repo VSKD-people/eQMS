@@ -61,7 +61,9 @@ insert into app.templates (tenant_id, code, name, kind, doc_type, version, state
   (pg_temp.k('tenant'), 'TPL-POL', 'Policy', 'Document', 'Policy', '1.2', 'Effective', '{"1. Purpose","2. Scope","3. Policy statements","4. Roles and responsibilities","5. Exceptions","6. Review"}'),
   (pg_temp.k('tenant'), 'TPL-SOP', 'Procedure (SOP)', 'Document', 'Procedure', '2.0', 'Effective', '{"1. Purpose","2. Scope","3. Roles","4. Procedure","5. Records","6. Related documents"}'),
   (pg_temp.k('tenant'), 'TPL-VP', 'Validation plan', 'Document', 'Validation plan', '1.0', 'Effective', '{"1. System and scope","2. Approach and risk","3. Deliverables","4. Acceptance criteria","5. Roles"}'),
-  (pg_temp.k('tenant'), 'TPL-VEN', 'Vendor approval', 'Document', 'Vendor approval', '1.0', 'Effective', '{"1. Vendor and service","2. Assessment","3. Risks and conditions","4. Decision"}');
+  (pg_temp.k('tenant'), 'TPL-VEN', 'Vendor approval', 'Document', 'Vendor approval', '1.0', 'Effective', '{"1. Vendor and service","2. Assessment","3. Risks and conditions","4. Decision"}'),
+  (pg_temp.k('tenant'), 'TPL-UAR', 'User access review', 'Document', 'User access review', '1.0', 'Effective', '{"1. System and period","2. Accounts reviewed","3. Findings and changes made","4. Decision"}'),
+  (pg_temp.k('tenant'), 'TPL-RA', 'Risk assessment', 'Document', 'Risk assessment', '1.0', 'Effective', '{"1. Scope","2. Risks identified","3. Likelihood and impact","4. Treatment","5. Residual risk and decision"}');
 
 -- Documents
 insert into app.documents (id, tenant_id, number, doc_type, title, state, classification, owner_id, author_id, process, tags, effective_at, approval_due, training_days, training_quiz) values
@@ -211,7 +213,7 @@ values (pg_temp.k('tenant'), 'effectiveness', 'capa', pg_temp.k('CAPA-005'), 'CA
        (pg_temp.k('tenant'), 'qe-assess', 'quality_event', pg_temp.k('QE-017'), 'QE-017', pg_temp.k('grace'), pg_temp.d(4));
 
 insert into app.counters (tenant_id, prefix, value) values
-  (pg_temp.k('tenant'), 'POL', 10), (pg_temp.k('tenant'), 'SOP', 21), (pg_temp.k('tenant'), 'WI', 4), (pg_temp.k('tenant'), 'VEN', 1), (pg_temp.k('tenant'), 'VP', 1), (pg_temp.k('tenant'), 'VR', 0),
+  (pg_temp.k('tenant'), 'POL', 10), (pg_temp.k('tenant'), 'SOP', 21), (pg_temp.k('tenant'), 'WI', 4), (pg_temp.k('tenant'), 'VEN', 1), (pg_temp.k('tenant'), 'VP', 1), (pg_temp.k('tenant'), 'VR', 0), (pg_temp.k('tenant'), 'UAR', 0), (pg_temp.k('tenant'), 'RA', 0),
   (pg_temp.k('tenant'), 'QE', 17), (pg_temp.k('tenant'), 'CAPA', 9), (pg_temp.k('tenant'), 'CR', 17), (pg_temp.k('tenant'), 'PR', 37);
 
 select app.audit('seed', 'Tenant', pg_temp.k('tenant')::text, 'Loaded demo data (sample records, import mode)');

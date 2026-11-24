@@ -109,6 +109,8 @@ approach, to agree with your validation lead (the GAMP 5 categories and the dept
 - **Requirements and traceability:** `../specs/QMS_Build_Prompt.md`, the signatures and training brief, and this
   documentation set, each traced to a test (the automated suites above, plus the UAT scenarios as scripted tests).
 - **Supplier assessment** for Adobe Sign, Microsoft (Azure, Entra) and the hosting arrangements.
+- **Adobe's material:** use Adobe's 21 CFR Part 11 validation pack, and its Part 11 and Annex 11 handbook, in IQ, OQ
+  and PQ for the Adobe Sign part (the pack assumes Acrobat Sign Enterprise with SAML single sign-on).
 - **IQ:** the deployment guide's smoke checks and the infrastructure as deployed (Bicep what-if output, image tags).
 - **OQ:** the automated suites run against the deployed environment, plus the Adobe Sign live tests.
 - **PQ:** the UAT scenarios with real users and real documents.

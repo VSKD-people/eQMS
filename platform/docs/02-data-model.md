@@ -27,6 +27,7 @@ VeQMS tenant), `agreement_directory` (Adobe Sign agreement ID → tenant, for we
 | `003_training` | `training_records`, `quiz_questions` |
 | `004_quality_reviews_automation` | `change_requests`, `cr_actions`, `observations`, `quality_events`, `capas`, `capa_actions`, `evidence`, `periodic_reviews`, `record_links`, `automation_rules`, `automation_runs`, `dead_letters` |
 | `005_rls_and_grants` | row-level security on every tenant table; grants |
+| `006_webhook_inbox` | `webhook_inbox`: Adobe Sign notifications queued for the worker, unique per notification ID. No tenant (like `agreement_directory`); the API can't delete from it |
 
 ## Rules enforced in the database
 
