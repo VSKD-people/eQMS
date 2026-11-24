@@ -75,10 +75,10 @@ create table app.group_members (
 
 create table app.settings (
   tenant_id uuid primary key references app.tenants(id),
-  docusign_allowance integer not null default 500 check (docusign_allowance > 0),
+  signing_allowance integer not null default 500 check (signing_allowance > 0),
   allowance_year_start_month integer not null default 1 check (allowance_year_start_month between 1 and 12),
   allowance_warn_at integer not null default 50 check (allowance_warn_at >= 0),
-  docusign_go_live timestamptz,
+  signing_go_live timestamptz,            -- approvals before this are marked as migrated from KSTARRS
   ack_statement text not null default 'I confirm I have read and understood {doc}, version {version}'
     check (position('{doc}' in ack_statement) > 0 and position('{version}' in ack_statement) > 0),
   reminder_days integer[] not null default '{3,1}',
@@ -189,9 +189,10 @@ create table app.signatures (
   meaning text not null,
   stage text,
   signed_at timestamptz not null,
-  auth_time timestamptz,                -- in-app signatures: the fresh sign-in time
-  source text not null check (source in ('docusign', 'in_app', 'kstarrs')),
-  envelope_id uuid,                     -- docusign signatures
+  -- Every signature comes from Adobe Sign, or was migrated from KSTARRS. Nothing is signed inside VeQMS:
+  -- read-and-understood confirmations are training records, not signatures.
+  source text not null check (source in ('adobe_sign', 'kstarrs')),
+  agreement_id uuid,                     -- the Adobe Sign agreement the signature came from
   content_sha256 text not null,
   statement text not null,
   created_at timestamptz not null default now()
@@ -210,7 +211,7 @@ create table app.tasks (
   due_at timestamptz,
   status text not null default 'open' check (status in ('open', 'done', 'cancelled')),
   note text,
-  ref uuid,                              -- envelope id, training record id, action id …
+  ref uuid,                              -- agreement id, training record id, action id …
   fyi boolean not null default false,
   created_at timestamptz not null default now(),
   done_at timestamptz

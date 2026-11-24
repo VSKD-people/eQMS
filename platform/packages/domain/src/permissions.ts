@@ -5,7 +5,7 @@ export const PERMISSIONS = {
   'write': ['admin', 'qm', 'author', 'reviewer', 'approver', 'process', 'employee'],
   'doc.create': ['author', 'qm'],
   'doc.approve': ['approver', 'qm'],
-  'docusign.send': ['author', 'qm', 'process'],
+  'esign.send': ['author', 'qm', 'process'],
   'training.manage': ['qm'],
   'training.org': ['qm', 'auditor', 'process', 'admin'],
   'approvals.view': ['qm', 'auditor', 'process', 'admin', 'approver', 'author', 'reviewer'],

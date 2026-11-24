@@ -69,9 +69,9 @@ async function SettingsTab() {
   const s = await load<Settings>('/settings');
   return (
     <form action={saveSettings} className="card card-pad stack" style={{ maxWidth: 720 }}>
-      <h2 className="label">DocuSign allowance</h2>
+      <h2 className="label">Adobe Sign allowance</h2>
       <div className="grid-3">
-        <div className="field"><label htmlFor="s-allow">Sends per year</label><input className="input" id="s-allow" name="docusignAllowance" inputMode="numeric" defaultValue={s.docusignAllowance} required /></div>
+        <div className="field"><label htmlFor="s-allow">Adobe Sign transactions per year</label><input className="input" id="s-allow" name="signingAllowance" inputMode="numeric" defaultValue={s.signingAllowance} required /></div>
         <div className="field"><label htmlFor="s-month">Year starts in</label>
           <select className="select" id="s-month" name="allowanceYearStartMonth" defaultValue={String(s.allowanceYearStartMonth)}>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</select></div>
         <div className="field"><label htmlFor="s-warn">Warn when this many are left</label><input className="input" id="s-warn" name="allowanceWarnAt" inputMode="numeric" defaultValue={s.allowanceWarnAt} required /></div>

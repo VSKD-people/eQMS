@@ -1,7 +1,7 @@
 # Local development stack: PostgreSQL 16, a one-shot migrate + demo seed, the API and the web app.
 #   docker compose up --build
 # Then open http://localhost:3000 and pick a persona (development sign-in).
-# Sample data only. DocuSign runs in mock mode and files are stored on a local volume.
+# Sample data only. Adobe Sign runs in mock mode and files are stored on a local volume.
 name: veqms
 
 services:
@@ -49,8 +49,7 @@ services:
       DEV_AUTH: "1"
       ENTRA_TENANT_ID: dev-tenant
       ENTRA_API_AUDIENCE: api://veqms-local
-      DOCUSIGN_MODE: mock
-      DOCUSIGN_CONNECT_HMAC_KEYS: local-connect-key
+      ADOBE_SIGN_MODE: mock
       STORAGE_MODE: local
       LOCAL_STORAGE_DIR: /data/storage
       SCIM_TOKEN: local-scim-token

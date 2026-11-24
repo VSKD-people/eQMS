@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { notFound, proxyFile } from '@/lib/proxy';
 
 // /reports/<name>.<format>?filters → GET /api/v1/reports/<name>.<format>?filters (see docs/03-api.md).
-const NAMES = new Set(['training-matrix', 'training-records', 'document-status', 'approvals-register', 'docusign-sends']);
+const NAMES = new Set(['training-matrix', 'training-records', 'document-status', 'approvals-register', 'signing-transactions']);
 const FORMATS = new Set(['pdf', 'xlsx']);
 
 export const dynamic = 'force-dynamic';

@@ -18,7 +18,7 @@ create table app.training_records (
   statement text,
   quiz_result text,
   via text,                                            -- e.g. 'Microsoft 365 single sign-on'
-  envelope_id uuid references app.envelopes(id),       -- completed from an approval envelope (author, reviewers)
+  agreement_id uuid references app.agreements(id),       -- completed from an approval agreement (author, reviewers)
   correction_of uuid references app.training_records(id),
   correction_reason text,
   no_retrain boolean not null default false,
@@ -46,9 +46,9 @@ begin
   if tg_op = 'INSERT' then
     new.assigned_at := now();                         -- dates are set by the system, never typed
     new.closed_at := null; new.closed_reason := null;
-    if new.envelope_id is not null then
-      new.completed_at := now();                      -- author and reviewers: completed when the envelope completes
-      if coalesce(new.statement, '') = '' then raise exception 'a record from an approval envelope needs a statement' using errcode = 'P0001'; end if;
+    if new.agreement_id is not null then
+      new.completed_at := now();                      -- author and reviewers: completed when the agreement completes
+      if coalesce(new.statement, '') = '' then raise exception 'a record from an approval agreement needs a statement' using errcode = 'P0001'; end if;
     else
       new.completed_at := null; new.statement := null; new.quiz_result := null; new.via := null;
     end if;
@@ -65,7 +65,7 @@ begin
   if new.user_id <> old.user_id or new.document_id <> old.document_id or new.version <> old.version or new.title <> old.title
      or new.document_number <> old.document_number or new.assigned_at <> old.assigned_at or new.due_at is distinct from old.due_at
      or new.allocated_by is distinct from old.allocated_by or new.alloc_reason <> old.alloc_reason
-     or new.correction_of is distinct from old.correction_of or new.no_retrain <> old.no_retrain or new.envelope_id is distinct from old.envelope_id then
+     or new.correction_of is distinct from old.correction_of or new.no_retrain <> old.no_retrain or new.agreement_id is distinct from old.agreement_id then
     raise exception 'allocation details cannot change: close the record and allocate again' using errcode = 'P0001';
   end if;
   if new.completed_at is not null then
@@ -111,7 +111,7 @@ begin
     perform app.audit(case when app.import_mode() then 'training.import' when new.correction_of is not null then 'training.correct' when new.completed_at is not null then 'training.record' else 'training.allocate' end,
       'Training record', new.id::text,
       case when new.correction_of is not null then 'Correction of ' || new.correction_of || ' for ' || coalesce(who, '?') || ' on ' || new.document_number || ' v' || new.version || ': ' || new.correction_reason
-           when new.completed_at is not null then 'Completed record for ' || coalesce(who, '?') || ' on ' || new.document_number || ' v' || new.version || ' from DocuSign envelope'
+           when new.completed_at is not null then 'Completed record for ' || coalesce(who, '?') || ' on ' || new.document_number || ' v' || new.version || ' from Adobe Sign agreement'
            else 'Allocated ' || new.document_number || ' v' || new.version || ' to ' || coalesce(who, '?') || ' (' || new.alloc_reason || ')' end,
       null, snap);
   else

@@ -1,9 +1,9 @@
-// The Fastify app: health checks, the signed-in API under /api/v1, the DocuSign Connect webhook and SCIM.
+// The Fastify app: health checks, the signed-in API under /api/v1, the Adobe Sign webhooks webhook and SCIM.
 // Every /api/v1 request is authenticated first, then runs in one database transaction with the tenant and user set.
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { withTenant, type Db, type Pool } from '@veqms/db';
 import type { Config } from './config.ts';
-import type { DocuSign } from './integrations/docusign.ts';
+import type { ESign } from './integrations/adobesign.ts';
 import type { Storage } from './integrations/storage.ts';
 import { createAuthenticator, getAuth, setAuth, type Auth } from './lib/auth.ts';
 import { forbidden, HttpError, toHttp } from './lib/http.ts';
@@ -13,14 +13,14 @@ import type { Person } from './lib/people.ts';
 import { coreRoutes } from './routes/core.ts';
 import { documentRoutes } from './routes/documents.ts';
 import { closureRoutes } from './routes/closures.ts';
-import { envelopeRoutes } from './routes/envelopes.ts';
+import { agreementRoutes } from './routes/agreements.ts';
 import { trainingRoutes } from './routes/training.ts';
 import { reportRoutes } from './routes/reports.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { webhookRoutes } from './routes/webhooks.ts';
 import { scimRoutes } from './routes/scim.ts';
 
-export interface AppDeps { cfg: Config; pool: Pool; docusign: DocuSign; storage: Storage }
+export interface AppDeps { cfg: Config; pool: Pool; esign: ESign; storage: Storage }
 export type Run = <T>(req: FastifyRequest, fn: (db: Db, me: Person, auth: Auth) => Promise<T>) => Promise<T>;
 export interface Ctx extends AppDeps { run: Run }
 
@@ -63,7 +63,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     coreRoutes(api, ctx);
     documentRoutes(api, ctx);
     closureRoutes(api, ctx);
-    envelopeRoutes(api, ctx);
+    agreementRoutes(api, ctx);
     trainingRoutes(api, ctx);
     reportRoutes(api, ctx);
     adminRoutes(api, ctx);

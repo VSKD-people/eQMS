@@ -9,10 +9,10 @@ export const metadata = { title: 'Quality' };
 export default async function QualityPage({ searchParams }: { searchParams: Promise<{ err?: string }> }) {
   const sp = await searchParams;
   const [capas, events] = await Promise.all([load<ClosureRecord[]>('/capas'), load<ClosureRecord[]>('/quality-events')]);
-  const envNote = (r: ClosureRecord) => (r.envelope?.status === 'sent' ? `DocuSign · ${r.envelope.signed} of ${r.envelope.signers.length} signed` : '');
+  const envNote = (r: ClosureRecord) => (r.agreement?.status === 'sent' ? `Adobe Sign · ${r.agreement.signed} of ${r.agreement.signers.length} signed` : '');
   return (
     <>
-      <div className="page-head"><div><h1>Quality events and CAPA</h1><div className="sub">Phase 1: closing CAPAs and deviations through DocuSign. The full module arrives in Phase 3.</div></div></div>
+      <div className="page-head"><div><h1>Quality events and CAPA</h1><div className="sub">Phase 1: closing CAPAs and deviations through Adobe Sign. The full module arrives in Phase 3.</div></div></div>
       <Notice err={sp.err} />
       <div className="card card-pad mb-16">
         <p>CAPAs waiting for their effectiveness result and deviations ready to close also appear on <a href="/today">Today</a>. Open one from the lists below, or by number.</p>

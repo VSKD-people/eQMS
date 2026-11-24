@@ -9,7 +9,7 @@ import { addTask, closeTasks, notify, audit, automationRan, dueIn } from '../lib
 export interface RecordRow {
   id: string; user_id: string; user_name: string; document_id: string; document_number: string; title: string; version: string;
   allocated_by: string | null; allocated_by_name: string | null; alloc_reason: string; assigned_at: Date; due_at: Date | null; completed_at: Date | null;
-  statement: string | null; quiz_result: string | null; via: string | null; envelope_id: string | null; correction_of: string | null;
+  statement: string | null; quiz_result: string | null; via: string | null; agreement_id: string | null; correction_of: string | null;
   correction_reason: string | null; no_retrain: boolean; closed_at: Date | null; closed_reason: string | null; effective_version: string | null; corrected: boolean;
 }
 
@@ -31,7 +31,7 @@ export function toApi(r: RecordRow) {
     id: r.id, user: { id: r.user_id, name: r.user_name }, documentId: r.document_id, documentNumber: r.document_number, title: r.title, version: r.version,
     allocatedBy: r.allocated_by ? { id: r.allocated_by, name: r.allocated_by_name ?? '' } : null, allocReason: r.alloc_reason,
     assignedAt: iso(r.assigned_at), dueAt: iso(r.due_at), completedAt: iso(r.completed_at), statement: r.statement, quizResult: r.quiz_result, via: r.via,
-    envelopeId: r.envelope_id, correctionOf: r.correction_of, correctionReason: r.correction_reason, noRetrain: r.no_retrain,
+    agreementId: r.agreement_id, correctionOf: r.correction_of, correctionReason: r.correction_reason, noRetrain: r.no_retrain,
     closedAt: iso(r.closed_at), closedReason: r.closed_reason, status: status(r)
   };
 }
@@ -100,18 +100,18 @@ export async function reconcileUser(db: Db, userId: string, reason: string): Pro
   return { added, closed };
 }
 
-// Approval envelope completed: the author and each reviewer get a completed record for that version.
-export async function recordFromEnvelope(db: Db, documentId: string, version: string, envelopeId: string, signers: { userId: string; meaning: string }[]): Promise<number> {
+// Approval agreement completed: the author and each reviewer get a completed record for that version.
+export async function recordFromAgreement(db: Db, documentId: string, version: string, agreementId: string, signers: { userId: string; meaning: string }[]): Promise<number> {
   const d = await one<{ number: string; title: string }>(db, 'select number, title from app.documents where id = $1', [documentId]);
   let n = 0;
   const seen = new Set<string>();
   for (const s of signers.filter((x) => x.meaning === 'Authored' || x.meaning === 'Reviewed')) {
     if (seen.has(s.userId)) continue; seen.add(s.userId);
-    const r = await rows(db, `insert into app.training_records (tenant_id, user_id, document_id, document_number, title, version, alloc_reason, envelope_id, statement)
+    const r = await rows(db, `insert into app.training_records (tenant_id, user_id, document_id, document_number, title, version, alloc_reason, agreement_id, statement)
       values (app.current_tenant(), $1, $2, $3, $4, $5, $6, $7, $8)
       on conflict (user_id, document_id, version) where closed_at is null and correction_of is null do nothing returning id`,
-      [s.userId, documentId, d.number, d.title, version, `Approval envelope (${s.meaning.toLowerCase()})`, envelopeId,
-       `Signed ${d.number}, version ${version} in DocuSign with the meaning “${s.meaning}” (envelope ${envelopeId})`]);
+      [s.userId, documentId, d.number, d.title, version, `Approval agreement (${s.meaning.toLowerCase()})`, agreementId,
+       `Signed ${d.number}, version ${version} in Adobe Sign with the meaning “${s.meaning}” (agreement ${agreementId})`]);
     if (r.length) n++;
   }
   return n;

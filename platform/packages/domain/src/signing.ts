@@ -1,10 +1,11 @@
-// Route 1: approvals through DocuSign (Part 11 module).
-// One envelope per record version holds every signer: author, then reviewers, then QA approver(s).
+// Approvals through Adobe Sign. Every signature except read-and-understood training goes this way: one agreement per
+// sign-off holds every signer in order (for a document version: author, then reviewers, then QA approver(s)).
+// Part 11 support comes from Adobe Sign's Bio-Pharma settings: identity check at signing and a reason for signing.
 // Pure functions only: the API loads the people and passes them in.
 import type { Meaning, PlannedSigner, UserRef } from './types.ts';
 import { canBeApprover } from './permissions.ts';
 
-export interface DocumentEnvelopeInput {
+export interface DocumentAgreementInput {
   documentNumber: string;
   title: string;
   version: string;
@@ -13,7 +14,7 @@ export interface DocumentEnvelopeInput {
   approvers: UserRef[]; // QA approvers, in signing order (1 or 2)
 }
 
-export interface ClosureEnvelopeInput {
+export interface ClosureAgreementInput {
   recordNumber: string; // e.g. CAPA-005 or QE-017
   title: string;
   purpose: 'CAPA closure' | 'Deviation closure';
@@ -22,14 +23,14 @@ export interface ClosureEnvelopeInput {
   hasClosureText: boolean;
 }
 
-export interface EnvelopePlan {
+export interface SigningPlan {
   subject: string;
   purpose: string;
   signers: PlannedSigner[];
   problems: string[];
 }
 
-export const MAX_SUBJECT = 100; // DocuSign limits the email subject length; verify the current limit in the DocuSign docs.
+export const MAX_SUBJECT = 100; // The agreement name, which Adobe Sign uses as the email subject. Verify Adobe's limit.
 
 export function documentSubject(documentNumber: string, version: string, title: string): string {
   const s = `${documentNumber} v${version} · ${title} · Approval`;
@@ -40,7 +41,7 @@ function activeProblems(signers: { user: UserRef; label: string }[]): string[] {
   return signers.filter((s) => s.user.status !== 'active').map((s) => `${s.user.name} (${s.label.toLowerCase()}) is not an active user.`);
 }
 
-export function planDocumentEnvelope(i: DocumentEnvelopeInput): EnvelopePlan {
+export function planDocumentAgreement(i: DocumentAgreementInput): SigningPlan {
   const problems: string[] = [];
   const signers: PlannedSigner[] = [{ userId: i.author.id, roleLabel: 'Author', meaning: 'Authored', routingOrder: 1 }];
   for (const r of i.reviewers) signers.push({ userId: r.id, roleLabel: 'Reviewer', meaning: 'Reviewed', routingOrder: 2 });
@@ -59,7 +60,7 @@ export function planDocumentEnvelope(i: DocumentEnvelopeInput): EnvelopePlan {
   return { subject: documentSubject(i.documentNumber, i.version, i.title), purpose: 'Document approval', signers, problems };
 }
 
-export function planClosureEnvelope(i: ClosureEnvelopeInput): EnvelopePlan {
+export function planClosureAgreement(i: ClosureAgreementInput): SigningPlan {
   const problems: string[] = [];
   const signers: PlannedSigner[] = [{ userId: i.owner.id, roleLabel: i.purpose === 'CAPA closure' ? 'CAPA owner' : 'Deviation owner', meaning: 'Authored', routingOrder: 1 }];
   if (!i.approver) problems.push('Choose a QA approver.');
@@ -75,7 +76,7 @@ export function planClosureEnvelope(i: ClosureEnvelopeInput): EnvelopePlan {
   return { subject, purpose: i.purpose, signers, problems };
 }
 
-// The verification check the sender must complete before an envelope can go out.
+// The verification check the sender must complete before an agreement can go out.
 export interface Verification { footer: boolean; version: boolean; documentId: boolean; dates: boolean; note?: string }
 export function verificationComplete(v: Partial<Verification> | null | undefined): boolean {
   return !!(v && v.footer === true && v.version === true && v.documentId === true && v.dates === true);
@@ -88,3 +89,14 @@ export function currentOrder(signers: { routingOrder: number; status: string }[]
 }
 
 export const MEANING_ORDER: Meaning[] = ['Authored', 'Reviewed', 'Approved'];
+
+// An Adobe Sign text tag that places signer n's signature field (n counts from 1, in participant order). The PDF
+// draws it in white under each signature line. Verify the syntax against Adobe's text tag guide before go-live.
+export function signatureTag(n: number): string {
+  return `{{Sig${n}_es_:signer${n}:signature}}`;
+}
+
+// The statement stored with every signature that comes from Adobe Sign.
+export function adobeSignStatement(meaning: string): string {
+  return `Signed in Adobe Sign (Bio-Pharma settings): identity checked at signing; signature meaning “${meaning}”.`;
+}

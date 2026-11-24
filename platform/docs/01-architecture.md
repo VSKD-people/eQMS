@@ -15,8 +15,8 @@ flows; the specs in `../specs/` win where they disagree with either.
                      │  validates the Entra token on every request       row-level security per tenant
                      │  one database transaction per request             append-only, hash-chained audit log
                      │  the only component that touches the database     insert-only signatures, locked training records
-                     ├──▶ Blob storage (immutable container): original PDFs, signed PDFs, certificates of completion
-                     ├──▶ DocuSign eSignature REST API v2.1 (JWT grant) ◀── DocuSign Connect (HMAC-signed webhook)
+                     ├──▶ Blob storage (immutable container): original PDFs, signed PDFs, audit reports
+                     ├──▶ Adobe Sign REST API v6 (OAuth or integration key) ◀── Adobe Sign webhooks (secret URL, client ID echo)
                      ├──▶ Microsoft Graph (email from a shared mailbox)
                      └──◀ Entra ID SCIM provisioning (users, groups, leavers)
 
@@ -25,9 +25,9 @@ flows; the specs in `../specs/` win where they disagree with either.
 
 | Folder | What it is |
 |---|---|
-| `packages/domain` | Pure rules shared by API and web: roles and permissions, the DocuSign signing plan, allowance years, training status, Connect HMAC, the Excel writer. No I/O; unit-tested |
+| `packages/domain` | Pure rules shared by API and web: roles and permissions, the Adobe Sign signing plan, allowance years, training status, Adobe Sign webhook checks, the Excel writer. No I/O; unit-tested |
 | `packages/db` | SQL migrations, demo seed, invariant tests, and the connection helpers (`withTenant`) |
-| `apps/api` | The API: routes, services, integrations (DocuSign, storage, mail), the daily job |
+| `apps/api` | The API: routes, services, integrations (Adobe Sign, storage, mail), the daily job |
 | `apps/web` | The web app |
 | `infra` | Bicep for Azure, start-up scripts for the jobs, a local database script |
 | `docs` | This set of documents |
@@ -36,7 +36,7 @@ flows; the specs in `../specs/` win where they disagree with either.
 
 1. **The database enforces the rules that matter for compliance**, not just the API. Row-level security on every
    tenant table; the API's role (`veqms_app`) can't delete quality records, can't edit the audit log, signatures,
-   envelope events or DocuSign sends, and can't bypass row-level security. Training records are locked once completed
+   agreement events or Adobe Sign transactions, and can't bypass row-level security. Training records are locked once completed
    and only the trainee can confirm their own. A bug in the API can't quietly break these. See
    [02 · Data model](02-data-model.md) and [04 · Security and compliance](04-security-and-compliance.md).
 2. **One request, one transaction.** `withTenant` opens a transaction, sets `app.tenant_id` and `app.user_id`,
@@ -44,14 +44,15 @@ flows; the specs in `../specs/` win where they disagree with either.
    whole change rolls back, including its audit entries. Refusals that must still be logged (segregation of duties,
    access denied) are written by the error handler in a transaction of their own.
 3. **Two signing routes** (decided in the signatures and training sign-off brief):
-   - **Route 1, DocuSign with the Part 11 module:** approvals of controlled documents (including vendor approvals and
-     validation plans and reports), CAPA closures and deviation closures. One envelope per version holds every
-     signer in order (author, reviewers, QA approver). Every envelope sent counts as one send against the yearly
-     allowance. See [06 · DocuSign](06-docusign.md).
+   - **Route 1, Adobe Sign with its Bio-Pharma settings:** every signature except read-and-understood training. Built
+     in Phase 1: approvals of controlled documents (including vendor approvals and validation plans and reports), CAPA
+     closures and deviation closures; later phases add change requests, periodic reviews and the other sign-offs. One
+     agreement per sign-off holds every signer in order (for a document: author, reviewers, QA approver). Every
+     agreement sent counts as one transaction against the yearly allowance. See [06 · Adobe Sign](06-adobe-sign.md).
    - **Route 2, in the app:** read-and-understood training. The trainee confirms a statement; the system sets the
      dates; corrections are new records.
-4. **Connect notifies, the API confirms.** A DocuSign Connect message only tells the API to look: the API reads the
-   envelope from DocuSign and acts on that. The daily job polls envelopes that have been out for more than a day.
+4. **The webhook notifies, the API confirms.** An Adobe Sign webhook notification only tells the API to look: the API reads the
+   agreement from Adobe Sign and acts on that. The daily job polls agreements that have been out for more than a day.
 5. **The browser never calls the API.** Pages and Server Actions call it from the web server with the user's token.
    The web app hides buttons the user can't use, but the API checks every permission again.
 6. **Configuration, not code, for each tenant**: allowance, allowance year, reminder days, the read-and-understood
@@ -69,9 +70,9 @@ flows; the specs in `../specs/` win where they disagree with either.
 
 ## Phase 1 scope
 
-In Phase 1: sign-in, users and roles, documents through draft, review and the DocuSign approval route, CAPA and
-deviation closure through DocuSign, read-and-understood training (allocation, confirmation, quiz, corrections,
-matrix, reminders), the approvals register and sends log, the audit trail and its check, settings, report exports
+In Phase 1: sign-in, users and roles, documents through draft, review and the Adobe Sign approval route, CAPA and
+deviation closure through Adobe Sign, read-and-understood training (allocation, confirmation, quiz, corrections,
+matrix, reminders), the approvals register and transactions log, the audit trail and its check, settings, report exports
 (Excel and PDF), SCIM.
 
 The database already holds every module (change requests, observations, quality events, CAPAs and actions, evidence,
@@ -88,4 +89,4 @@ go-live:
 - Who approves Entra app registrations, and the technical contact for incidents.
 - Whether a first version that becomes effective should be numbered 1.0. The prototype and this build keep the
   draft number (0.1).
-- Azure and DocuSign costs. Pricing approval goes to **PJ Walters**.
+- Azure and Adobe Sign costs. Pricing approval goes to **PJ Walters**.

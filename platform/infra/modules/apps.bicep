@@ -24,15 +24,13 @@ param entraTenantId string
 param entraApiAudience string
 param entraWebClientId string
 param entraApiScope string
-param docusignMode string
-param docusignAuthServer string
-param docusignBaseUri string
-param docusignIntegrationKey string
-param docusignUserId string
-param docusignAccountId string
+param esignMode string
+param adobeSignAuth string
+param adobeSignApiAccessPoint string
+param adobeSignClientId string
 param graphMailFrom string
 
-@description('false: the API is reachable only inside the environment. DocuSign Connect and Entra SCIM must reach /webhooks/docusign and /scim/v2 from the internet, so either set this true (API gets its own public HTTPS address; every route still needs a bearer token, HMAC or the SCIM token) or proxy those two paths through the web app.')
+@description('false: the API is reachable only inside the environment. Adobe Sign webhooks and Entra SCIM must reach /webhooks/adobe-sign/<token> and /scim/v2 from the internet, so either set this true (API gets its own public HTTPS address; every route still needs a bearer token, the webhook token or the SCIM token) or proxy those two paths through the web app.')
 param apiExternal bool = false
 
 // With Entra authentication the database user name is the identity's name; the password is a short-lived token.
@@ -41,8 +39,11 @@ var migrateDatabaseUrl = 'postgres://${migrateIdentityName}@${postgresFqdn}:5432
 
 // Key Vault secret names (create them before deploying this module; see docs/05-deployment-azure.md).
 var apiSecrets = [
-  { name: 'docusign-private-key', keyVaultUrl: '${keyVaultUri}secrets/docusign-private-key', identity: appIdentityId }
-  { name: 'docusign-connect-hmac-keys', keyVaultUrl: '${keyVaultUri}secrets/docusign-connect-hmac-keys', identity: appIdentityId }
+  // Create all four Adobe Sign secrets; put a placeholder in the credential you don't use (oauth or integration key).
+  { name: 'adobe-sign-client-secret', keyVaultUrl: '${keyVaultUri}secrets/adobe-sign-client-secret', identity: appIdentityId }
+  { name: 'adobe-sign-refresh-token', keyVaultUrl: '${keyVaultUri}secrets/adobe-sign-refresh-token', identity: appIdentityId }
+  { name: 'adobe-sign-integration-key', keyVaultUrl: '${keyVaultUri}secrets/adobe-sign-integration-key', identity: appIdentityId }
+  { name: 'adobe-sign-webhook-token', keyVaultUrl: '${keyVaultUri}secrets/adobe-sign-webhook-token', identity: appIdentityId }
   { name: 'scim-token', keyVaultUrl: '${keyVaultUri}secrets/scim-token', identity: appIdentityId }
 ]
 var webSecrets = [
@@ -59,14 +60,14 @@ var apiEnv = [
   { name: 'ENTRA_TENANT_ID', value: entraTenantId }
   { name: 'ENTRA_API_AUDIENCE', value: entraApiAudience }
   { name: 'DEV_AUTH', value: '0' }
-  { name: 'DOCUSIGN_MODE', value: docusignMode }
-  { name: 'DOCUSIGN_AUTH_SERVER', value: docusignAuthServer }
-  { name: 'DOCUSIGN_BASE_URI', value: docusignBaseUri }
-  { name: 'DOCUSIGN_INTEGRATION_KEY', value: docusignIntegrationKey }
-  { name: 'DOCUSIGN_USER_ID', value: docusignUserId }
-  { name: 'DOCUSIGN_ACCOUNT_ID', value: docusignAccountId }
-  { name: 'DOCUSIGN_PRIVATE_KEY', secretRef: 'docusign-private-key' }
-  { name: 'DOCUSIGN_CONNECT_HMAC_KEYS', secretRef: 'docusign-connect-hmac-keys' }
+  { name: 'ADOBE_SIGN_MODE', value: esignMode }
+  { name: 'ADOBE_SIGN_AUTH', value: adobeSignAuth }
+  { name: 'ADOBE_SIGN_API_ACCESS_POINT', value: adobeSignApiAccessPoint }
+  { name: 'ADOBE_SIGN_CLIENT_ID', value: adobeSignClientId }
+  { name: 'ADOBE_SIGN_CLIENT_SECRET', secretRef: 'adobe-sign-client-secret' }
+  { name: 'ADOBE_SIGN_REFRESH_TOKEN', secretRef: 'adobe-sign-refresh-token' }
+  { name: 'ADOBE_SIGN_INTEGRATION_KEY', secretRef: 'adobe-sign-integration-key' }
+  { name: 'ADOBE_SIGN_WEBHOOK_TOKEN', secretRef: 'adobe-sign-webhook-token' }
   { name: 'STORAGE_MODE', value: 'azure' }
   { name: 'STORAGE_ACCOUNT_URL', value: storageAccountUrl }
   { name: 'STORAGE_CONTAINER', value: 'records' }

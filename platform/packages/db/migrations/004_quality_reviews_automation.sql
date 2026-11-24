@@ -1,5 +1,5 @@
 -- Change control, quality events, CAPA, observations, periodic reviews, links and automation.
--- The schema is complete now; Phase 1 builds API and screens for CAPA and deviation closure through DocuSign,
+-- The schema is complete now; Phase 1 builds API and screens for CAPA and deviation closure through Adobe Sign,
 -- and later phases build the rest (see BUILD_PROMPT.md).
 set role veqms_owner;
 
@@ -65,8 +65,8 @@ create table app.quality_events (
   process text not null,
   due_at timestamptz,
   assessment text not null default '',
-  closure_justification text,              -- deviations: approved through DocuSign
-  closure_envelope_id uuid references app.envelopes(id),
+  closure_justification text,              -- deviations: approved through Adobe Sign
+  closure_agreement_id uuid references app.agreements(id),
   closure_signature_id uuid,                -- other types: in-app signature
   legal_hold boolean not null default false,
   created_at timestamptz not null default now(),
@@ -93,11 +93,11 @@ create table app.capas (
   actions_locked boolean not null default false,
   effectiveness_criteria text not null default '',
   effectiveness_due timestamptz,
-  effectiveness_result text,               -- recorded before the closure envelope is sent
+  effectiveness_result text,               -- recorded before the closure agreement is sent
   effectiveness_verdict text check (effectiveness_verdict in ('Effective', 'Not effective')),
   effectiveness_by uuid references app.users(id),
   effectiveness_at timestamptz,
-  closure_envelope_id uuid references app.envelopes(id),
+  closure_agreement_id uuid references app.agreements(id),
   created_at timestamptz not null default now(),
   closed_at timestamptz,
   unique (tenant_id, number)

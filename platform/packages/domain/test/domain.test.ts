@@ -5,40 +5,40 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  planDocumentEnvelope, planClosureEnvelope, verificationComplete, currentOrder, documentSubject,
+  planDocumentAgreement, planClosureAgreement, verificationComplete, currentOrder, documentSubject,
   allowanceYear, allowanceState, ackStatement, inAudience, trainingStatus, matrixCell, can, canBeApprover,
-  verifyConnectHmac, connectSignature, mapEnvelopeStatus, xlsx, type UserRef, type Audience
+  secretMatches, webhookEcho, mapAgreementStatus, participantEvent, xlsx, type UserRef, type Audience
 } from '../src/index.ts';
 
 const U = (id: string, roles: UserRef['roles'], groups: string[] = ['All staff'], status: UserRef['status'] = 'active'): UserRef => ({ id, name: id.toUpperCase(), email: id + '@example.test', status, roles, groups });
 const vic = U('vic', ['qm', 'approver']), sam = U('sam', ['author']), priya = U('priya', ['reviewer']), tom = U('tom', ['approver']), admin = U('lucy', ['admin']);
 
-test('document envelope: author, then reviewers, then QA approvers, with meanings', () => {
-  const p = planDocumentEnvelope({ documentNumber: 'POL-004', title: 'Access Control Policy', version: '2.0', author: sam, reviewers: [priya], approvers: [vic, tom] });
+test('document agreement: author, then reviewers, then QA approvers, with meanings', () => {
+  const p = planDocumentAgreement({ documentNumber: 'POL-004', title: 'Access Control Policy', version: '2.0', author: sam, reviewers: [priya], approvers: [vic, tom] });
   assert.deepEqual(p.signers.map((s) => [s.userId, s.meaning, s.routingOrder]), [['sam', 'Authored', 1], ['priya', 'Reviewed', 2], ['vic', 'Approved', 3], ['tom', 'Approved', 4]]);
   assert.equal(p.subject, 'POL-004 v2.0 · Access Control Policy · Approval');
   assert.deepEqual(p.problems, []);
 });
 
-test('document envelope without reviewers puts the QA approver second', () => {
-  const p = planDocumentEnvelope({ documentNumber: 'WI-003', title: 'X', version: '1.0', author: sam, reviewers: [], approvers: [tom] });
+test('document agreement without reviewers puts the QA approver second', () => {
+  const p = planDocumentAgreement({ documentNumber: 'WI-003', title: 'X', version: '1.0', author: sam, reviewers: [], approvers: [tom] });
   assert.deepEqual(p.signers.map((s) => s.routingOrder), [1, 2]);
 });
 
 test('segregation of duties: author, reviewer or admin-only account cannot be QA approver', () => {
-  assert.match(planDocumentEnvelope({ documentNumber: 'P', title: 'T', version: '1.0', author: vic, reviewers: [], approvers: [vic] }).problems.join(), /authored this version/);
-  assert.match(planDocumentEnvelope({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [tom], approvers: [tom] }).problems.join(), /is a reviewer/);
-  assert.match(planDocumentEnvelope({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [], approvers: [admin] }).problems.join(), /Approver or Quality Manager/);
-  assert.match(planDocumentEnvelope({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [], approvers: [] }).problems.join(), /Choose a QA approver/);
-  assert.match(planDocumentEnvelope({ documentNumber: 'P', title: 'T', version: '1.0', author: U('x', ['author'], [], 'left'), reviewers: [], approvers: [tom] }).problems.join(), /not an active user/);
+  assert.match(planDocumentAgreement({ documentNumber: 'P', title: 'T', version: '1.0', author: vic, reviewers: [], approvers: [vic] }).problems.join(), /authored this version/);
+  assert.match(planDocumentAgreement({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [tom], approvers: [tom] }).problems.join(), /is a reviewer/);
+  assert.match(planDocumentAgreement({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [], approvers: [admin] }).problems.join(), /Approver or Quality Manager/);
+  assert.match(planDocumentAgreement({ documentNumber: 'P', title: 'T', version: '1.0', author: sam, reviewers: [], approvers: [] }).problems.join(), /Choose a QA approver/);
+  assert.match(planDocumentAgreement({ documentNumber: 'P', title: 'T', version: '1.0', author: U('x', ['author'], [], 'left'), reviewers: [], approvers: [tom] }).problems.join(), /not an active user/);
   assert.equal(canBeApprover(['admin']), false);
 });
 
-test('closure envelope: owner then QA approver; owner cannot approve own closure', () => {
-  const ok = planClosureEnvelope({ recordNumber: 'CAPA-005', title: 'Phishing follow-up', purpose: 'CAPA closure', owner: priya, approver: vic, hasClosureText: true });
+test('closure agreement: owner then QA approver; owner cannot approve own closure', () => {
+  const ok = planClosureAgreement({ recordNumber: 'CAPA-005', title: 'Phishing follow-up', purpose: 'CAPA closure', owner: priya, approver: vic, hasClosureText: true });
   assert.deepEqual(ok.signers.map((s) => [s.userId, s.meaning, s.routingOrder]), [['priya', 'Authored', 1], ['vic', 'Approved', 2]]);
   assert.deepEqual(ok.problems, []);
-  const bad = planClosureEnvelope({ recordNumber: 'QE-017', title: 'Late test', purpose: 'Deviation closure', owner: vic, approver: vic, hasClosureText: false });
+  const bad = planClosureAgreement({ recordNumber: 'QE-017', title: 'Late test', purpose: 'Deviation closure', owner: vic, approver: vic, hasClosureText: false });
   assert.equal(bad.problems.length, 2);
 });
 
@@ -109,14 +109,22 @@ test('permissions: auditor read-only, admin cannot manage training', () => {
   assert.equal(can(['qm'], 'training.manage'), true);
 });
 
-test('Connect HMAC: accepts any current key, rejects tampering', () => {
-  const body = '{"event":"envelope-completed"}';
-  const sig = connectSignature('k2', body);
-  assert.equal(verifyConnectHmac(['k1', 'k2'], body, [undefined, sig]), true);
-  assert.equal(verifyConnectHmac(['k1', 'k2'], body + ' ', [sig]), false);
-  assert.equal(verifyConnectHmac(['k1'], body, []), false);
-  assert.equal(mapEnvelopeStatus('Delivered'), 'sent');
-  assert.equal(mapEnvelopeStatus('completed'), 'completed');
+test('Adobe Sign webhooks: secret token and client ID checks, echo, status and event mapping', () => {
+  assert.equal(secretMatches('t0ken-abc', 't0ken-abc'), true);
+  assert.equal(secretMatches('t0ken-abc', 't0ken-abd'), false);
+  assert.equal(secretMatches('t0ken-abc', 't0ken'), false);
+  assert.equal(secretMatches('', ''), false, 'an unset secret never matches');
+  assert.equal(secretMatches('t0ken-abc', undefined), false);
+  assert.deepEqual(webhookEcho('client-1'), { xAdobeSignClientId: 'client-1' });
+  assert.equal(mapAgreementStatus('OUT_FOR_SIGNATURE'), 'sent');
+  assert.equal(mapAgreementStatus('SIGNED'), 'completed');
+  assert.equal(mapAgreementStatus('CANCELLED'), 'cancelled');
+  assert.equal(mapAgreementStatus('ABORTED'), 'cancelled');
+  assert.equal(mapAgreementStatus('EXPIRED'), 'cancelled');
+  assert.equal(mapAgreementStatus('SOMETHING_NEW'), null);
+  assert.equal(participantEvent('ESIGNED'), 'signed');
+  assert.equal(participantEvent('REJECTED'), 'declined');
+  assert.equal(participantEvent('EMAIL_VIEWED'), null);
 });
 
 test('xlsx export opens as a workbook with the generated-by stamp (checked with python openpyxl when available)', () => {

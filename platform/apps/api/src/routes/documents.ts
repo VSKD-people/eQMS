@@ -1,4 +1,4 @@
-// Documents: draft, review, the DocuSign approval send, audience and the read-and-understood records.
+// Documents: draft, review, the Adobe Sign approval send, audience and the read-and-understood records.
 import type { FastifyInstance } from 'fastify';
 import { maybe, one } from '@veqms/db';
 import { DOC_TYPES, ROLES } from '@veqms/domain';
@@ -8,7 +8,7 @@ import { person } from '../lib/people.ts';
 import { audit } from '../lib/work.ts';
 import { body, need, noContent, number, param, pdf, query, uuid, z } from '../lib/params.ts';
 import * as docs from '../services/documents.ts';
-import * as env from '../services/envelopes.ts';
+import * as signing from '../services/agreements.ts';
 import * as training from '../services/training.ts';
 import { documentPdf } from '../services/pdf.ts';
 
@@ -36,7 +36,7 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return docs.create(db, me, b);
   }));
 
-  api.get('/documents/:number', (req) => ctx.run(req, (db, me) => docs.detail(db, me, param(p, req.params).number, env.latestFor)));
+  api.get('/documents/:number', (req) => ctx.run(req, (db, me) => docs.detail(db, me, param(p, req.params).number, signing.latestFor)));
 
   api.put('/documents/:number/draft', async (req, reply) => {
     const { number: n } = param(p, req.params);
@@ -72,23 +72,23 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return docs.newVersion(db, me, n, b.kind, b.summary);
   }));
 
-  // What the envelope will look like before anything is sent: signers in order, problems that block the send, and the allowance.
+  // What the agreement will look like before anything is sent: signers in order, problems that block the send, and the allowance.
   api.get('/documents/:number/approval-plan', (req) => ctx.run(req, async (db, me) => {
     const { number: n } = param(p, req.params);
     const q = query({ approvers: z.string().optional() }, req.query);
     const ids = q.approvers ? q.approvers.split(',').filter(Boolean).map((x) => uuid.parse(x)) : undefined;
-    const r = await env.planForDocument(db, n, ids);
+    const r = await signing.planForDocument(db, n, ids);
     await docs.assertVisible(db, me, r.d);
-    await env.logBlockedPlan(db, r.plan, 'document', n);
+    await signing.logBlockedPlan(db, r.plan, 'document', n);
     const name = (id: string) => r.people.find((x) => x.id === id)?.name ?? '';
     return { subject: r.plan.subject, purpose: r.plan.purpose, version: r.v.version, problems: r.plan.problems,
-      signers: r.plan.signers.map((s) => ({ ...s, name: name(s.userId), status: 'waiting', signedAt: null })), allowance: await env.allowance(db) };
+      signers: r.plan.signers.map((s) => ({ ...s, name: name(s.userId), status: 'waiting', signedAt: null })), allowance: await signing.allowance(db) };
   }));
 
-  api.post('/documents/:number/envelopes', (req) => ctx.run(req, (db, me) => {
+  api.post('/documents/:number/agreements', (req) => ctx.run(req, (db, me) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ verification, approvers: z.array(uuid).min(1).max(2) }), req.body);
-    return env.sendDocument(db, ctx, me, n, b);
+    return signing.sendDocument(db, ctx, me, n, b);
   }));
 
   api.put('/documents/:number/audience', (req) => ctx.run(req, async (db, me) => {
@@ -99,7 +99,7 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return training.setAudience(db, me, d.id, b);
   }));
 
-  // The exact PDF that goes into the envelope (footer, version, document ID and signature page), for the verification check.
+  // The exact PDF that goes into the agreement (footer, version, document ID and signature page), for the verification check.
   api.get('/documents/:number/pdf', async (req, reply) => {
     const { number: n } = param(p, req.params);
     const q = query({ version: z.string().regex(/^\d+\.\d+$/).optional() }, req.query);
@@ -113,7 +113,7 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
       const owner = await person(db, d.owner_id);
       let signers: { name: string; roleLabel: string; meaning: string; anchor: string }[] = [];
       try {
-        const plan = await env.planForDocument(db, n);
+        const plan = await signing.planForDocument(db, n);
         signers = plan.plan.signers.map((s, i) => ({ name: plan.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: `\\s${i + 1}\\` }));
       } catch { /* no approvers chosen yet: the preview has no signature lines */ }
       await audit(db, 'read', 'Document', d.number, `Opened the PDF of ${d.number} v${v.version}`);

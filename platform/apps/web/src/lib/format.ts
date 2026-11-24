@@ -40,12 +40,12 @@ const STATE_CLS: Record<string, string> = {
   'Effectiveness check': 'chip-due', Assessment: 'chip-due', Superseded: 'chip-due', 'Not allocated': 'chip-overdue',
   Overdue: 'chip-overdue', declined: 'chip-overdue', Declined: 'chip-overdue',
   Draft: 'chip-outline', Obsolete: 'chip-outline', Withdrawn: 'chip-outline', Corrected: 'chip-outline', Correction: 'chip-outline',
-  voided: 'chip-outline', waiting: 'chip-outline', Waiting: 'chip-outline', 'Not required': 'chip-outline'
+  cancelled: 'chip-outline', waiting: 'chip-outline', Waiting: 'chip-outline', 'Not required': 'chip-outline'
 };
 export function chipClass(state: string): string { return STATE_CLS[state] ?? 'chip-outline'; }
 
-export const ENVELOPE_STATUS: Record<string, string> = { sent: 'Out for signature', completed: 'Completed', declined: 'Declined', voided: 'Voided' };
-export const SIGNER_STATUS: Record<string, string> = { waiting: 'Waiting', sent: 'Sent', delivered: 'With signer', signed: 'Signed', declined: 'Declined', voided: 'Voided' };
+export const AGREEMENT_STATUS: Record<string, string> = { sent: 'Out for signature', completed: 'Completed', declined: 'Declined', cancelled: 'Cancelled' };
+export const SIGNER_STATUS: Record<string, string> = { waiting: 'Waiting', sent: 'With signer', signed: 'Signed', declined: 'Declined', cancelled: 'Cancelled' };
 
 export function plural(n: number, one: string, many = one + 's'): string { return `${n} ${n === 1 ? one : many}`; }
 
@@ -59,7 +59,7 @@ export function qs(params: Record<string, string | number | undefined | null | f
   return s ? `?${s}` : '';
 }
 
-// Link to the record an envelope or task belongs to.
+// Link to the record an agreement or task belongs to.
 export function recordHref(recordType: string, number: string): string {
   const n = encodeURIComponent(number);
   if (recordType === 'capa') return `/quality/capas/${n}`;

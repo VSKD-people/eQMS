@@ -13,7 +13,7 @@ do $$ begin perform set_config('app.tenant_id', pg_temp.k('tenant')::text, false
 
 insert into app.tenants (id, name) values (pg_temp.k('tenant'), 'VeQMS demo');
 insert into app.tenant_directory (entra_tenant_id, tenant_id) values ('dev-tenant', pg_temp.k('tenant'));
-insert into app.settings (tenant_id, docusign_go_live) values (pg_temp.k('tenant'), pg_temp.d(-120, 9));
+insert into app.settings (tenant_id, signing_go_live) values (pg_temp.k('tenant'), pg_temp.d(-120, 9));
 
 -- People (Entra object ids 'dev-<key>' are used by the development sign-in only)
 insert into app.users (id, tenant_id, entra_oid, email, name, initials, job_title, site, status, clearance, manager_id, left_on)
@@ -105,27 +105,27 @@ insert into app.audience_groups (tenant_id, document_id, group_id)
 select pg_temp.k('tenant'), pg_temp.k(a.doc), pg_temp.k('g:' || a.g) from (values ('POL-001', 'all'), ('POL-003', 'all'), ('POL-004', 'all'), ('SOP-012', 'all'), ('SOP-018', 'it'), ('VP-001', 'it')) as a(doc, g);
 insert into app.audience_roles (tenant_id, document_id, role) values (pg_temp.k('tenant'), pg_temp.k('VP-001'), 'qm');
 
--- Approvals through DocuSign: SOP-012 v3.0 and VEN-001 v1.0 completed; POL-004 v2.0 out for signature.
+-- Approvals through Adobe Sign: SOP-012 v3.0 and VEN-001 v1.0 completed; POL-004 v2.0 out for signature.
 create or replace function pg_temp.env(p_key text, p_doc text, p_ver text, p_subject text, p_status text, p_sent timestamptz, p_done timestamptz, p_by text)
 returns void language plpgsql as $$
 begin
-  insert into app.envelopes (id, tenant_id, docusign_envelope_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, status, sent_by, sent_at, completed_at,
-    verification, pdf_blob, pdf_sha256, signed_pdf_blob, signed_pdf_sha256, certificate_blob, certificate_sha256)
+  insert into app.agreements (id, tenant_id, provider_agreement_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, status, sent_by, sent_at, completed_at,
+    verification, pdf_blob, pdf_sha256, signed_pdf_blob, signed_pdf_sha256, audit_report_blob, audit_report_sha256)
   values (pg_temp.k(p_key), pg_temp.k('tenant'), 'demo-' || p_key, 'document', pg_temp.k(p_doc), p_doc, pg_temp.k(p_doc || '@' || p_ver), p_ver, p_subject, 'Document approval', p_status,
     pg_temp.k(p_by), p_sent, p_done,
     jsonb_build_object('footer', true, 'version', true, 'documentId', true, 'dates', true, 'by', pg_temp.k(p_by), 'at', p_sent),
-    'envelopes/' || p_key || '/original.pdf', pg_temp.sha(p_key || 'pdf'),
-    case when p_status = 'completed' then 'envelopes/' || p_key || '/signed.pdf' end, case when p_status = 'completed' then pg_temp.sha(p_key || 'signed') end,
-    case when p_status = 'completed' then 'envelopes/' || p_key || '/certificate.pdf' end, case when p_status = 'completed' then pg_temp.sha(p_key || 'cert') end);
-  insert into app.envelope_directory (docusign_envelope_id, tenant_id, envelope_id) values ('demo-' || p_key, pg_temp.k('tenant'), pg_temp.k(p_key));
-  insert into app.docusign_sends (tenant_id, allowance_year, send_no, envelope_id, sent_at, sent_by) values (pg_temp.k('tenant'), 0, 0, pg_temp.k(p_key), p_sent, pg_temp.k(p_by));
+    'agreements/' || p_key || '/original.pdf', pg_temp.sha(p_key || 'pdf'),
+    case when p_status = 'completed' then 'agreements/' || p_key || '/signed.pdf' end, case when p_status = 'completed' then pg_temp.sha(p_key || 'signed') end,
+    case when p_status = 'completed' then 'agreements/' || p_key || '/audit-report.pdf' end, case when p_status = 'completed' then pg_temp.sha(p_key || 'cert') end);
+  insert into app.agreement_directory (provider_agreement_id, tenant_id, agreement_id) values ('demo-' || p_key, pg_temp.k('tenant'), pg_temp.k(p_key));
+  insert into app.signing_transactions (tenant_id, allowance_year, transaction_no, agreement_id, sent_at, sent_by) values (pg_temp.k('tenant'), 0, 0, pg_temp.k(p_key), p_sent, pg_temp.k(p_by));
 end $$;
 select pg_temp.env('env:VEN-001', 'VEN-001', '1.0', 'VEN-001 v1.0 · Offsite Backup Storage Provider · Approval', 'completed', pg_temp.d(-43, 9), pg_temp.d(-40, 10), 'tom');
 select pg_temp.env('env:SOP-012', 'SOP-012', '3.0', 'SOP-012 v3.0 · Backup and Restore Procedure · Approval', 'completed', pg_temp.d(-22, 9), pg_temp.d(-16, 11), 'sam');
 select pg_temp.env('env:POL-004', 'POL-004', '2.0', 'POL-004 v2.0 · Access Control Policy · Approval', 'sent', pg_temp.d(-6, 15), null, 'sam');
 
-insert into app.envelope_signers (tenant_id, envelope_id, user_id, role_label, meaning, routing_order, docusign_recipient_id, status, sent_at, signed_at)
-select pg_temp.k('tenant'), pg_temp.k(x.env), pg_temp.k(x.u), x.label, x.meaning, x.ord, x.ord::text || x.u, x.st, x.sent, x.signed from (values
+insert into app.agreement_signers (tenant_id, agreement_id, user_id, role_label, meaning, routing_order, signer_email, status, sent_at, signed_at)
+select pg_temp.k('tenant'), pg_temp.k(x.env), pg_temp.k(x.u), x.label, x.meaning, x.ord, (select email from app.users where id = pg_temp.k(x.u)), x.st, x.sent, x.signed from (values
   ('env:VEN-001', 'grace', 'Author', 'Authored', 1, 'signed', pg_temp.d(-43, 9), pg_temp.d(-43, 10)),
   ('env:VEN-001', 'sam', 'Reviewer', 'Reviewed', 2, 'signed', pg_temp.d(-43, 10), pg_temp.d(-43, 11)),
   ('env:VEN-001', 'vic', 'QA approver', 'Approved', 3, 'signed', pg_temp.d(-43, 11), pg_temp.d(-40, 10)),
@@ -136,22 +136,22 @@ select pg_temp.k('tenant'), pg_temp.k(x.env), pg_temp.k(x.u), x.label, x.meaning
   ('env:POL-004', 'sam', 'Author', 'Authored', 1, 'signed', pg_temp.d(-6, 15), pg_temp.d(-6, 16)),
   ('env:POL-004', 'priya', 'Reviewer', 'Reviewed', 2, 'signed', pg_temp.d(-6, 16), pg_temp.d(-6, 17)),
   ('env:POL-004', 'omar', 'Reviewer', 'Reviewed', 2, 'signed', pg_temp.d(-6, 16), pg_temp.d(-5, 9)),
-  ('env:POL-004', 'vic', 'QA approver 1', 'Approved', 3, 'delivered', pg_temp.d(-5, 9), null),
+  ('env:POL-004', 'vic', 'QA approver 1', 'Approved', 3, 'sent', pg_temp.d(-5, 9), null),
   ('env:POL-004', 'tom', 'QA approver 2', 'Approved', 4, 'waiting', null, null)
 ) as x(env, u, label, meaning, ord, st, sent, signed);
 
-insert into app.envelope_events (tenant_id, envelope_id, at, type, user_id, detail, source)
-select pg_temp.k('tenant'), s.envelope_id, coalesce(s.signed_at, s.sent_at), case when s.status = 'signed' then 'signed' else 'delivered' end, s.user_id, null, 'connect'
-from app.envelope_signers s where s.sent_at is not null;
+insert into app.agreement_events (tenant_id, agreement_id, at, type, user_id, detail, source)
+select pg_temp.k('tenant'), s.agreement_id, coalesce(s.signed_at, s.sent_at), case when s.status = 'signed' then 'signed' else 'sent' end, s.user_id, null, 'webhook'
+from app.agreement_signers s where s.sent_at is not null;
 
-update app.document_versions set envelope_id = pg_temp.k('env:SOP-012') where id = pg_temp.k('SOP-012@3.0');
-update app.document_versions set envelope_id = pg_temp.k('env:VEN-001') where id = pg_temp.k('VEN-001@1.0');
-update app.document_versions set envelope_id = pg_temp.k('env:POL-004') where id = pg_temp.k('POL-004@2.0');
+update app.document_versions set agreement_id = pg_temp.k('env:SOP-012') where id = pg_temp.k('SOP-012@3.0');
+update app.document_versions set agreement_id = pg_temp.k('env:VEN-001') where id = pg_temp.k('VEN-001@1.0');
+update app.document_versions set agreement_id = pg_temp.k('env:POL-004') where id = pg_temp.k('POL-004@2.0');
 
-insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, envelope_id, content_sha256, statement)
-select pg_temp.k('tenant'), 'document', e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, 'docusign', e.id, e.pdf_sha256,
-       'Signed in DocuSign with the Part 11 module: signer re-authenticated and chose the meaning “' || s.meaning || '”.'
-from app.envelope_signers s join app.envelopes e on e.id = s.envelope_id where e.status = 'completed';
+insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, agreement_id, content_sha256, statement)
+select pg_temp.k('tenant'), 'document', e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, 'adobe_sign', e.id, e.pdf_sha256,
+       'Signed in Adobe Sign (Bio-Pharma settings): identity checked at signing; signature meaning “' || s.meaning || '”.'
+from app.agreement_signers s join app.agreements e on e.id = s.agreement_id where e.status = 'completed';
 insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, content_sha256, statement)
 select pg_temp.k('tenant'), 'document', v.document_id, d.number, v.id, pg_temp.k(case when d.number = 'POL-004' then 'tom' else 'tom' end), 'Approved', v.approved_at, 'kstarrs', v.content_sha256,
        'Migrated from KSTARRS (approved before go-live).'
@@ -191,13 +191,13 @@ end $$;
 -- Tasks for the demo
 insert into app.tasks (tenant_id, kind, record_type, record_id, record_number, assignee_id, due_at, note, ref)
 values
-  (pg_temp.k('tenant'), 'ds-sign', 'document', pg_temp.k('POL-004'), 'POL-004', pg_temp.k('vic'), pg_temp.d(-2, 17), 'QA approver 1 of 2 · author and reviewers have signed', pg_temp.k('env:POL-004')),
-  (pg_temp.k('tenant'), 'send-approval', 'document', pg_temp.k('POL-003'), 'POL-003', pg_temp.k('vic'), pg_temp.d(2, 17), 'Verify the PDF, then send one DocuSign envelope', null),
+  (pg_temp.k('tenant'), 'esign', 'document', pg_temp.k('POL-004'), 'POL-004', pg_temp.k('vic'), pg_temp.d(-2, 17), 'QA approver 1 of 2 · author and reviewers have signed', pg_temp.k('env:POL-004')),
+  (pg_temp.k('tenant'), 'send-approval', 'document', pg_temp.k('POL-003'), 'POL-003', pg_temp.k('vic'), pg_temp.d(2, 17), 'Verify the PDF, then send one Adobe Sign agreement', null),
   (pg_temp.k('tenant'), 'send-approval', 'document', pg_temp.k('VP-001'), 'VP-001', pg_temp.k('vic'), pg_temp.d(3, 17), 'QA approval of a validation plan', null);
 insert into app.tasks (tenant_id, kind, record_type, record_id, record_number, assignee_id, due_at, ref)
 select tenant_id, 'training', 'document', document_id, document_number, user_id, due_at, id from app.training_records where completed_at is null;
 
--- Quality: a deviation that closes through DocuSign, and a CAPA in its effectiveness check
+-- Quality: a deviation that closes through Adobe Sign, and a CAPA in its effectiveness check
 insert into app.quality_events (id, tenant_id, number, type, title, description, state, severity, owner_id, process, due_at, assessment, created_at)
 values (pg_temp.k('QE-017'), pg_temp.k('tenant'), 'QE-017', 'Deviation', 'Quarterly restore test ran 9 days late', 'The Q3 restore test under SOP-012 ran 9 days late because the test server was being rebuilt.',
         'Assessment', 'Low', pg_temp.k('grace'), 'ISMS · Continuity', pg_temp.d(4, 17), 'One-off delay; the test passed and the schedule stays the same.', pg_temp.d(-6));

@@ -4,10 +4,10 @@
 
 | Suite | What it proves | Run |
 |---|---|---|
-| Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Connect HMAC, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
-| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, training-record locks, import mode refused for the API, envelope rules, allowance, version locks, insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, void, decline, correction sends, closures, Connect-style status sync, training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 69 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
-| UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with DocuSign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
+| Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
+| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, training-record locks, import mode refused for the API, agreement rules, allowance, version locks, insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: send, sign in order, complete, cancel, decline, correction transactions, closures, webhooks-style status sync, training confirmation, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain: 69 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
 CI (`.github/workflows/platform-ci.yml`) runs all of them on every push: the first three with a PostgreSQL 16 service,
 the browser tests in a second job against `docker compose`. Both the API flow test and the browser tests change data,
@@ -27,7 +27,7 @@ packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), a
   verifies afterwards. A crawl of every page and every linked record as each of the 12 personas (1,086 page loads)
   found no server errors after the fixes below. One crawl run logged a 400 on a sub-resource for one persona on two
   pages, and one React hydration warning; neither came back on a rerun, and the cause isn't known.
-- **Not run yet:** CI on GitHub itself, the Bicep and the deploy workflow, Microsoft Entra sign-in, DocuSign live
+- **Not run yet:** CI on GitHub itself, the Bicep and the deploy workflow, Microsoft Entra sign-in, Adobe Sign live
   mode, Microsoft Graph email, Azure Blob storage. Firefox, Safari and screen readers are untested.
 
 Found and fixed during that work:
@@ -35,12 +35,12 @@ Found and fixed during that work:
 - Type-checking needed `@veqms/domain` and `@veqms/db` built first; `npm run typecheck` now builds them.
 - The API process exited when the database dropped an idle connection (restart or failover). The pool now logs it
   and opens a new connection.
-- In Docker, the API couldn't write to its storage volume, so every DocuSign send failed. The image now creates the
+- In Docker, the API couldn't write to its storage volume, so every Adobe Sign send failed. The image now creates the
   folder for the `node` user.
 - A document's Training tab crashed for anyone who isn't its owner or a training manager. It now explains who can
   see the records.
 - A revoked user got a blank error page. They are now signed out and told their access has been removed.
-- The closure pages showed nothing once a closure was sent. They now show the envelope, let the signer sign in mock
+- The closure pages showed nothing once a closure was sent. They now show the agreement, let the signer sign in mock
   mode, and show the closed state. The Quality page lists CAPAs and quality events.
 - Closing a CAPA closed its source quality event without an audit entry. It is now logged with the previous state.
 - Filtering training records by Withdrawn, Corrected or Superseded found nothing unless "include earlier versions"
@@ -53,18 +53,19 @@ Then upgraded to Next.js 16 and zod 4 to clear two package advisories (`postcss`
 memory-exhaustion issue in `zod` 3); `npm audit` reports none. The upgrade renamed `middleware.ts` to `proxy.ts`
 (Next.js 16), and the API now checks IDs with `z.guid()`: zod 4's `z.uuid()` refuses UUIDs whose version bits aren't
 RFC 9562 ones, which PostgreSQL accepts (the demo seed has many). Every check above passed again after the upgrade.
-Showing a send page that segregation of duties blocks is now logged (UAT scenario 1).
+Showing a transaction page that segregation of duties blocks is now logged (UAT scenario 1).
 
 ## Before go-live
 
 1. **CI green** with real packages, lockfile committed.
 2. **UAT in mock mode** on Azure: walk the scenarios below as each persona.
-3. **DocuSign demo account**: switch to live mode against the demo environment; send, sign, decline and void real
-   envelopes; check Connect, the signed PDF and the certificate.
+3. **Adobe Sign developer account**: switch to live mode against it; send, sign, decline and cancel real agreements;
+   check the webhook, the signed PDF and the audit report, and every item marked **verify** in
+   [06 · Adobe Sign](06-adobe-sign.md).
 4. **Entra**: sign in, token refresh, revoked user, SCIM provisioning with Microsoft's SCIM validator.
 5. **Restore drill** (runbook) and **audit chain check** after the restore.
 6. **Penetration test** (Step 3 Gate 2).
-7. **Validation** (below), because DocuSign approvals now produce Part 11 records.
+7. **Validation** (below), because Adobe Sign approvals now produce Part 11 records.
 
 ## UAT scenarios (Phase 1)
 
@@ -74,13 +75,13 @@ Use the demo seed (`npm run db:seed`, never in production). Personas sign in wit
    the plan shows the problem and the Send button is disabled; being shown the block is logged (`sod.block`, "Send page
    shown with sending blocked"). If the form is sent anyway (the browser test does this), the API refuses it and that
    refusal is logged too.
-2. Victoria sends VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
+2. Victoria transactions VP-001: verify the PDF, tick the four checks, send. Carrie signs, then Omar, then Victoria. VP-001
    becomes Effective; Carrie and Omar have completed training records; the IT team has VP-001 to read.
-3. Jim voids POL-004 with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim sends a corrected
-   envelope (a new send, linked to the voided one). Carrie declines with a reason; POL-004 returns to Draft again.
+3. Jim voids POL-004 with a reason; it returns to Draft. He resubmits, Carrie reviews, Jim transactions a corrected
+   agreement (a new transaction, linked to the cancelled one). Carrie declines with a reason; POL-004 returns to Draft again.
 4. Daniel reads SOP-012, answers the quiz and confirms. He can't confirm twice. Victoria corrects his record with a
    reason and asks him to retrain: the original stays, marked Corrected.
-5. Carrie records the CAPA-005 effectiveness result and sends the closure; Carrie and Victoria sign; CAPA-005 and
+5. Carrie records the CAPA-005 effectiveness result and transactions the closure; Carrie and Victoria sign; CAPA-005 and
    QE-013 close.
 6. Louise writes the QE-017 justification and sends the closure; Victoria declines; Louise resends; both sign;
    QE-017 closes.
@@ -91,16 +92,16 @@ Use the demo seed (`npm run db:seed`, never in production). Personas sign in wit
 
 ## Validation (computerised system)
 
-DocuSign approvals with the Part 11 module make VeQMS a regulated system for those records. A proportionate
+Adobe Sign approvals with its Bio-Pharma settings make VeQMS a regulated system for those records. A proportionate
 approach, to agree with your validation lead (the GAMP 5 categories and the depth of testing are their call):
 
 - **Validation plan** (VP-001 in the demo data shows the shape) naming the intended use, the regulated records
   (Route 1 approvals, closures, the audit trail, training records) and the approach.
 - **Requirements and traceability:** `../specs/QMS_Build_Prompt.md`, the signatures and training brief, and this
   documentation set, each traced to a test (the automated suites above, plus the UAT scenarios as scripted tests).
-- **Supplier assessment** for DocuSign, Microsoft (Azure, Entra) and the hosting arrangements.
+- **Supplier assessment** for Adobe Sign, Microsoft (Azure, Entra) and the hosting arrangements.
 - **IQ:** the deployment guide's smoke checks and the infrastructure as deployed (Bicep what-if output, image tags).
-- **OQ:** the automated suites run against the deployed environment, plus the DocuSign live tests.
+- **OQ:** the automated suites run against the deployed environment, plus the Adobe Sign live tests.
 - **PQ:** the UAT scenarios with real users and real documents.
 - **Validation report** and release, then change control for every later change (runbook, "Change control for
   VeQMS itself").

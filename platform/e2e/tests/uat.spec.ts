@@ -1,5 +1,5 @@
 // The Phase 1 UAT scenarios from docs/07-testing-and-validation.md, driven through the web app as each persona.
-// DocuSign runs in mock mode: each signer signs on the record page when it is their turn.
+// Adobe Sign runs in mock mode: each signer signs on the record page when it is their turn.
 // Run once, in order, against a freshly seeded database. Scenarios touch different records, so one failing
 // doesn't stop the others.
 import { test, expect } from '@playwright/test';
@@ -9,7 +9,7 @@ test('1 · Victoria cannot send POL-003 she wrote: blocked on screen and logged,
   const vic = await signIn(browser, 'victoria');
   await vic.goto('/documents/POL-003/send');
   await expect(vic.locator('.callout.warn[role=alert]')).toContainText(/segregation of duties/i);
-  await expect(vic.getByRole('button', { name: 'Send to DocuSign' })).toBeDisabled();
+  await expect(vic.getByRole('button', { name: 'Send to Adobe Sign' })).toBeDisabled();
 
   // Being shown the block is itself logged.
   await vic.goto('/admin?tab=audit&objectId=POL-003');
@@ -18,20 +18,20 @@ test('1 · Victoria cannot send POL-003 she wrote: blocked on screen and logged,
 
   // The API checks again even if the browser is bypassed: enable the button and post the form anyway.
   for (const c of await vic.getByRole('group', { name: /Verification check/ }).getByRole('checkbox').all()) await c.check();
-  await vic.getByRole('button', { name: 'Send to DocuSign' }).evaluate((b) => b.removeAttribute('disabled'));
-  await vic.getByRole('button', { name: 'Send to DocuSign' }).click();
+  await vic.getByRole('button', { name: 'Send to Adobe Sign' }).evaluate((b) => b.removeAttribute('disabled'));
+  await vic.getByRole('button', { name: 'Send to Adobe Sign' }).click();
   await expectRefused(vic, /segregation of duties/i);
 
   // The refusal reached the audit trail even though the request rolled back.
   await vic.goto('/admin?tab=audit&objectId=POL-003');
-  await expect(vic.locator('main tbody tr', { hasText: /send blocked: .*segregation of duties/i })).toHaveCount(1);
+  await expect(vic.locator('main tbody tr', { hasText: /agreement not sent \(blocked\): .*segregation of duties/i })).toHaveCount(1);
 });
 
 test('2 · VP-001: verify and send, sign in order, becomes Effective, training follows', async ({ browser }) => {
   const vic = await signIn(browser, 'victoria');
   await vic.goto('/documents/VP-001/send');
   await verifyAndSend(vic);
-  await expectOk(vic, 'Sent to DocuSign');
+  await expectOk(vic, 'Sent to Adobe Sign');
   await expectDocState(vic, 'VP-001', 'In approval');
 
   // Victoria is the QA approver, so she has no Sign button until the author and reviewer have signed.
@@ -44,7 +44,7 @@ test('2 · VP-001: verify and send, sign in order, becomes Effective, training f
   await mockSign(vic, '/documents/VP-001', 'Approved');
   await expectDocState(vic, 'VP-001', 'Effective');
 
-  // Signing the envelope counts as training for the author and reviewer.
+  // Signing the agreement counts as training for the author and reviewer.
   await vic.goto('/documents/VP-001?tab=training');
   for (const name of ['Carrie Foreman', 'Omar Haddad']) {
     await expect(vic.locator('main tr', { hasText: name })).toContainText('Complete');
@@ -55,13 +55,13 @@ test('2 · VP-001: verify and send, sign in order, becomes Effective, training f
   await expect(jim.locator('main')).toContainText('VP-001');
 });
 
-test('3 · POL-004: void, resubmit, corrected send, decline back to draft', async ({ browser }) => {
+test('3 · POL-004: cancel, resubmit, corrected send, decline back to draft', async ({ browser }) => {
   const jim = await signIn(browser, 'jim');
   await jim.goto('/documents/POL-004?tab=approval');
-  await jim.getByText('Void this envelope').click();
+  await jim.getByText('Cancel this agreement').click();
   await jim.getByLabel('Reason (required)').fill('Section 4 still names the old leaver process.');
-  await jim.getByRole('button', { name: 'Void envelope' }).click();
-  await expectOk(jim, 'Envelope voided');
+  await jim.getByRole('button', { name: 'Cancel agreement' }).click();
+  await expectOk(jim, 'Agreement cancelled');
   await expectDocState(jim, 'POL-004', 'Draft');
 
   // Resubmit with Carrie as the only reviewer.
@@ -79,10 +79,10 @@ test('3 · POL-004: void, resubmit, corrected send, decline back to draft', asyn
   await expectOk(carrie, 'Marked reviewed');
   await expectDocState(carrie, 'POL-004', 'Review closed');
 
-  // The corrected envelope is a new send, linked to the voided one.
+  // The corrected agreement is a new transaction, linked to the cancelled one.
   await jim.goto('/documents/POL-004/send');
   await verifyAndSend(jim);
-  await expectOk(jim, 'Sent to DocuSign');
+  await expectOk(jim, 'Sent to Adobe Sign');
   await expect(jim.locator('main')).toContainText('Correction');
 
   await mockSign(jim, '/documents/POL-004', 'Authored');
@@ -127,7 +127,7 @@ test('5 · CAPA-005: effectiveness result, closure sent, Carrie and Victoria sig
   await carrie.getByRole('button', { name: 'Save result' }).click();
   await expectOk(carrie, 'Result recorded');
   await verifyAndSend(carrie);
-  await expectOk(carrie, 'Closure sent to DocuSign');
+  await expectOk(carrie, 'Closure sent to Adobe Sign');
 
   await mockSign(carrie, '/quality/capas/CAPA-005', 'Authored');
   const vic = await signIn(browser, 'victoria');
@@ -145,7 +145,7 @@ test('6 · QE-017: justification, Victoria declines, Louise resends, both sign, 
   await louise.getByRole('button', { name: 'Save justification' }).click();
   await expectOk(louise, 'Justification saved');
   await verifyAndSend(louise);
-  await expectOk(louise, 'Closure sent to DocuSign');
+  await expectOk(louise, 'Closure sent to Adobe Sign');
   await mockSign(louise, '/quality/events/QE-017', 'Authored');
 
   const vic = await signIn(browser, 'victoria');
@@ -153,7 +153,7 @@ test('6 · QE-017: justification, Victoria declines, Louise resends, both sign, 
 
   await louise.goto('/quality/events/QE-017');
   await verifyAndSend(louise);
-  await expectOk(louise, 'Closure sent to DocuSign');
+  await expectOk(louise, 'Closure sent to Adobe Sign');
   await mockSign(louise, '/quality/events/QE-017', 'Authored');
   await mockSign(vic, '/quality/events/QE-017', 'Approved');
 
@@ -209,7 +209,7 @@ test('8 · Fraser (auditor) verifies the audit chain; any change is refused', as
   const asFraser = { 'x-dev-user': 'dev-aud' };
   const attempts = [
     fraser.request.post(`${api}/api/v1/documents`, { headers: asFraser, data: { docType: 'Policy', title: 'Auditor test', classification: 'Internal' } }),
-    fraser.request.put(`${api}/api/v1/settings`, { headers: asFraser, data: { docusignAllowance: 1 } }),
+    fraser.request.put(`${api}/api/v1/settings`, { headers: asFraser, data: { signingAllowance: 1 } }),
     fraser.request.post(`${api}/api/v1/training/reminders`, { headers: asFraser })
   ];
   for (const r of await Promise.all(attempts)) {
@@ -220,7 +220,7 @@ test('8 · Fraser (auditor) verifies the audit chain; any change is refused', as
 
 test('9 · Every report exports as Excel and PDF, stamped and logged', async ({ browser }) => {
   const vic = await signIn(browser, 'victoria');
-  const reports = ['training-matrix', 'training-records', 'document-status?documentNumber=SOP-012', 'approvals-register', 'docusign-sends'];
+  const reports = ['training-matrix', 'training-records', 'document-status?documentNumber=SOP-012', 'approvals-register', 'signing-transactions'];
   for (const rep of reports) {
     const [name, query] = rep.split('?');
     for (const format of ['pdf', 'xlsx'] as const) {

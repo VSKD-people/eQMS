@@ -1,33 +1,38 @@
 // Daily job (06:00 UTC in Azure): for every tenant, training reminders and overdue notices, a status check on
-// envelopes that have been out for more than a day (in case a Connect message was missed), and the email queue.
+// agreements that have been out for more than a day (in case a webhook notification was missed), and the email queue.
 import { withTenant } from '@veqms/db';
 import { loadConfig } from '../config.ts';
-import { createDocuSign } from '../integrations/docusign.ts';
+import { createAdobeSign } from '../integrations/adobesign.ts';
 import { createStorage } from '../integrations/storage.ts';
 import { poolFor } from '../server.ts';
 import { sendQueuedEmail } from '../integrations/mail.ts';
-import * as env from '../services/envelopes.ts';
+import * as signing from '../services/agreements.ts';
 import { reminders } from '../services/training.ts';
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const pool = await poolFor(cfg);
-  const deps = { docusign: createDocuSign(cfg), storage: createStorage(cfg) };
+  const deps = { esign: createAdobeSign(cfg), storage: createStorage(cfg) };
   let failed = 0;
   try {
+    if (deps.esign.mode === 'live') {
+      await deps.esign.checkSignIn()
+        .then(() => console.log(JSON.stringify({ job: 'adobe-sign-sign-in', ok: true })))
+        .catch((e) => { failed++; console.error(JSON.stringify({ job: 'adobe-sign-sign-in', ok: false, error: String(e) })); });
+    }
     const tenants = (await pool.query<{ tenant_id: string }>('select distinct tenant_id from app.tenant_directory')).rows;
     for (const t of tenants) {
       try {
         const r = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => reminders(db));
         console.log(JSON.stringify({ tenant: t.tenant_id, job: 'training-reminders', ...r }));
-        if (deps.docusign.mode === 'live') {
-          const stale = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => env.staleEnvelopes(db, 24));
+        if (deps.esign.mode === 'live') {
+          const stale = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => signing.staleAgreements(db, 24));
           for (const id of stale) {
-            // One transaction per envelope, so one failure doesn't hold back the rest.
-            await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => env.fromDocuSign(db, deps, id, 'poll'))
-              .catch((e) => { failed++; console.error(JSON.stringify({ tenant: t.tenant_id, job: 'envelope-poll', envelope: id, error: String(e) })); });
+            // One transaction per agreement, so one failure doesn't hold back the rest.
+            await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => signing.fromProvider(db, deps, id, 'poll'))
+              .catch((e) => { failed++; console.error(JSON.stringify({ tenant: t.tenant_id, job: 'agreement-poll', agreement: id, error: String(e) })); });
           }
-          console.log(JSON.stringify({ tenant: t.tenant_id, job: 'envelope-poll', checked: stale.length }));
+          console.log(JSON.stringify({ tenant: t.tenant_id, job: 'agreement-poll', checked: stale.length }));
         }
         const mail = await sendQueuedEmail(pool, cfg, t.tenant_id);
         console.log(JSON.stringify({ tenant: t.tenant_id, job: 'email', ...mail }));

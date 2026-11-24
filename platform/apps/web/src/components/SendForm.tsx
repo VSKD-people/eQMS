@@ -1,7 +1,7 @@
 import type { ApprovalPlan, UserRow } from '@/lib/types';
-import { SignerList } from './envelope';
+import { SignerList } from './agreement';
 
-// Shared by documents, CAPA closure and deviation closure: plan, verification check, then one DocuSign send.
+// Shared by documents, CAPA closure and deviation closure: plan, verification check, then one Adobe Sign agreement.
 // Changing the QA approver re-plans with a plain GET form (works without JavaScript).
 export function SendForm({ plan, pdfHref, replanAction, approverCount, chosen, candidates, labels, action, disabled }: {
   plan: ApprovalPlan; pdfHref: string; replanAction: string; approverCount: 1 | 2; chosen: string[]; candidates: UserRow[];
@@ -12,7 +12,7 @@ export function SendForm({ plan, pdfHref, replanAction, approverCount, chosen, c
   return (
     <div className="stack">
       <div className="card card-pad">
-        <div className="statement mb-16"><div className="small muted">Envelope subject</div><div style={{ fontWeight: 600 }}>{plan.subject}</div>
+        <div className="statement mb-16"><div className="small muted">Agreement subject</div><div style={{ fontWeight: 600 }}>{plan.subject}</div>
           <div className="row-wrap mt-8"><a className="btn btn-sm" href={pdfHref}>Open the PDF to check it</a></div></div>
         <form method="get" action={replanAction} className="form-grid">
           {Array.from({ length: approverCount }, (_, i) => (
@@ -23,7 +23,7 @@ export function SendForm({ plan, pdfHref, replanAction, approverCount, chosen, c
           <div className="full"><button className="btn btn-sm" type="submit" formAction={replanAction}>Update signing order</button></div>
         </form>
       </div>
-      <div className="card card-pad"><div className="label mb-8">Signing order in DocuSign</div><SignerList signers={plan.signers} /></div>
+      <div className="card card-pad"><div className="label mb-8">Signing order in Adobe Sign</div><SignerList signers={plan.signers} /></div>
       {plan.problems.length ? <div className="callout warn" role="alert"><strong>Fix before sending</strong>{plan.problems.map((p) => <p className="small" style={{ margin: '4px 0 0' }} key={p}>{p}</p>)}</div> : null}
       <form action={action} className="card card-pad">
         <fieldset className="mb-16"><legend>Verification check (required before sending)</legend>
@@ -31,12 +31,12 @@ export function SendForm({ plan, pdfHref, replanAction, approverCount, chosen, c
           <label className="check"><input type="checkbox" name="version" required /> {labels.version}</label>
           <label className="check"><input type="checkbox" name="documentId" required /> {labels.documentId}</label>
           <label className="check"><input type="checkbox" name="dates" required /> {labels.dates}</label>
-          <div className="help">A correction after sending means voiding the envelope and sending again, which costs a second send.</div>
+          <div className="help">A correction after sending means cancelling the agreement and sending again, which uses a second transaction.</div>
         </fieldset>
         <div className="field mb-16"><label htmlFor="note">Note for the record (optional)</label><input className="input" id="note" name="note" /></div>
-        <div className={`callout ${plan.allowance.low ? 'warn' : ''} mb-16`}><strong>This uses 1 DocuSign send</strong>
-          <p className="small" style={{ margin: '4px 0 0' }}>It uses 1 of {plan.allowance.remaining} sends left this year ({plan.allowance.used} of {plan.allowance.allowance} used). Every signer is in this one envelope.</p></div>
-        <button className="btn btn-primary" type="submit" disabled={blocked}>Send to DocuSign</button>
+        <div className={`callout ${plan.allowance.low ? 'warn' : ''} mb-16`}><strong>This uses 1 Adobe Sign transaction</strong>
+          <p className="small" style={{ margin: '4px 0 0' }}>It uses 1 of {plan.allowance.remaining} transactions left this year ({plan.allowance.used} of {plan.allowance.allowance} used). Every signer is in this one agreement.</p></div>
+        <button className="btn btn-primary" type="submit" disabled={blocked}>Send to Adobe Sign</button>
         {blocked && !disabled ? <p className="small muted mt-8">{plan.allowance.exhausted ? 'This year’s allowance is used up.' : 'Fix the problems above first.'}</p> : null}
       </form>
     </div>

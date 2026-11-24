@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ['/today', 'Today', 'home', true],
     ['/documents', 'Documents', 'doc', true],
     ['/training', 'Training', 'training', true],
-    ['/approvals', 'Approvals and DocuSign', 'sign', has(me, 'approvals.view')],
+    ['/approvals', 'Approvals', 'sign', has(me, 'approvals.view')],
     ['/quality', 'Quality', 'quality', true],
     ['/admin', 'Administration', 'admin', has(me, 'audit.read') || has(me, 'admin.settings') || has(me, 'admin.users')]
   ];

@@ -13,9 +13,9 @@ goes wrong. Resource names follow `05-deployment-azure.md` (resource group `rg-v
 |---|---|---|
 | Support Owner | The person named in open question 35, plus up to three deputies | Receives alerts, runs this runbook, owns incidents |
 | Technical contact | To be named | Patching and security incidents (open question 35 says one is still needed) |
-| Quality Manager | Quality | Audit chain checks, DocuSign allowance, change approval, record retention |
+| Quality Manager | Quality | Audit chain checks, Adobe Sign allowance, change approval, record retention |
 | Database administrators | Entra group from deployment step 3c | Restores and investigations only; break-glass |
-| Approvals for spend (more DocuSign envelopes, bigger Azure SKUs) | **PJ Walters** | Not decided in this runbook |
+| Approvals for spend (more Adobe Sign agreements, bigger Azure SKUs) | **PJ Walters** | Not decided in this runbook |
 
 ## Routine checks
 
@@ -23,9 +23,9 @@ goes wrong. Resource names follow `05-deployment-azure.md` (resource group `rg-v
 |---|---|---|
 | Daily | Reminders job ran; no open alerts | [Reminders](#daily-training-reminders), [Monitoring](#monitoring-and-alerts) |
 | Weekly | Audit chain verifies | [Audit chain](#audit-chain-verification) |
-| Monthly | DocuSign allowance against DocuSign's own usage report; secret expiry dates; Azure Advisor and Defender recommendations | [Allowance](#docusign-allowance), [Rotation](#secret-and-key-rotation) |
+| Monthly | Adobe Sign allowance against Adobe Sign's own usage report; secret expiry dates; Azure Advisor and Defender recommendations | [Allowance](#adobe-sign-allowance), [Rotation](#secret-and-key-rotation) |
 | Quarterly | Restore drill with evidence (spec Step 1, backup and continuity control) | [Backups](#backups-and-point-in-time-restore) |
-| Yearly, or when due | Entra client secret, DocuSign RSA key, Connect HMAC key, SCIM token | [Rotation](#secret-and-key-rotation) |
+| Yearly, or when due | Entra client secret, Adobe Sign client secret or integration key, Adobe Sign webhook token, SCIM token | [Rotation](#secret-and-key-rotation) |
 
 Keep evidence (screenshots, command output, dates, who did it) in the quality records for the system itself.
 
@@ -43,11 +43,11 @@ points, not tested values; tune them after the first month.
 | Migration failed | Job execution status for `veqms-migrate` | Any failed run (the deploy workflow also stops) |
 | Database health | PostgreSQL CPU, storage used, failed connections | Storage nearing the limit; repeated failed connections |
 | Key Vault denied | Key Vault diagnostic logs, `Forbidden` results | Any (usually a role assignment or secret name problem) |
-| DocuSign Connect rejected | API logs for refused webhook signatures | Any (wrong or rotated HMAC key) |
+| Adobe Sign webhooks refused, or the daily Adobe Sign sign-in failing | API logs ("Adobe Sign webhook notification refused"); the reminders job's `adobe-sign-sign-in` line | Any refused notification (wrong token or client ID); any failed sign-in (expired or revoked refresh token or key). Adobe disables a webhook after 72 hours of failed deliveries |
 | Sign-in anomalies | Entra ID sign-in logs for the two app registrations | Per your Entra ID Protection policies |
 | Azure service issues | Azure Service Health for UK South, PostgreSQL, Container Apps, Key Vault, Storage | Any |
 
-Finding logs (*check* the table and column names; they depend on how the environment sends logs to the workspace):
+Finding logs (*check* the table and column names; they depend on how the environment transactions logs to the workspace):
 
 ```kusto
 ContainerAppConsoleLogs_CL
@@ -66,7 +66,7 @@ register.
 
 ## Daily training reminders
 
-`veqms-reminders` runs at 06:00 UTC (06:00 in winter, 07:00 in summer, UK time). It sends reminders for training
+`veqms-reminders` runs at 06:00 UTC (06:00 in winter, 07:00 in summer, UK time). It transactions reminders for training
 that is due and repeat notices for overdue training, using the reminder settings in VeQMS (Settings).
 
 Check it ran:
@@ -82,7 +82,7 @@ az containerapp job start --name veqms-reminders --resource-group rg-veqms-prod
 ```
 
 or ask a Quality Manager to send them from VeQMS (`POST /api/v1/training/reminders`). *Check* before go-live
-whether a second run on the same day sends duplicate reminders.
+whether a second run on the same day transactions duplicate reminders.
 
 ## Backups and point-in-time restore
 
@@ -110,7 +110,7 @@ API's login), verify the audit chain, then start the apps. Record the data-loss 
 
 **Restore drill (quarterly).**
 1. Restore to a new server at a known time (for example 09:00 UTC yesterday).
-2. Connect as a member of the database administrators group from inside the network (jump host or Bastion).
+2. webhooks as a member of the database administrators group from inside the network (jump host or Bastion).
 3. Verify the audit chain for each tenant. Row-level security is forced on every table, so your login needs
    membership of `veqms_readonly` and the tenant set for the session (*check* that the Azure administrator role can
    grant `veqms_readonly`; record the grant):
@@ -147,26 +147,29 @@ The reminders job reads the same secrets each time it starts, so it needs no res
 
 | Secret (Key Vault name) | Used by | How to rotate | Who notices if it goes wrong |
 |---|---|---|---|
-| `docusign-private-key` | API, reminders job | See below | Sends fail with an authentication error |
-| `docusign-connect-hmac-keys` | API | Two keys at once, see below | Envelopes stop completing in VeQMS |
+| `adobe-sign-client-secret`, `adobe-sign-refresh-token` (OAuth) | API, reminders job | See below | Sends and status checks fail with an authentication error; the daily job fails |
+| `adobe-sign-integration-key` (instead of OAuth) | API, reminders job | See below | As above |
+| `adobe-sign-webhook-token` | API | See below | Agreements stop completing in VeQMS until the daily status check |
 | `entra-web-client-secret` | Web app | See below | Nobody can sign in |
 | `scim-token` | API | See below | Provisioning errors in Entra ID |
 | `session-secret` | Web app | Set a new random value and restart the web app | Everyone is signed out once (expected) |
 
-**DocuSign RSA key (JWT grant).**
-1. In DocuSign (Apps and Keys → your integration key) add a new RSA keypair. Keep the old one for now.
-2. Store the new private key: `az keyvault secret set --vault-name <kv> --name docusign-private-key --file <new key.pem>`.
-   Delete the local file afterwards.
-3. Restart the API revision. Send a test envelope on a test document (this uses one send).
-4. Remove the old keypair in DocuSign.
+**Adobe Sign OAuth credentials.** The refresh token stays valid while it's used (the daily job signs in every day);
+Adobe expires it after 60 days unused, and revoking it revokes its access tokens.
+1. To change the client secret or get a new refresh token, authorise the API application again as the sending account
+   (see [06 · Adobe Sign](06-adobe-sign.md)) and store the new values in `adobe-sign-client-secret` and
+   `adobe-sign-refresh-token`.
+2. Restart the API revision and run the reminders job once: its `adobe-sign-sign-in` line must say `ok: true`.
+3. Revoke the old refresh token in Adobe Sign.
 
-**DocuSign Connect HMAC keys (two at once).** `docusign-connect-hmac-keys` holds a comma-separated list, and the API
-accepts a message signed with any key on it, so rotation has no gap.
-1. In DocuSign Connect, add a new HMAC key. DocuSign then signs each message with every active key (*check* in
-   DocuSign's Connect HMAC guide).
-2. Set the secret to `<old key>,<new key>` and restart the API revision.
-3. Check that the next envelope completes in VeQMS.
-4. Remove the old key in DocuSign, then set the secret to `<new key>` and restart again.
+**Adobe Sign integration key** (if used instead of OAuth). Create a new key with the same scopes, store it in
+`adobe-sign-integration-key`, restart the API revision, check the daily sign-in, then revoke the old key.
+
+**Adobe Sign webhook token.** The token is part of the webhook URL, so change both ends together.
+1. Generate a new value (`openssl rand -hex 32`), store it in `adobe-sign-webhook-token` and restart the API revision.
+2. In Adobe Sign, update the webhook's URL to `https://<api host>/webhooks/adobe-sign/<new token>`.
+3. Check that the next agreement completes in VeQMS. Agreements that moved in between are picked up by the daily
+   status check, or by *Check status with Adobe Sign* on the agreement.
 
 **Entra web client secret.**
 1. On the `VeQMS web` app registration add a new client secret. Note its expiry date in the calendar.
@@ -180,18 +183,18 @@ accepts a message signed with any key on it, so rotation has no gap.
 
 **If a secret leaks:** rotate it at once using the steps above, then follow [Incidents](#incident-handling).
 
-## DocuSign allowance
+## Adobe Sign allowance
 
-Every envelope sent counts as one send against the yearly allowance (Settings: allowance, year start month, warning
-level). The database refuses a send once the allowance is used up, and VeQMS notifies Quality Managers when the
+Every agreement sent counts as one transaction against the yearly allowance (Settings: allowance, year start month, warning
+level). The database refuses a transaction once the allowance is used up, and VeQMS notifies Quality Managers when the
 remaining number falls to the warning level.
 
-- See it: the sends log (`GET /api/v1/envelopes`), `GET /api/v1/docusign/allowance`, or the `docusign-sends` report
+- See it: the transactions log (`GET /api/v1/agreements`), `GET /api/v1/signing/allowance`, or the `signing-transactions` report
   (xlsx or pdf).
-- Monthly: compare the VeQMS count with DocuSign's own usage report for the account. Investigate any difference
-  (for example envelopes sent outside VeQMS from the same account).
-- Running low: plan which approvals must go first, and raise buying more envelopes early. Spend approval goes to
-  **PJ Walters**. Only change the allowance in Settings after the DocuSign contract changes; the change is logged
+- Monthly: compare the VeQMS count with Adobe Sign's own usage report for the account. Investigate any difference
+  (for example agreements sent outside VeQMS from the same account).
+- Running low: plan which approvals must go first, and raise buying more agreements early. Spend approval goes to
+  **PJ Walters**. Only change the allowance in Settings after the Adobe Sign contract changes; the change is logged
   with old and new values.
 
 ## Audit chain verification
@@ -221,8 +224,8 @@ training items close and their records stay. When access must end **immediately*
    moment are refused), closes their open training items and keeps their records. *End all sessions now* ends
    sessions without changing their access. Provisioning from Entra ID does the same when it deactivates the user,
    so **Provision on demand** in the Entra enterprise application is an alternative.
-3. **Open approvals:** check the Approvals register for envelopes waiting on them. Void and send again with a
-   different signer (each new envelope uses a send).
+3. **Open approvals:** check the Approvals register for agreements waiting on them. Cancel and send again with a
+   different signer (each new agreement uses a transaction).
 4. **Ownership:** move their documents, CAPAs and tasks to someone else.
 5. Record what you did and when.
 

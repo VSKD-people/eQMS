@@ -1,5 +1,6 @@
-// The yearly allowance of DocuSign sends (500 a year by default). Every envelope sent is one send;
-// a correction after sending (void, then send again) is a second send.
+// The yearly allowance of Adobe Sign transactions (500 a year by default, to be confirmed against the contract).
+// Adobe counts one transaction per agreement sent, whatever the number of signers; a correction after sending
+// (cancel, then send again) is a second transaction.
 
 export interface AllowanceYear { year: number; start: Date; end: Date }
 

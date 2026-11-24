@@ -1,43 +1,60 @@
-// DocuSign Connect. "Connect notifies, the API confirms": the message is checked with HMAC, then the API reads the
-// envelope from DocuSign itself and acts on that, never on the message body alone. Connect retries failed deliveries,
-// so handling is idempotent (a final envelope ignores repeats).
-// Verify against the current DocuSign Connect docs before go-live: the JSON (SIM) message format with
-// data.envelopeId, the X-DocuSign-Signature-N headers, and the retry behaviour.
-import type { FastifyInstance } from 'fastify';
+// Adobe Sign webhooks. "The webhook notifies, the API confirms": a notification is accepted only on the secret URL
+// (ADOBE_SIGN_WEBHOOK_TOKEN) with the expected X-AdobeSign-ClientId, and VeQMS then reads the agreement from Adobe
+// Sign itself and acts on that, never on the notification body. Adobe Sign retries failed deliveries, so handling is
+// idempotent (a final agreement ignores repeats).
+// Every reply echoes the client ID, as Adobe Sign requires, including the "verification of intent" GET it sends when
+// the webhook is created. Verify against Adobe's current webhook guide before go-live: the header name, the echo, and
+// the notification JSON (agreement.id, event).
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { withTenant } from '@veqms/db';
-import { verifyConnectHmac } from '@veqms/domain';
+import { ADOBE_CLIENT_ID_HEADER, secretMatches, webhookEcho } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
-import * as env from '../services/envelopes.ts';
+import * as signing from '../services/agreements.ts';
 
 export function webhookRoutes(hooks: FastifyInstance, ctx: Ctx): void {
-  // The HMAC is over the exact bytes received, so this scope keeps the raw body instead of parsing JSON.
+  // The payload hash is over the exact bytes received, so this scope keeps the raw body instead of parsing JSON.
   // Content-type parsers are scoped to this plugin (Fastify encapsulation); the rest of the API still parses JSON.
   hooks.removeAllContentTypeParsers();
   hooks.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, raw, done) => done(null, raw));
 
-  hooks.post('/webhooks/docusign', async (req, reply) => {
-    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-    const sigs = [1, 2, 3, 4, 5].map((n) => { const v = req.headers[`x-docusign-signature-${n}`]; return typeof v === 'string' ? v : undefined; });
-    if (!verifyConnectHmac(ctx.cfg.connectHmacKeys, raw, sigs)) {
-      req.log.warn('DocuSign Connect message refused: HMAC check failed');
-      return reply.code(401).send({ error: { code: 'unauthorised', message: 'Signature check failed.' } });
-    }
-    let msg: { event?: string; data?: { envelopeId?: string; envelopeSummary?: { status?: string } }; envelopeId?: string };
-    try { msg = JSON.parse(raw.toString('utf8')); } catch { return reply.code(400).send({ error: { code: 'bad_request', message: 'Not JSON.' } }); }
-    const dsId = msg.data?.envelopeId ?? msg.envelopeId;
-    if (!dsId) return reply.code(200).send({ ok: true, ignored: 'no envelope id' });
+  // Both checks, or a plain 404 that says nothing about why.
+  function accepted(req: FastifyRequest<{ Params: { token: string } }>): string | null {
+    if (ctx.cfg.ADOBE_SIGN_MODE !== 'live' || !secretMatches(ctx.cfg.ADOBE_SIGN_WEBHOOK_TOKEN, req.params.token)) return null;
+    const given = req.headers[ADOBE_CLIENT_ID_HEADER];
+    const clientId = typeof given === 'string' ? given : '';
+    if (ctx.cfg.webhookClientId && !secretMatches(ctx.cfg.webhookClientId, clientId)) return null;
+    return clientId;
+  }
+  const echo = (reply: FastifyReply, clientId: string, body: Record<string, unknown> = {}) =>
+    reply.code(200).header('X-AdobeSign-ClientId', clientId).send({ ...webhookEcho(clientId), ...body });
 
-    // The directory has no row-level security: it only maps a DocuSign envelope ID to its tenant.
-    const dir = await ctx.pool.query<{ tenant_id: string; envelope_id: string }>('select tenant_id, envelope_id from app.envelope_directory where docusign_envelope_id = $1', [dsId]);
+  // Verification of intent: Adobe Sign calls this when the webhook is created or re-enabled.
+  hooks.get<{ Params: { token: string } }>('/webhooks/adobe-sign/:token', async (req, reply) => {
+    const clientId = accepted(req);
+    if (clientId === null) { req.log.warn('Adobe Sign webhook check refused'); return reply.code(404).send(); }
+    return echo(reply, clientId);
+  });
+
+  hooks.post<{ Params: { token: string } }>('/webhooks/adobe-sign/:token', async (req, reply) => {
+    const clientId = accepted(req);
+    if (clientId === null) { req.log.warn('Adobe Sign webhook notification refused'); return reply.code(404).send(); }
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+    let msg: { event?: string; agreement?: { id?: string } };
+    try { msg = JSON.parse(raw.toString('utf8')); } catch { return echo(reply, clientId, { ignored: 'not JSON' }); }
+    const providerId = msg.agreement?.id;
+    if (!providerId) return echo(reply, clientId, { ignored: 'no agreement id' });
+
+    // The directory has no row-level security: it only maps an Adobe Sign agreement ID to its tenant.
+    const dir = await ctx.pool.query<{ tenant_id: string; agreement_id: string }>('select tenant_id, agreement_id from app.agreement_directory where provider_agreement_id = $1', [providerId]);
     const hit = dir.rows[0];
-    if (!hit) return reply.code(200).send({ ok: true, ignored: 'unknown envelope' });
+    if (!hit) return echo(reply, clientId, { ignored: 'unknown agreement' });
 
     const sha = createHash('sha256').update(raw).digest('hex');
     await withTenant(ctx.pool, { tenantId: hit.tenant_id, userId: null }, async (db) => {
-      await env.connectReceived(db, hit.envelope_id, sha, msg.event ?? msg.data?.envelopeSummary?.status ?? '');
-      await env.fromDocuSign(db, ctx, hit.envelope_id, 'connect');
+      await signing.webhookReceived(db, hit.agreement_id, sha, msg.event ?? '');
+      await signing.fromProvider(db, ctx, hit.agreement_id, 'webhook');
     });
-    return reply.code(200).send({ ok: true });
+    return echo(reply, clientId);
   });
 }

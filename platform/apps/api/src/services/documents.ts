@@ -1,4 +1,4 @@
-// Document control: Draft → In review → Review closed → (DocuSign envelope) In approval → Effective.
+// Document control: Draft → In review → Review closed → (Adobe Sign agreement) In approval → Effective.
 import { createHash } from 'node:crypto';
 import { rows, one, maybe, type Db } from '@veqms/db';
 import { DOC_TYPES, can, canBeApprover, type Role } from '@veqms/domain';
@@ -14,7 +14,7 @@ export interface DocRow {
   id: string; number: string; doc_type: string; title: string; state: string; classification: string; owner_id: string; author_id: string;
   process: string; tags: string[]; effective_at: Date | null; approval_due: Date | null; review_due: Date | null; updated_at: Date; periodic_months: number;
 }
-export interface VersionRow { id: string; version: string; kind: string; state: string; summary: string; content: Block[]; content_sha256: string; created_at: Date; approved_at: Date | null; envelope_id: string | null; migrated_from: string | null }
+export interface VersionRow { id: string; version: string; kind: string; state: string; summary: string; content: Block[]; content_sha256: string; created_at: Date; approved_at: Date | null; agreement_id: string | null; migrated_from: string | null }
 
 export async function docByNumber(db: Db, number: string): Promise<DocRow> {
   const d = await maybe<DocRow>(db, 'select * from app.documents where number = $1', [number]);
@@ -61,7 +61,7 @@ export async function list(db: Db, me: Person, f: { state?: string; type?: strin
   }));
 }
 
-export async function detail(db: Db, me: Person, number: string, envelopeSummary: (db: Db, recordId: string) => Promise<unknown>) {
+export async function detail(db: Db, me: Person, number: string, agreementSummary: (db: Db, recordId: string) => Promise<unknown>) {
   const d = await docByNumber(db, number);
   await assertVisible(db, me, d);
   const versions = await rows<VersionRow>(db, 'select * from app.document_versions where document_id = $1 order by created_at', [d.id]);
@@ -70,26 +70,26 @@ export async function detail(db: Db, me: Person, number: string, envelopeSummary
   const approvers = await rows<{ user_id: string; name: string; position: number; status: string }>(db, 'select a.user_id, u.name, a.position, a.status from app.document_approvers a join app.users u on u.id = a.user_id where a.document_id = $1 order by a.position', [d.id]);
   const [owner, author] = await people(db, [d.owner_id, d.author_id]).then((ps) => [ps.find((p) => p.id === d.owner_id), ps.find((p) => p.id === d.author_id)]);
   const aud = await audienceOf(db, d.id);
-  const env = (await envelopeSummary(db, d.id)) as { status?: string; signers?: { userId: string; status: string }[]; sentBy?: { id: string } } | null;
+  const env = (await agreementSummary(db, d.id)) as { status?: string; signers?: { userId: string; status: string }[]; sentBy?: { id: string } } | null;
   const ro = !can(me.roles, 'write');
   const mine = (id: string) => id === me.id;
   return {
     id: d.id, number: d.number, title: d.title, docType: d.doc_type, state: d.state, classification: d.classification, process: d.process, tags: d.tags,
     owner: ref(owner), author: ref(author), effectiveAt: d.effective_at, approvalDue: d.approval_due,
-    versions: versions.map((v) => ({ id: v.id, version: v.version, kind: v.kind, state: v.state, summary: v.summary, createdAt: v.created_at, approvedAt: v.approved_at, envelopeId: v.envelope_id, migratedFrom: v.migrated_from })),
+    versions: versions.map((v) => ({ id: v.id, version: v.version, kind: v.kind, state: v.state, summary: v.summary, createdAt: v.created_at, approvedAt: v.approved_at, agreementId: v.agreement_id, migratedFrom: v.migrated_from })),
     current: { version: cur.version, state: cur.state, summary: cur.summary, content: cur.content, contentSha256: cur.content_sha256 },
     reviewers: reviewers.map((r) => ({ user: { id: r.user_id, name: r.name }, status: r.status, reviewedAt: r.reviewed_at })),
     approvers: approvers.map((a) => ({ user: { id: a.user_id, name: a.name }, position: a.position, status: a.status })),
     audience: { groups: aud.groups, roles: aud.roles, users: aud.userRefs, daysToComplete: aud.daysToComplete, quiz: aud.quiz },
-    envelope: env,
+    agreement: env,
     can: {
       edit: !ro && d.state === 'Draft' && (mine(d.author_id) || mine(d.owner_id)),
       submit: !ro && d.state === 'Draft' && (mine(d.author_id) || mine(d.owner_id)),
       review: !ro && d.state === 'In review' && reviewers.some((r) => r.user_id === me.id && r.status === 'Pending'),
       sendBack: !ro && ((d.state === 'In review' && reviewers.some((r) => r.user_id === me.id)) || (d.state === 'Review closed' && (mine(d.owner_id) || mine(d.author_id) || me.roles.includes('qm')))),
       send: !ro && d.state === 'Review closed' && (mine(d.owner_id) || mine(d.author_id) || me.roles.includes('qm')),
-      sign: !!env && env.status === 'sent' && !!env.signers?.some((s) => s.userId === me.id && (s.status === 'sent' || s.status === 'delivered')),
-      void: !ro && !!env && env.status === 'sent' && (env.sentBy?.id === me.id || mine(d.owner_id) || me.roles.includes('qm')),
+      sign: !!env && env.status === 'sent' && !!env.signers?.some((s) => s.userId === me.id && s.status === 'sent'),
+      cancel: !ro && !!env && env.status === 'sent' && (env.sentBy?.id === me.id || mine(d.owner_id) || me.roles.includes('qm')),
       newVersion: !ro && d.state === 'Effective' && (mine(d.owner_id) || mine(d.author_id) || me.roles.includes('qm')),
       changeAudience: !ro && (me.roles.includes('qm') || mine(d.owner_id))
     }
@@ -141,13 +141,13 @@ export async function submit(db: Db, me: Person, number: string, reviewerIds: st
   await db.query('update app.documents set review_due = $2 where id = $1', [d.id, dueIn(5)]);
   await setState(db, d, v, 'In review', `Submitted v${v.version} for review`);
   for (const r of new Set(reviewerIds)) await addTask(db, { kind: 'review-doc', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: r, dueAt: dueIn(5) });
-  for (const a of approverIds) await addTask(db, { kind: 'fyi', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: a, dueAt: dueIn(9), fyi: true, note: 'You sign in DocuSign after review' });
+  for (const a of approverIds) await addTask(db, { kind: 'fyi', recordType: 'document', recordId: d.id, recordNumber: number, assigneeId: a, dueAt: dueIn(9), fyi: true, note: 'You sign in Adobe Sign after review' });
   await notify(db, { to: reviewerIds, kind: 'action', title: `Please review ${number} v${v.version}`, body: d.title, recordType: 'document', recordId: d.id, href: `/documents/${number}` });
 }
 
 async function readyToSend(db: Db, d: DocRow): Promise<void> {
-  await addTask(db, { kind: 'send-approval', recordType: 'document', recordId: d.id, recordNumber: d.number, assigneeId: d.owner_id, dueAt: dueIn(2), note: 'Verify the PDF, then send one DocuSign envelope' });
-  await notify(db, { to: [d.owner_id], kind: 'action', title: `${d.number} is ready to send for DocuSign approval`, body: 'Check the footer, version, document ID and dates first: a correction after sending costs a second send.', recordType: 'document', recordId: d.id, href: `/documents/${d.number}/send` });
+  await addTask(db, { kind: 'send-approval', recordType: 'document', recordId: d.id, recordNumber: d.number, assigneeId: d.owner_id, dueAt: dueIn(2), note: 'Verify the PDF, then send one Adobe Sign agreement' });
+  await notify(db, { to: [d.owner_id], kind: 'action', title: `${d.number} is ready to send for Adobe Sign approval`, body: 'Check the footer, version, document ID and dates first: a correction after sending costs a second send.', recordType: 'document', recordId: d.id, href: `/documents/${d.number}/send` });
 }
 
 export async function review(db: Db, me: Person, number: string, comment?: string) {
@@ -163,7 +163,7 @@ export async function review(db: Db, me: Person, number: string, comment?: strin
 
 export async function sendBack(db: Db, me: Person, number: string, reason: string) {
   const d = await docByNumber(db, number);
-  if (!['In review', 'Review closed'].includes(d.state)) throw conflict('Only a document in review or review closed can be sent back. Void an envelope that is out for signature instead.');
+  if (!['In review', 'Review closed'].includes(d.state)) throw conflict('Only a document in review or review closed can be sent back. Void an agreement that is out for signature instead.');
   await db.query(`update app.document_reviewers set status = 'Not started', reviewed_at = null where document_id = $1`, [d.id]);
   await setState(db, d, await currentVersion(db, d.id), 'Draft', `Sent back to draft by ${me.name}. Reason: ${reason}`);
   await closeTasks(db, { recordId: d.id, kinds: ['review-doc', 'send-approval', 'fyi'] });
@@ -185,14 +185,14 @@ export async function newVersion(db: Db, me: Person, number: string, kind: 'majo
   return { version: nv };
 }
 
-// Called when the approval envelope completes.
+// Called when the approval agreement completes.
 export async function makeEffective(db: Db, documentId: string, versionId: string): Promise<number> {
   const d = await one<DocRow>(db, 'select * from app.documents where id = $1', [documentId]);
   const v = await one<VersionRow>(db, 'select * from app.document_versions where id = $1', [versionId]);
   await db.query(`update app.document_versions set state = 'Superseded' where document_id = $1 and state = 'Effective' and id <> $2`, [documentId, versionId]);
   await db.query('update app.documents set effective_at = now() where id = $1', [documentId]);
   await setState(db, d, v, 'Effective', `${d.number} v${v.version} is Effective`);
-  await closeTasks(db, { recordId: documentId, kinds: ['fyi', 'ds-sign', 'send-approval'] });
+  await closeTasks(db, { recordId: documentId, kinds: ['fyi', 'esign', 'send-approval'] });
   const next = new Date(Date.now() + Math.round(d.periodic_months * 30.4) * 86_400_000);
   await db.query(`insert into app.periodic_reviews (tenant_id, number, document_id, reviewer_id, due_at) values (app.current_tenant(), app.next_number('PR'), $1, $2, $3)`, [documentId, d.owner_id, next]);
   return allocateDocument(db, documentId, 'New version effective', null);

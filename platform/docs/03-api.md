@@ -19,9 +19,9 @@ type Role = 'admin' | 'qm' | 'author' | 'reviewer' | 'approver' | 'process' | 'e
 
 type Me = { user: { id: string; name: string; email: string; initials: string; jobTitle: string | null; roles: Role[]; groups: string[]; clearance: string };
             permissions: string[]; tenant: { id: string; name: string };
-            via: 'Microsoft 365 single sign-on' | 'Development sign-in'; docusignMode: 'live' | 'mock' };
+            via: 'Microsoft 365 single sign-on' | 'Development sign-in'; esignMode: 'live' | 'mock' };
 
-type Task = { id: string; kind: 'ds-sign' | 'send-approval' | 'training' | 'review-doc' | 'author' | 'resubmit' | 'effectiveness' | 'qe-assess' | 'fyi' | string;
+type Task = { id: string; kind: 'esign' | 'send-approval' | 'training' | 'review-doc' | 'author' | 'resubmit' | 'effectiveness' | 'qe-assess' | 'fyi' | string;
               recordType: 'document' | 'capa' | 'quality_event'; recordId: string; recordNumber: string; title: string;
               dueAt: string | null; note: string | null; ref: string | null; fyi: boolean };
 
@@ -31,17 +31,17 @@ type DocumentSummary = { id: string; number: string; title: string; docType: str
 type Audience = { groups: string[]; roles: Role[]; users: Person[]; daysToComplete: number; quiz: boolean };
 
 type Signer = { userId: string; name: string; roleLabel: string; meaning: 'Authored' | 'Reviewed' | 'Approved'; routingOrder: number;
-                status: 'waiting' | 'sent' | 'delivered' | 'signed' | 'declined' | 'voided'; signedAt: string | null };
+                status: 'waiting' | 'sent' | 'signed' | 'declined' | 'cancelled'; signedAt: string | null };
 
-type EnvelopeSummary = { id: string; docusignEnvelopeId: string | null; recordType: string; recordNumber: string; version: string | null;
-                         subject: string; purpose: string; status: 'sent' | 'completed' | 'declined' | 'voided';
-                         sentBy: Person; sentAt: string; completedAt: string | null; sendNo: number; allowanceYear: number;
+type AgreementSummary = { id: string; providerAgreementId: string | null; recordType: string; recordNumber: string; version: string | null;
+                         subject: string; purpose: string; status: 'sent' | 'completed' | 'declined' | 'cancelled';
+                         sentBy: Person; sentAt: string; completedAt: string | null; transactionNo: number; allowanceYear: number;
                          signed: number; signers: Signer[]; correctionOf: string | null; reason: string | null };
 
-type Envelope = EnvelopeSummary & {
+type Agreement = AgreementSummary & {
   verification: { footer: true; version: true; documentId: true; dates: true; note: string; by: string; at: string };
-  events: { at: string; type: string; user: Person | null; detail: string | null; source: 'app' | 'connect' | 'poll' }[];
-  files: { original: { sha256: string }; signed: { sha256: string } | null; certificate: { sha256: string } | null };
+  events: { at: string; type: string; user: Person | null; detail: string | null; source: 'app' | 'webhook' | 'poll' }[];
+  files: { original: { sha256: string }; signed: { sha256: string } | null; auditReport: { sha256: string } | null };
 };
 
 type Allowance = { allowance: number; used: number; remaining: number; low: boolean; exhausted: boolean; year: number; from: string; to: string };
@@ -49,7 +49,7 @@ type Allowance = { allowance: number; used: number; remaining: number; low: bool
 type TrainingRecord = { id: string; user: Person; documentId: string; documentNumber: string; title: string; version: string;
                         allocatedBy: Person | null /* null = System */; allocReason: string; assignedAt: string; dueAt: string | null;
                         completedAt: string | null; statement: string | null; quizResult: string | null; via: string | null;
-                        envelopeId: string | null; correctionOf: string | null; correctionReason: string | null; noRetrain: boolean;
+                        agreementId: string | null; correctionOf: string | null; correctionReason: string | null; noRetrain: boolean;
                         closedAt: string | null; closedReason: string | null;
                         status: 'Assigned' | 'Overdue' | 'Complete' | 'Superseded' | 'Withdrawn' | 'Corrected' | 'Correction' | 'Obsolete' };
 
@@ -96,20 +96,20 @@ Manager (segregation of duties). Every change is audited with old and new values
 | POST | `/documents/:number/send-back` | `{ reason }` | `204` → Draft |
 | POST | `/documents/:number/versions` | `{ kind: 'major'|'minor', summary }` | `{ version }` |
 | GET | `/documents/:number/approval-plan?approvers=id,id` | | `{ subject, signers: Signer[], problems: string[], allowance: Allowance }` |
-| POST | `/documents/:number/envelopes` | `{ verification: { footer, version, documentId, dates, note? }, approvers: string[] }` | `EnvelopeSummary` (one send) |
+| POST | `/documents/:number/agreements` | `{ verification: { footer, version, documentId, dates, note? }, approvers: string[] }` | `AgreementSummary` (one transaction) |
 | PUT | `/documents/:number/audience` | `{ groups, roles, users: string[], daysToComplete, quiz }` | `{ added, closed }` |
-| GET | `/documents/:number/pdf?version=` | | `application/pdf` (the exact PDF that goes into the envelope) |
+| GET | `/documents/:number/pdf?version=` | | `application/pdf` (the exact PDF that goes into the agreement) |
 | GET | `/documents/:number/training?all=1` | | `TrainingRecord[]` for the effective version (all versions with `all=1`) |
 | GET | `/documents/:number/quiz` | | `{ questions: { q: string; options: string[] }[] }` (no answers) |
 
 Document detail:
 ```ts
 { id, number, title, docType, state, classification, process, tags, owner: Person, author: Person, effectiveAt, approvalDue,
-  versions: { id, version, kind, state, summary, createdAt, approvedAt, envelopeId, migratedFrom }[],
+  versions: { id, version, kind, state, summary, createdAt, approvedAt, agreementId, migratedFrom }[],
   current: { version, state, summary, content: { t: 'h'|'p'; x: string }[], contentSha256 },
   reviewers: { user: Person; status; reviewedAt }[], approvers: { user: Person; position: 1|2; status }[],
-  audience: Audience, envelope: EnvelopeSummary | null /* open or most recent */,
-  can: { edit, submit, review, sendBack, send, sign, void, newVersion, changeAudience: boolean } }
+  audience: Audience, agreement: AgreementSummary | null /* open or most recent */,
+  can: { edit, submit, review, sendBack, send, sign, cancel, newVersion, changeAudience: boolean } }
 ```
 
 ### CAPA and deviation closure (Route 1)
@@ -117,33 +117,33 @@ Phase 1 has the closure path only. The full CAPA and quality event screens are P
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/capas`, `/capas/:number` | | `{ id, number, title, state, severity, owner, problem, effectivenessCriteria, effectivenessResult, effectivenessVerdict, effectivenessAt, closedAt, envelope: EnvelopeSummary | null }` |
-| GET | `/quality-events`, `/quality-events/:number` | | `{ id, number, type, title, state, severity, owner, description, assessment, closureJustification, closedAt, envelope }` |
-| GET | `/capas/:number/pdf?approver=`, `/quality-events/:number/pdf?approver=` | | `application/pdf`: the closure PDF as it would go into the envelope |
-| POST | `/capas/:number/effectiveness` | `{ result, verdict: 'Effective'|'Not effective' }` | `204`. Effective: ready to send the closure. Not effective: back to Execution for more actions. Refused while a closure envelope is out |
+| GET | `/capas`, `/capas/:number` | | `{ id, number, title, state, severity, owner, problem, effectivenessCriteria, effectivenessResult, effectivenessVerdict, effectivenessAt, closedAt, agreement: AgreementSummary | null }` |
+| GET | `/quality-events`, `/quality-events/:number` | | `{ id, number, type, title, state, severity, owner, description, assessment, closureJustification, closedAt, agreement }` |
+| GET | `/capas/:number/pdf?approver=`, `/quality-events/:number/pdf?approver=` | | `application/pdf`: the closure PDF as it would go into the agreement |
+| POST | `/capas/:number/effectiveness` | `{ result, verdict: 'Effective'|'Not effective' }` | `204`. Effective: ready to send the closure. Not effective: back to Execution for more actions. Refused while a closure agreement is out |
 | GET | `/capas/:number/approval-plan?approver=` | | as for documents |
-| POST | `/capas/:number/envelopes` | `{ verification, approverId }` | `EnvelopeSummary` |
+| POST | `/capas/:number/agreements` | `{ verification, approverId }` | `AgreementSummary` |
 | POST | `/quality-events/:number/closure` | `{ justification }` | `204` (deviations only) |
 | GET | `/quality-events/:number/approval-plan?approver=` | | as for documents |
-| POST | `/quality-events/:number/envelopes` | `{ verification, approverId }` | `EnvelopeSummary` |
+| POST | `/quality-events/:number/agreements` | `{ verification, approverId }` | `AgreementSummary` |
 
-### Envelopes, approvals register, DocuSign
+### Agreements, approvals register, Adobe Sign
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| GET | `/docusign/allowance` | | `Allowance` |
-| GET | `/envelopes?year=&status=&record=` | | `{ allowance: Allowance; items: EnvelopeSummary[] }`. The whole sends log needs approvals.view; `record=POL-004` (one record's envelopes) is open to anyone who can see that record |
-| GET | `/envelopes/:id` | | `Envelope` |
-| POST | `/envelopes/:id/void` | `{ reason }` | `EnvelopeSummary` (record returns with the reason) |
-| POST | `/envelopes/:id/refresh` | | `EnvelopeSummary` (polls DocuSign: fallback for a missed webhook) |
-| GET | `/envelopes/:id/files/:kind` | kind = `original` · `signed` · `certificate` | `application/pdf` |
-| GET | `/approvals/register` | | `EnvelopeSummary[]` (completed approvals) |
-| POST | `/webhooks/docusign` (no prefix, no bearer) | DocuSign Connect JSON | `200` after HMAC check (`401` if it fails). The API then reads the envelope from DocuSign and acts on that |
-| POST | `/envelopes/:id/mock/sign` | | `EnvelopeSummary`. **Mock mode only** (`DOCUSIGN_MODE=mock`): signs as the caller when it is their turn; `403` in live mode |
-| POST | `/envelopes/:id/mock/decline` | `{ reason }` | `EnvelopeSummary`. Mock mode only |
+| GET | `/signing/allowance` | | `Allowance` (Adobe Sign transactions this allowance year) |
+| GET | `/agreements?year=&status=&record=` | | `{ allowance: Allowance; items: AgreementSummary[] }`. The whole transactions log needs approvals.view; `record=POL-004` (one record's agreements) is open to anyone who can see that record |
+| GET | `/agreements/:id` | | `Agreement` |
+| POST | `/agreements/:id/cancel` | `{ reason }` | `AgreementSummary` (record returns with the reason) |
+| POST | `/agreements/:id/refresh` | | `AgreementSummary` (polls Adobe Sign: fallback for a missed webhook) |
+| GET | `/agreements/:id/files/:kind` | kind = `original` · `signed` · `audit-report` | `application/pdf` |
+| GET | `/approvals/register` | | `AgreementSummary[]` (completed approvals) |
+| GET, POST | `/webhooks/adobe-sign/:token` (no prefix, no bearer) | Adobe Sign webhook notification (POST) or verification of intent (GET) | `200` with the `X-AdobeSign-ClientId` echoed (header and `{ xAdobeSignClientId }`) when the token and client ID match; plain `404` otherwise. The API then reads the agreement from Adobe Sign and acts on that |
+| POST | `/agreements/:id/mock/sign` | | `AgreementSummary`. **Mock mode only** (`ADOBE_SIGN_MODE=mock`): signs as the caller when it is their turn; `403` in live mode |
+| POST | `/agreements/:id/mock/decline` | `{ reason }` | `AgreementSummary`. Mock mode only |
 
-Signers sign in DocuSign from the DocuSign email (remote signing). In live mode the app shows status only; it
+Signers sign in Adobe Sign from the Adobe Sign email (remote signing). In live mode the app shows status only; it
 never signs on anyone's behalf. The mock endpoints exist so development and UAT can walk the whole route without a
-DocuSign account.
+Adobe Sign account.
 
 ### Training (Route 2)
 | Method | Path | Body | Returns |
@@ -159,10 +159,10 @@ DocuSign account.
 ### Reports, audit, settings
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/reports/:name.:format` name = `training-matrix` · `training-records` · `document-status` · `approvals-register` · `docusign-sends`; format = `xlsx` · `pdf`; same query filters as the screens | file, stamped "Generated (UTC) … by …", export logged |
+| GET | `/reports/:name.:format` name = `training-matrix` · `training-records` · `document-status` · `approvals-register` · `signing-transactions`; format = `xlsx` · `pdf`; same query filters as the screens | file, stamped "Generated (UTC) … by …", export logged |
 | GET | `/audit?objectType=&objectId=&action=&before=&limit=` | `AuditEntry[]` newest first (audit.read; `before` = seq for paging; viewing is itself logged). Object types: Document, CAPA, Quality event, Training record, Training, User, Group, Settings, Report, Audit trail |
 | GET | `/audit/verify` | `{ ok, entries, brokenAt }` |
-| GET / PUT | `/settings` | `{ docusignAllowance, allowanceYearStartMonth, allowanceWarnAt, ackStatement, reminderDays, overdueRepeatDays }` (PUT: qm, admin; logged with old and new values). `ackStatement` must contain `{doc}` and `{version}`. GET also returns `docusignGoLive` and `signatureStatement` (read-only) |
+| GET / PUT | `/settings` | `{ signingAllowance, allowanceYearStartMonth, allowanceWarnAt, ackStatement, reminderDays, overdueRepeatDays }` (PUT: qm, admin; logged with old and new values). `ackStatement` must contain `{doc}` and `{version}`. GET also returns `signingGoLive` and `signatureStatement` (read-only) |
 
 ### SCIM 2.0 for Entra ID provisioning (no prefix)
 `/scim/v2/Users` (GET with `filter=userName eq "…"`, POST), `/scim/v2/Users/:id` (GET, PATCH, PUT), `/scim/v2/Groups`
@@ -183,14 +183,16 @@ API (`apps/api`), from environment variables (Key Vault references in Azure):
 | `ENTRA_TENANT_ID` | Directory (tenant) ID |
 | `ENTRA_API_AUDIENCE` | API app registration's Application ID URI or client ID |
 | `DEV_AUTH` | `1` enables `X-Dev-User` (refused when `NODE_ENV=production`) |
-| `DOCUSIGN_MODE` | `live` or `mock` (mock: nothing goes to DocuSign; signers act through the mock endpoints; development and UAT only; refused in production) |
-| `DOCUSIGN_AUTH_SERVER` | `account-d.docusign.com` (demo) or `account.docusign.com` (production) |
-| `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_USER_ID`, `DOCUSIGN_ACCOUNT_ID` | JWT grant identity |
-| `DOCUSIGN_PRIVATE_KEY` | RSA private key (PEM) for the JWT grant |
-| `DOCUSIGN_BASE_URI` | e.g. `https://demo.docusign.net` (or from userinfo) |
-| `DOCUSIGN_CONNECT_HMAC_KEYS` | comma-separated Connect HMAC keys |
+| `ADOBE_SIGN_MODE` | `live` or `mock` (mock: nothing goes to Adobe Sign; signers act through the mock endpoints; development and UAT only; refused in production) |
+| `ADOBE_SIGN_AUTH` | `oauth` (OAuth app and refresh token) or `integration-key` (Enterprise integration key) |
+| `ADOBE_SIGN_API_ACCESS_POINT` | The account's API address, e.g. `https://api.eu1.adobesign.com/`. Required for `oauth`; discovered for an integration key if empty |
+| `ADOBE_SIGN_DISCOVERY_URL` | Where to discover the API address: `https://api.adobesign.com` (default) or `https://api.adobesignsandbox.com` |
+| `ADOBE_SIGN_CLIENT_ID`, `ADOBE_SIGN_CLIENT_SECRET`, `ADOBE_SIGN_REFRESH_TOKEN` | OAuth app and refresh token (secret and token in Key Vault) |
+| `ADOBE_SIGN_INTEGRATION_KEY` | Enterprise integration key (Key Vault) |
+| `ADOBE_SIGN_WEBHOOK_TOKEN` | 32+ random characters in the webhook URL (Key Vault). Required in live mode |
+| `ADOBE_SIGN_WEBHOOK_CLIENT_ID` | Expected `X-AdobeSign-ClientId` on webhooks; defaults to `ADOBE_SIGN_CLIENT_ID` |
 | `STORAGE_MODE` | `azure` or `local` |
-| `STORAGE_ACCOUNT_URL`, `STORAGE_CONTAINER` | Blob storage for PDFs, signed PDFs and certificates (immutable container) |
+| `STORAGE_ACCOUNT_URL`, `STORAGE_CONTAINER` | Blob storage for PDFs, signed PDFs and audit reports (immutable container) |
 | `LOCAL_STORAGE_DIR` | folder for `local` mode |
 | `SCIM_TOKEN` | bearer secret for the SCIM endpoint |
 | `GRAPH_MAIL_FROM` | shared QMS mailbox for email notifications (empty = in-app only) |

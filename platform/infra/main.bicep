@@ -54,7 +54,7 @@ param postgresHighAvailability string = 'Disabled'
 
 param postgresStorageGb int = 128
 
-@description('Days that signed PDFs and certificates of completion cannot be changed or deleted. Placeholder: no retention schedule is agreed yet (the prototype sample data uses "life of the system + 10 years" for signatures, which is not a decision). Set this from the agreed schedule.')
+@description('Days that signed PDFs and audit reports cannot be changed or deleted. Placeholder: no retention schedule is agreed yet (the prototype sample data uses "life of the system + 10 years" for signatures, which is not a decision). Set this from the agreed schedule.')
 param recordsImmutabilityDays int = 3650
 
 @description('Container image for the API, migrate and reminders jobs. The placeholder lets phase 2 deploy before the first build.')
@@ -67,20 +67,20 @@ param webImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 param appBaseUrl string = ''
 
 @allowed(['mock', 'live'])
-@description('Keep mock until the DocuSign account, JWT grant and Connect are set up.')
-param docusignMode string = 'mock'
+@description('Keep mock until the Adobe Sign account, its OAuth app (or integration key) and the webhook are set up. See docs/06-adobe-sign.md.')
+param esignMode string = 'mock'
 
-@description('account-d.docusign.com (demo) or account.docusign.com (production)')
-param docusignAuthServer string = 'account-d.docusign.com'
+@allowed(['oauth', 'integration-key'])
+@description('How the API signs in to Adobe Sign: an OAuth app with a refresh token, or an Enterprise integration key.')
+param adobeSignAuth string = 'oauth'
 
-@description('e.g. https://demo.docusign.net for the demo environment; production comes from the userinfo call')
-param docusignBaseUri string = 'https://demo.docusign.net'
+@description('The Adobe Sign account\'s API address (its data centre), e.g. https://api.eu1.adobesign.com/. Required for oauth.')
+param adobeSignApiAccessPoint string = ''
 
-param docusignIntegrationKey string = ''
-param docusignUserId string = ''
-param docusignAccountId string = ''
+@description('The Adobe Sign OAuth app\'s client ID (not a secret). Also the X-AdobeSign-ClientId expected on webhooks.')
+param adobeSignClientId string = ''
 
-@description('Give the API its own public HTTPS address, so DocuSign Connect and Entra SCIM provisioning can reach /webhooks/docusign and /scim/v2. Leave false only if the web app proxies those paths.')
+@description('Give the API its own public HTTPS address, so Adobe Sign webhooks and Entra SCIM provisioning can reach /webhooks/adobe-sign/<token> and /scim/v2. Leave false only if the web app proxies those paths.')
 param apiExternal bool = false
 
 @description('Shared QMS mailbox for email notifications. Empty = in-app notifications only.')
@@ -225,7 +225,7 @@ resource acrPullMigrate 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// ---------- Storage: PDFs, signed PDFs and certificates of completion ----------
+// ---------- Storage: PDFs, signed PDFs and audit reports ----------
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: names.storage
   location: location
@@ -358,12 +358,10 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     entraApiAudience: entraApiAudience
     entraWebClientId: entraWebClientId
     entraApiScope: entraApiScope
-    docusignMode: docusignMode
-    docusignAuthServer: docusignAuthServer
-    docusignBaseUri: docusignBaseUri
-    docusignIntegrationKey: docusignIntegrationKey
-    docusignUserId: docusignUserId
-    docusignAccountId: docusignAccountId
+    esignMode: esignMode
+    adobeSignAuth: adobeSignAuth
+    adobeSignApiAccessPoint: adobeSignApiAccessPoint
+    adobeSignClientId: adobeSignClientId
     graphMailFrom: graphMailFrom
     apiExternal: apiExternal
   }

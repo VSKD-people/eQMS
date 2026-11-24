@@ -37,8 +37,8 @@ export const DOC_TYPES = [
 ] as const;
 
 export type Meaning = 'Authored' | 'Reviewed' | 'Approved';
-export type EnvelopeStatus = 'sent' | 'completed' | 'declined' | 'voided';
-export type SignerStatus = 'waiting' | 'sent' | 'delivered' | 'signed' | 'declined' | 'voided';
+export type AgreementStatus = 'sent' | 'completed' | 'declined' | 'cancelled';
+export type SignerStatus = 'waiting' | 'sent' | 'signed' | 'declined' | 'cancelled';
 export type RecordType = 'document' | 'capa' | 'quality_event';
 
 export interface PlannedSigner {

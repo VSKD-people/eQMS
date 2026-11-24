@@ -83,7 +83,7 @@ export class NotFound extends Error {
 export function ruleViolation(e: unknown): { status: number; message: string } | null {
   const err = e as { code?: string; message?: string };
   if (err.code === 'P0001') return { status: 409, message: err.message ?? 'Not allowed' };
-  if (err.code === 'P0002') return { status: 409, message: err.message ?? 'DocuSign allowance used up' };
+  if (err.code === 'P0002') return { status: 409, message: err.message ?? 'Adobe Sign allowance used up' };
   if (err.code === 'P0003') return { status: 403, message: err.message ?? 'Not allowed' };
   if (err.code === '42501') return { status: 403, message: 'Not allowed' };
   if (err.code === '23505') return { status: 409, message: 'That already exists' };

@@ -3,16 +3,16 @@ import type { ApprovalPlan, ClosureRecord, UserRow } from '@/lib/types';
 import { fmtUtc } from '@/lib/format';
 import { Chip, Notice } from '@/components/ui';
 import { SendForm } from '@/components/SendForm';
-import { EnvelopeCard, EnvelopeFiles } from '@/components/envelope';
+import { AgreementCard, AgreementFiles } from '@/components/agreement';
 import { MockSignPanel } from '@/components/MockSign';
 import { recordEffectiveness, sendClosure, writeJustification } from './actions';
 
-// CAPA closure and deviation closure share one page: write the closure text, verify and send one envelope, then
-// follow it until it completes. While the envelope is out, the signer whose turn it is can sign here in mock mode.
+// CAPA closure and deviation closure share one page: write the closure text, verify and send one agreement, then
+// follow it until it completes. While the agreement is out, the signer whose turn it is can sign here in mock mode.
 export async function ClosurePage({ kind, number, sp }: { kind: 'capas' | 'quality-events'; number: string; sp: { a0?: string; ok?: string; err?: string } }) {
   const page = kind === 'capas' ? `/quality/capas/${number}` : `/quality/events/${number}`;
   const [rec, me] = await Promise.all([load<ClosureRecord>(`/${kind}/${encodeURIComponent(number)}`), getMe()]);
-  const env = rec.envelope;
+  const env = rec.agreement;
   const out = env?.status === 'sent' ? env : null;
   const closed = rec.state === 'Closed';
   // Only deviations close here without a CAPA; other quality events close when their CAPA closes.
@@ -36,9 +36,9 @@ export async function ClosurePage({ kind, number, sp }: { kind: 'capas' | 'quali
       <>
         {header}
         {out ? <MockSignPanel e={out} me={me} back={page} /> : null}
-        {closed ? <div className="callout ok mb-16" role="status"><strong>Closed.</strong> {env?.status === 'completed' ? 'The closure was approved through DocuSign; the signed PDF and certificate are stored with the envelope.' : ''}</div> : null}
+        {closed ? <div className="callout ok mb-16" role="status"><strong>Closed.</strong> {env?.status === 'completed' ? 'The closure was approved through Adobe Sign; the signed PDF and certificate are stored with the agreement.' : ''}</div> : null}
         {notHere && !closed ? <div className="callout mb-16"><strong>This {rec.type?.toLowerCase()} closes when its CAPA closes.</strong> Only deviations without a CAPA are closed here.</div> : null}
-        {env ? <EnvelopeCard e={env}>{env.status === 'completed' ? <EnvelopeFiles e={env} /> : null}</EnvelopeCard> : null}
+        {env ? <AgreementCard e={env}>{env.status === 'completed' ? <AgreementFiles e={env} /> : null}</AgreementCard> : null}
       </>
     );
   }
@@ -51,10 +51,10 @@ export async function ClosurePage({ kind, number, sp }: { kind: 'capas' | 'quali
   return (
     <>
       {header}
-      <div className="callout mb-16"><strong>{kind === 'capas' ? 'CAPA closure is approved in DocuSign (Part 11)' : 'Deviations close through DocuSign (Part 11)'}</strong>
-        <p className="small" style={{ margin: '4px 0 0' }}>One envelope: the owner signs first, then the QA approver. The record closes when the envelope completes.</p></div>
-      {/* After a decline or void, show what happened so the owner can fix it before sending again. */}
-      {env && (env.status === 'declined' || env.status === 'voided') ? <div className="mb-16"><EnvelopeCard e={env} /></div> : null}
+      <div className="callout mb-16"><strong>{kind === 'capas' ? 'CAPA closure is approved in Adobe Sign (Part 11)' : 'Deviations close through Adobe Sign (Part 11)'}</strong>
+        <p className="small" style={{ margin: '4px 0 0' }}>One agreement: the owner signs first, then the QA approver. The record closes when the agreement completes.</p></div>
+      {/* After a decline or cancellation, show what happened so the owner can fix it before sending again. */}
+      {env && (env.status === 'declined' || env.status === 'cancelled') ? <div className="mb-16"><AgreementCard e={env} /></div> : null}
       {needsText ? (kind === 'capas' ? (
         <form action={recordEffectiveness.bind(null, number)} className="card card-pad">
           <div className="field mb-16"><label htmlFor="res">Result</label><textarea className="textarea" id="res" name="result" required placeholder="What the evidence shows" /></div>

@@ -9,7 +9,7 @@ begin
   for t in
     select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
     join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped
-    where n.nspname = 'app' and c.relkind = 'r' and c.relname not in ('tenant_directory', 'envelope_directory')
+    where n.nspname = 'app' and c.relkind = 'r' and c.relname not in ('tenant_directory', 'agreement_directory')
   loop
     execute format('alter table app.%I enable row level security', t.relname);
     execute format('alter table app.%I force row level security', t.relname);
@@ -27,7 +27,7 @@ grant select, insert, update on all tables in schema app to veqms_app;
 grant select on all tables in schema app to veqms_readonly;
 grant usage on all sequences in schema app to veqms_app;
 revoke delete, truncate on all tables in schema app from veqms_app, veqms_readonly;
-revoke update on app.audit_log, app.signatures, app.envelope_events, app.docusign_sends, app.notification_log, app.automation_runs, app.schema_migrations from veqms_app;
+revoke update on app.audit_log, app.signatures, app.agreement_events, app.signing_transactions, app.notification_log, app.automation_runs, app.schema_migrations from veqms_app;
 revoke insert, update on app.tenants, app.tenant_directory, app.schema_migrations from veqms_app;
 -- Configuration that is replaced as a whole (audiences, reviewer and approver lists, group membership from SCIM, role assignments)
 -- may be deleted by the API; every change is audited with old and new values. Quality records never are.

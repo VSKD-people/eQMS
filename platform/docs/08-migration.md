@@ -29,12 +29,12 @@ record. Import mode lifts exactly those two rules, and only for the migration:
 - All the other rules still apply: row-level security, insert-only signatures, locked records once completed.
 
 The demo seed (`packages/db/seed/001_demo.sql`) is a worked example: it runs as `veqms_owner`, switches on import
-mode, sets the tenant, and loads documents, versions, signatures marked `kstarrs`, envelopes and training records
+mode, sets the tenant, and loads documents, versions, signatures marked `kstarrs`, agreements and training records
 with historical dates.
 
 ## Method
 
-1. **Freeze** KSTARRS for new approvals from an agreed date; record that date as `settings.docusign_go_live`.
+1. **Freeze** KSTARRS for new approvals from an agreed date; record that date as `settings.signing_go_live`.
 2. **Export** from KSTARRS and SharePoint to CSV. Keep the raw exports, hashed (SHA-256), as migration evidence.
 3. **Map** each column to the tables above; agree how meanings map to Authored, Reviewed, Approved; list records that
    can't be mapped and decide each one.

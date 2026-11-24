@@ -51,17 +51,17 @@ export async function newVersion(number: string, fd: FormData) {
   await mutate(`/documents/${number}/versions`, { method: 'POST', body: { kind: str(fd, 'kind') === 'minor' ? 'minor' : 'major', summary } }, `/documents/${number}/edit`, 'New draft version started.', `/documents/${number}`);
 }
 
-export async function sendEnvelope(number: string, approvers: string[], fd: FormData) {
+export async function sendAgreement(number: string, approvers: string[], fd: FormData) {
   const back = `/documents/${number}/send?approvers=${encodeURIComponent(approvers.join(','))}`;
   const v = { footer: bool(fd, 'footer'), version: bool(fd, 'version'), documentId: bool(fd, 'documentId'), dates: bool(fd, 'dates'), note: str(fd, 'note') };
   if (!(v.footer && v.version && v.documentId && v.dates)) redirect(withMsg(back, 'err', 'Tick all four verification checks before sending.'));
-  await mutate(`/documents/${number}/envelopes`, { method: 'POST', body: { verification: v, approvers } }, `/documents/${number}?tab=approval`, 'Sent to DocuSign. The author signs first; DocuSign emails each signer in turn.', back);
+  await mutate(`/documents/${number}/agreements`, { method: 'POST', body: { verification: v, approvers } }, `/documents/${number}?tab=approval`, 'Sent to Adobe Sign. The author signs first; Adobe Sign emails each signer in turn.', back);
 }
 
-export async function voidEnvelope(number: string, envelopeId: string, fd: FormData) {
+export async function cancelAgreement(number: string, agreementId: string, fd: FormData) {
   const reason = str(fd, 'reason');
-  if (!reason) redirect(withMsg(`/documents/${number}?tab=approval`, 'err', 'Give a reason for voiding.'));
-  await mutate(`/envelopes/${envelopeId}/void`, { method: 'POST', body: { reason } }, `/documents/${number}?tab=approval`, 'Envelope voided. The document is back in draft; a corrected envelope is a new send.');
+  if (!reason) redirect(withMsg(`/documents/${number}?tab=approval`, 'err', 'Give a reason for cancelling.'));
+  await mutate(`/agreements/${agreementId}/cancel`, { method: 'POST', body: { reason } }, `/documents/${number}?tab=approval`, 'Agreement cancelled. The document is back in draft; a corrected agreement is a new send.');
 }
 
 export async function changeAudience(number: string, fd: FormData) {

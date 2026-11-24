@@ -1,4 +1,4 @@
-// File storage for envelope PDFs, signed PDFs and certificates of completion.
+// File storage for agreement PDFs, signed PDFs and audit reports.
 // Azure: a Blob container with versioning and a time-based immutability policy (see infra). Local: a folder.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize } from 'node:path';

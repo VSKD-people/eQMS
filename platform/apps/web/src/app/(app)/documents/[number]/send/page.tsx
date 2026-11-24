@@ -2,7 +2,7 @@ import { load, loadOrNull } from '@/lib/page';
 import type { ApprovalPlan, DocumentDetail, UserRow } from '@/lib/types';
 import { Notice } from '@/components/ui';
 import { SendForm } from '@/components/SendForm';
-import { sendEnvelope } from '../../actions';
+import { sendAgreement } from '../../actions';
 
 export const metadata = { title: 'Verify and send' };
 
@@ -27,11 +27,11 @@ export default async function SendPage({ params, searchParams }: { params: Promi
         plan={plan} pdfHref={`/files/documents/${d.number}/pdf`} replanAction={`/documents/${d.number}/send`} approverCount={2}
         chosen={chosen} candidates={candidates} labels={{
           footer: `The footer shows ${d.number}, version ${d.current.version} and “Page X of Y” on every page`,
-          version: `The version on the cover and in the envelope subject is v${d.current.version}`,
+          version: `The version on the cover and in the agreement subject is v${d.current.version}`,
           documentId: `The document ID ${d.number} is correct throughout, including the title block`,
           dates: 'Dates are correct: issue date, review date and any dates in the text'
         }}
-        action={sendEnvelope.bind(null, d.number, chosen)} disabled={!d.can.send} />
+        action={sendAgreement.bind(null, d.number, chosen)} disabled={!d.can.send} />
     </>
   );
 }

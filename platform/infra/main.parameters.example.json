@@ -16,12 +16,10 @@
     "recordsImmutabilityDays": { "value": 3650 },
     "appBaseUrl": { "value": "" },
     "apiExternal": { "value": true },
-    "docusignMode": { "value": "mock" },
-    "docusignAuthServer": { "value": "account-d.docusign.com" },
-    "docusignBaseUri": { "value": "https://demo.docusign.net" },
-    "docusignIntegrationKey": { "value": "" },
-    "docusignUserId": { "value": "" },
-    "docusignAccountId": { "value": "" },
+    "esignMode": { "value": "mock" },
+    "adobeSignAuth": { "value": "oauth" },
+    "adobeSignApiAccessPoint": { "value": "" },
+    "adobeSignClientId": { "value": "" },
     "graphMailFrom": { "value": "" }
   }
 }

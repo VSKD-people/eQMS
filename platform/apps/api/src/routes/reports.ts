@@ -9,7 +9,7 @@ import type { Person } from '../lib/people.ts';
 import { audit } from '../lib/work.ts';
 import { download, need, param, query, uuid, z } from '../lib/params.ts';
 import * as docs from '../services/documents.ts';
-import * as env from '../services/envelopes.ts';
+import * as signing from '../services/agreements.ts';
 import * as training from '../services/training.ts';
 import { tablePdf } from '../services/pdf.ts';
 
@@ -51,19 +51,19 @@ const REPORTS: Record<string, { title: string; build: (db: Db, me: Person, q: Q)
     title: 'Approvals register',
     async build(db, me) {
       need(me, 'approvals.view');
-      const list = await env.register(db);
-      return [['Record', 'Version', 'Purpose', 'DocuSign envelope ID', 'Sent by', 'Sent (UTC)', 'Completed (UTC)', 'Signers', 'Send no.'],
-        ...list.map((e) => [e.recordNumber, e.version ?? '', e.purpose, e.docusignEnvelopeId ?? '', e.sentBy.name, utc(e.sentAt), utc(e.completedAt),
-          e.signers.map((s) => `${s.name} (${s.meaning}, ${utc(s.signedAt)})`).join('; '), e.sendNo ? `${e.sendNo}/${e.allowanceYear}` : ''])];
+      const list = await signing.register(db);
+      return [['Record', 'Version', 'Purpose', 'Adobe Sign agreement ID', 'Sent by', 'Sent (UTC)', 'Completed (UTC)', 'Signers', 'Transaction no.'],
+        ...list.map((e) => [e.recordNumber, e.version ?? '', e.purpose, e.providerAgreementId ?? '', e.sentBy.name, utc(e.sentAt), utc(e.completedAt),
+          e.signers.map((s) => `${s.name} (${s.meaning}, ${utc(s.signedAt)})`).join('; '), e.transactionNo ? `${e.transactionNo}/${e.allowanceYear}` : ''])];
     }
   },
-  'docusign-sends': {
-    title: 'DocuSign sends',
+  'signing-transactions': {
+    title: 'Adobe Sign transactions',
     async build(db, me, q) {
       need(me, 'approvals.view');
-      const list = await env.list(db, { year: q.year });
-      return [['Send no.', 'Allowance year', 'Record', 'Version', 'Purpose', 'Status', 'Sent by', 'Sent (UTC)', 'Correction of', 'Reason'],
-        ...list.map((e) => [e.sendNo, e.allowanceYear, e.recordNumber, e.version ?? '', e.purpose, e.status, e.sentBy.name, utc(e.sentAt), e.correctionOf ?? '', e.reason ?? ''])];
+      const list = await signing.list(db, { year: q.year });
+      return [['Transaction no.', 'Allowance year', 'Record', 'Version', 'Purpose', 'Status', 'Sent by', 'Sent (UTC)', 'Correction of', 'Reason'],
+        ...list.map((e) => [e.transactionNo, e.allowanceYear, e.recordNumber, e.version ?? '', e.purpose, e.status, e.sentBy.name, utc(e.sentAt), e.correctionOf ?? '', e.reason ?? ''])];
     }
   }
 };

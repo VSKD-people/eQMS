@@ -73,7 +73,7 @@ jobs:
       - name: Make sure psql is available
         run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
 
-      - name: Database invariant tests (row-level security, audit chain, locked records, DocuSign allowance)
+      - name: Database invariant tests (row-level security, audit chain, locked records, Adobe Sign allowance)
         run: bash packages/db/test/run.sh
 
       - name: Migrate and seed a scratch database with the Node runner
@@ -87,12 +87,12 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/veqms_ci
           DEV_AUTH: '1'
-          DOCUSIGN_MODE: mock
+          ADOBE_SIGN_MODE: mock
           STORAGE_MODE: local
           LOCAL_STORAGE_DIR: ${{ runner.temp }}/veqms-storage
         run: npm test --workspaces --if-present
 
-  # The UAT scenarios (docs/07) in a browser, against the Docker stack: fresh database, demo seed, DocuSign mock.
+  # The UAT scenarios (docs/07) in a browser, against the Docker stack: fresh database, demo seed, Adobe Sign mock.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30

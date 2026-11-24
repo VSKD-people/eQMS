@@ -1,4 +1,4 @@
--- Controlled documents, versions, training audiences, and approvals through DocuSign (Part 11 module).
+-- Controlled documents, versions, training audiences, and approvals through Adobe Sign (Part 11 support through its Bio-Pharma settings).
 set role veqms_owner;
 
 create table app.templates (
@@ -57,7 +57,7 @@ create table app.document_versions (
   created_by uuid not null references app.users(id),
   created_at timestamptz not null default now(),
   approved_at timestamptz,
-  envelope_id uuid,                        -- the completed approval envelope
+  agreement_id uuid,                        -- the completed approval agreement
   migrated_from text,                      -- e.g. 'KSTARRS' for approvals made before go-live
   unique (document_id, version)
 );
@@ -78,8 +78,8 @@ begin
   if old.approved_at is not null and new.approved_at is distinct from old.approved_at then
     raise exception 'approval time is set once' using errcode = 'P0001';
   end if;
-  if old.envelope_id is not null and old.approved_at is not null and new.envelope_id is distinct from old.envelope_id then
-    raise exception 'the approval envelope of an approved version cannot change' using errcode = 'P0001';
+  if old.agreement_id is not null and old.approved_at is not null and new.agreement_id is distinct from old.agreement_id then
+    raise exception 'the approval agreement of an approved version cannot change' using errcode = 'P0001';
   end if;
   return new;
 end $$;
@@ -136,11 +136,11 @@ create table app.audience_users (
   primary key (document_id, user_id)
 );
 
--- ---------- DocuSign envelopes ----------
-create table app.envelopes (
+-- ---------- Adobe Sign agreements (one per sign-off; every signer in order) ----------
+create table app.agreements (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references app.tenants(id),
-  docusign_envelope_id text unique,          -- set when DocuSign accepts the envelope
+  provider_agreement_id text unique,          -- the agreement ID Adobe Sign returns when it accepts the agreement
   record_type text not null check (record_type in ('document', 'capa', 'quality_event')),
   record_id uuid not null,
   record_number text not null,
@@ -148,110 +148,111 @@ create table app.envelopes (
   version text,
   subject text not null,
   purpose text not null,
-  status text not null default 'sent' check (status in ('sent', 'completed', 'declined', 'voided')),
+  status text not null default 'sent' check (status in ('sent', 'completed', 'declined', 'cancelled')),
   sent_by uuid not null references app.users(id),
   sent_at timestamptz not null default now(),
   completed_at timestamptz,
   declined_by uuid references app.users(id),
   decline_reason text,
-  voided_by uuid references app.users(id),
-  void_reason text,
-  correction_of uuid references app.envelopes(id),
+  cancelled_by uuid references app.users(id),
+  cancel_reason text,
+  correction_of uuid references app.agreements(id),
   verification jsonb not null,               -- {footer, version, documentId, dates, note, by, at}
   pdf_blob text not null,
   pdf_sha256 text not null,
   signed_pdf_blob text,
   signed_pdf_sha256 text,
-  certificate_blob text,
-  certificate_sha256 text,
+  audit_report_blob text,
+  audit_report_sha256 text,
   check (verification ? 'footer' and verification ? 'version' and verification ? 'documentId' and verification ? 'dates'),
   check ((verification->>'footer')::boolean and (verification->>'version')::boolean and (verification->>'documentId')::boolean and (verification->>'dates')::boolean)
 );
-create unique index one_open_envelope_per_record on app.envelopes (record_id) where status = 'sent';
-create or replace function app.envelope_guard() returns trigger language plpgsql as $$
+create unique index one_open_agreement_per_record on app.agreements (record_id) where status = 'sent';
+create or replace function app.agreement_guard() returns trigger language plpgsql as $$
 begin
-  if tg_op = 'DELETE' then raise exception 'envelopes cannot be deleted' using errcode = 'P0001'; end if;
-  if old.status in ('completed', 'declined', 'voided') then
-    raise exception 'envelope % is % and cannot change', old.id, old.status using errcode = 'P0001';
+  if tg_op = 'DELETE' then raise exception 'agreements cannot be deleted' using errcode = 'P0001'; end if;
+  if old.status in ('completed', 'declined', 'cancelled') then
+    raise exception 'agreement % is % and cannot change', old.id, old.status using errcode = 'P0001';
   end if;
   if new.record_id <> old.record_id or new.subject <> old.subject or new.pdf_sha256 <> old.pdf_sha256 or new.verification <> old.verification
      or new.sent_by <> old.sent_by or new.sent_at <> old.sent_at then
-    raise exception 'envelope % contents are fixed once sent', old.id using errcode = 'P0001';
+    raise exception 'agreement % contents are fixed once sent', old.id using errcode = 'P0001';
   end if;
-  if new.status = 'completed' and (new.signed_pdf_sha256 is null or new.certificate_sha256 is null) then
-    raise exception 'a completed envelope must store the signed PDF and the certificate of completion' using errcode = 'P0001';
+  if new.status = 'completed' and (new.signed_pdf_sha256 is null or new.audit_report_sha256 is null) then
+    raise exception 'a completed agreement must store the signed PDF and the Adobe Sign audit report' using errcode = 'P0001';
   end if;
-  if new.status = 'declined' and coalesce(new.decline_reason, '') = '' then raise exception 'a declined envelope needs a reason' using errcode = 'P0001'; end if;
-  if new.status = 'voided' and coalesce(new.void_reason, '') = '' then raise exception 'a voided envelope needs a reason' using errcode = 'P0001'; end if;
+  if new.status = 'declined' and coalesce(new.decline_reason, '') = '' then raise exception 'a declined agreement needs a reason' using errcode = 'P0001'; end if;
+  if new.status = 'cancelled' and coalesce(new.cancel_reason, '') = '' then raise exception 'a voided agreement needs a reason' using errcode = 'P0001'; end if;
   if new.status = 'completed' and new.completed_at is null then new.completed_at := now(); end if;
   return new;
 end $$;
-create trigger envelopes_guard before update or delete on app.envelopes for each row execute function app.envelope_guard();
+create trigger agreements_guard before update or delete on app.agreements for each row execute function app.agreement_guard();
 
--- Webhooks arrive without a signed-in user: this directory maps a DocuSign envelope id to its tenant.
-create table app.envelope_directory (
-  docusign_envelope_id text primary key,
+-- Webhooks arrive without a signed-in user: this directory maps an Adobe Sign agreement ID to its tenant.
+create table app.agreement_directory (
+  provider_agreement_id text primary key,
   tenant_id uuid not null references app.tenants(id),
-  envelope_id uuid not null references app.envelopes(id)
+  agreement_id uuid not null references app.agreements(id)
 );
 
-create table app.envelope_signers (
+create table app.agreement_signers (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references app.tenants(id),
-  envelope_id uuid not null references app.envelopes(id),
+  agreement_id uuid not null references app.agreements(id),
   user_id uuid not null references app.users(id),
   role_label text not null,
   meaning text not null check (meaning in ('Authored', 'Reviewed', 'Approved')),
   routing_order integer not null check (routing_order > 0),
-  docusign_recipient_id text not null,
-  status text not null default 'waiting' check (status in ('waiting', 'sent', 'delivered', 'signed', 'declined', 'voided')),
+  signer_email text not null,                 -- the address the agreement went to: how Adobe Sign's participants are matched
+  status text not null default 'waiting' check (status in ('waiting', 'sent', 'signed', 'declined', 'cancelled')),
   sent_at timestamptz,
   signed_at timestamptz,
-  unique (envelope_id, user_id)
+  unique (agreement_id, user_id)
 );
-create table app.envelope_events (
+create table app.agreement_events (
   id bigint generated always as identity primary key,
   tenant_id uuid not null references app.tenants(id),
-  envelope_id uuid not null references app.envelopes(id),
+  agreement_id uuid not null references app.agreements(id),
   at timestamptz not null default now(),
-  type text not null,                         -- sent, delivered, signed, completed, declined, voided, status-check
+  type text not null,                         -- sent, signed, completed, declined, cancelled, status-check, webhook
   user_id uuid references app.users(id),
   detail text,
-  source text not null default 'app' check (source in ('app', 'connect', 'poll')),
-  payload_sha256 text                         -- hash of the raw Connect message, for evidence
+  source text not null default 'app' check (source in ('app', 'webhook', 'poll')),
+  payload_sha256 text                         -- hash of the raw webhook notification, for evidence
 );
-create trigger envelope_events_insert_only before update or delete on app.envelope_events for each row execute function app.forbid_change();
+create trigger agreement_events_insert_only before update or delete on app.agreement_events for each row execute function app.forbid_change();
 
--- Every send, numbered within its allowance year. The database refuses a send beyond the allowance.
-create table app.docusign_sends (
+-- Every Adobe Sign transaction (one agreement sent), numbered within its allowance year. The database refuses a
+-- transaction beyond the yearly allowance.
+create table app.signing_transactions (
   tenant_id uuid not null references app.tenants(id),
   allowance_year integer not null,
-  send_no integer not null,
-  envelope_id uuid not null unique references app.envelopes(id),
+  transaction_no integer not null,
+  agreement_id uuid not null unique references app.agreements(id),
   sent_at timestamptz not null default now(),
   sent_by uuid not null references app.users(id),
-  primary key (tenant_id, allowance_year, send_no)
+  primary key (tenant_id, allowance_year, transaction_no)
 );
 create or replace function app.allowance_year(p_at timestamptz, p_start_month integer) returns integer language sql immutable as $$
   select case when extract(month from p_at at time zone 'UTC')::int >= p_start_month
               then extract(year from p_at at time zone 'UTC')::int else extract(year from p_at at time zone 'UTC')::int - 1 end
 $$;
-create or replace function app.docusign_send_before_insert() returns trigger language plpgsql as $$
+create or replace function app.signing_transaction_before_insert() returns trigger language plpgsql as $$
 declare s app.settings; used integer;
 begin
   select * into s from app.settings where tenant_id = new.tenant_id;
   if not found then raise exception 'no settings for tenant %', new.tenant_id using errcode = 'P0001'; end if;
-  perform pg_advisory_xact_lock(hashtextextended('sends:' || new.tenant_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended('transactions:' || new.tenant_id::text, 0));
   if not (app.import_mode() and new.sent_at is not null) then new.sent_at := now(); end if;
   new.allowance_year := app.allowance_year(new.sent_at, s.allowance_year_start_month);
-  select count(*) into used from app.docusign_sends where tenant_id = new.tenant_id and allowance_year = new.allowance_year;
-  if used >= s.docusign_allowance then
-    raise exception 'DocuSign allowance of % sends for % is used up', s.docusign_allowance, new.allowance_year using errcode = 'P0002';
+  select count(*) into used from app.signing_transactions where tenant_id = new.tenant_id and allowance_year = new.allowance_year;
+  if used >= s.signing_allowance then
+    raise exception 'The Adobe Sign allowance of % transactions for % is used up', s.signing_allowance, new.allowance_year using errcode = 'P0002';
   end if;
-  new.send_no := used + 1;
+  new.transaction_no := used + 1;
   return new;
 end $$;
-create trigger docusign_sends_number before insert on app.docusign_sends for each row execute function app.docusign_send_before_insert();
-create trigger docusign_sends_insert_only before update or delete on app.docusign_sends for each row execute function app.forbid_change();
+create trigger signing_transactions_number before insert on app.signing_transactions for each row execute function app.signing_transaction_before_insert();
+create trigger signing_transactions_insert_only before update or delete on app.signing_transactions for each row execute function app.forbid_change();
 
 reset role;

@@ -101,20 +101,20 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
   }));
 
   // ---------- Settings ----------
-  const settingsSelect = `select docusign_allowance as "docusignAllowance", allowance_year_start_month as "allowanceYearStartMonth", allowance_warn_at as "allowanceWarnAt",
-    docusign_go_live as "docusignGoLive", ack_statement as "ackStatement", reminder_days as "reminderDays", overdue_repeat_days as "overdueRepeatDays", signature_statement as "signatureStatement"
+  const settingsSelect = `select signing_allowance as "signingAllowance", allowance_year_start_month as "allowanceYearStartMonth", allowance_warn_at as "allowanceWarnAt",
+    signing_go_live as "signingGoLive", ack_statement as "ackStatement", reminder_days as "reminderDays", overdue_repeat_days as "overdueRepeatDays", signature_statement as "signatureStatement"
     from app.settings where tenant_id = app.current_tenant()`;
   api.get('/settings', (req) => ctx.run(req, (db) => one(db, settingsSelect)));
   api.put('/settings', (req) => ctx.run(req, async (db, me) => {
     need(me, 'admin.settings');
     const b = body(z.object({
-      docusignAllowance: z.number().int().min(1).max(100000), allowanceYearStartMonth: z.number().int().min(1).max(12), allowanceWarnAt: z.number().int().min(0).max(10000),
+      signingAllowance: z.number().int().min(1).max(100000), allowanceYearStartMonth: z.number().int().min(1).max(12), allowanceWarnAt: z.number().int().min(0).max(10000),
       ackStatement: z.string().min(10).max(500).refine((s) => s.includes('{doc}') && s.includes('{version}'), 'Must contain {doc} and {version}'),
       reminderDays: z.array(z.number().int().min(0).max(60)).max(10), overdueRepeatDays: z.number().int().min(1).max(60)
     }), req.body);
     const before = await one(db, settingsSelect);
-    await db.query(`update app.settings set docusign_allowance = $1, allowance_year_start_month = $2, allowance_warn_at = $3, ack_statement = $4, reminder_days = $5, overdue_repeat_days = $6, updated_at = now()
-      where tenant_id = app.current_tenant()`, [b.docusignAllowance, b.allowanceYearStartMonth, b.allowanceWarnAt, b.ackStatement, b.reminderDays, b.overdueRepeatDays]);
+    await db.query(`update app.settings set signing_allowance = $1, allowance_year_start_month = $2, allowance_warn_at = $3, ack_statement = $4, reminder_days = $5, overdue_repeat_days = $6, updated_at = now()
+      where tenant_id = app.current_tenant()`, [b.signingAllowance, b.allowanceYearStartMonth, b.allowanceWarnAt, b.ackStatement, b.reminderDays, b.overdueRepeatDays]);
     await audit(db, 'settings', 'Settings', 'tenant', 'Changed settings', before, b);
     return one(db, settingsSelect);
   }));

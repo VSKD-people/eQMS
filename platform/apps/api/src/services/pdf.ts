@@ -1,4 +1,4 @@
-// PDFs made on our own server with pdf-lib: the exact document version that goes into the DocuSign envelope
+// PDFs made on our own server with pdf-lib: the exact document version that goes into the Adobe Sign agreement
 // (every page footed with the document ID, version and "Page X of Y", plus a signature page with one invisible
 // anchor per signer), closure summaries for CAPAs and deviations, and report tables.
 // The standard Helvetica font only covers WinAnsi characters, so text is cleaned first.
@@ -76,12 +76,12 @@ export async function documentPdf(d: DocumentPdfInput): Promise<Uint8Array> {
 function signaturePage(w: Writer, what: string, signers: SignerLine[]): void {
   w.newPage();
   w.text('Approval signatures', 14, { bold: true });
-  w.text(`Signed in DocuSign (Part 11). Each signer signs ${what} in the order below and chooses the meaning shown.`, 9, { gap: 12 });
+  w.text(`Signed in Adobe Sign (Part 11). Each signer signs ${what} in the order below and chooses the meaning shown.`, 9, { gap: 12 });
   for (const s of signers) {
     w.ensure(70);
     w.text(`${s.roleLabel}: ${s.name}`, 10, { bold: true, gap: 0 });
     w.text(`Meaning: ${s.meaning}`, 9, { gap: 2 });
-    // Invisible anchor: DocuSign places this signer's signature here.
+    // Invisible anchor: Adobe Sign places this signer's signature here.
     w.page.drawText(s.anchor, { x: M, y: w.y - 24, size: 8, font: w.font, color: rgb(1, 1, 1) });
     w.y -= 44;
   }
@@ -98,12 +98,12 @@ export async function closurePdf(c: ClosurePdfInput): Promise<Uint8Array> {
   return w.doc.save();
 }
 
-// Mock mode only: stands in for DocuSign's signed PDF and certificate of completion.
-export async function mockCertificate(lines: [string, string][]): Promise<Uint8Array> {
+// Mock mode only: stands in for Adobe Sign's signed PDF and audit report.
+export async function mockAuditReport(lines: [string, string][]): Promise<Uint8Array> {
   const w = await start();
-  w.text('Certificate of completion (MOCK - development only)', 14, { bold: true });
+  w.text('Audit report (MOCK - development only)', 14, { bold: true });
   for (const [k, v] of lines) w.text(`${k}: ${v}`, 10);
-  footer(w, 'Mock certificate');
+  footer(w, 'Mock audit report');
   return w.doc.save();
 }
 export async function stampSigned(original: Uint8Array, lines: string[]): Promise<Uint8Array> {

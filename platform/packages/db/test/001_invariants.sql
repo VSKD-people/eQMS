@@ -137,50 +137,50 @@ begin
   perform set_config('app.import_mode', '', false);
 end $$;
 
-\echo '6. DocuSign envelopes: verification check required, one open per record, fixed once sent, terminal states locked'
+\echo '6. Adobe Sign agreements: verification check required, one open per record, fixed once sent, terminal states locked'
 do $$
 declare e uuid; vid uuid;
 begin
   select id into vid from app.document_versions where document_id = pg_temp.k('POL-003') and version = '1.1';
-  perform pg_temp.expect_error(format($q$insert into app.envelopes (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
+  perform pg_temp.expect_error(format($q$insert into app.agreements (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
     values (app.current_tenant(), 'document', %L, 'POL-003', %L, '1.1', 's', 'Document approval', %L, '{"footer":true,"version":true,"documentId":true,"dates":false}', 'b', 'h')$q$, pg_temp.k('POL-003'), vid, pg_temp.k('vic')), 'check constraint');
-  perform pg_temp.expect_error(format($q$insert into app.envelopes (tenant_id, record_type, record_id, record_number, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
-    values (app.current_tenant(), 'document', %L, 'POL-004', '2.0', 's', 'Document approval', %L, '{"footer":true,"version":true,"documentId":true,"dates":true}', 'b', 'h')$q$, pg_temp.k('POL-004'), pg_temp.k('sam')), 'one_open_envelope_per_record|duplicate key');
-  insert into app.envelopes (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
-  values (app.current_tenant(), 'document', pg_temp.k('POL-003'), 'POL-003', vid, '1.1', 'POL-003 v1.1 · Approval', 'Document approval', pg_temp.k('vic'), '{"footer":true,"version":true,"documentId":true,"dates":true}', 'envelopes/x/original.pdf', 'abc') returning id into e;
-  perform pg_temp.expect_error(format($q$update app.envelopes set subject = 'changed' where id = %L$q$, e), 'fixed once sent');
-  perform pg_temp.expect_error(format($q$update app.envelopes set status = 'completed' where id = %L$q$, e), 'must store the signed PDF');
-  perform pg_temp.expect_error(format($q$update app.envelopes set status = 'voided' where id = %L$q$, e), 'needs a reason');
-  update app.envelopes set status = 'voided', voided_by = pg_temp.k('vic'), void_reason = 'Footer showed the wrong version' where id = e;
-  perform pg_temp.expect_error(format($q$update app.envelopes set void_reason = 'other' where id = %L$q$, e), 'voided and cannot change');
-  perform pg_temp.expect_error(format($q$insert into app.envelope_events (tenant_id, envelope_id, type) values (app.current_tenant(), %L, 'x'); update app.envelope_events set detail = 'x'$q$, e), 'permission denied|insert-only');
+  perform pg_temp.expect_error(format($q$insert into app.agreements (tenant_id, record_type, record_id, record_number, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
+    values (app.current_tenant(), 'document', %L, 'POL-004', '2.0', 's', 'Document approval', %L, '{"footer":true,"version":true,"documentId":true,"dates":true}', 'b', 'h')$q$, pg_temp.k('POL-004'), pg_temp.k('sam')), 'one_open_agreement_per_record|duplicate key');
+  insert into app.agreements (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
+  values (app.current_tenant(), 'document', pg_temp.k('POL-003'), 'POL-003', vid, '1.1', 'POL-003 v1.1 · Approval', 'Document approval', pg_temp.k('vic'), '{"footer":true,"version":true,"documentId":true,"dates":true}', 'agreements/x/original.pdf', 'abc') returning id into e;
+  perform pg_temp.expect_error(format($q$update app.agreements set subject = 'changed' where id = %L$q$, e), 'fixed once sent');
+  perform pg_temp.expect_error(format($q$update app.agreements set status = 'completed' where id = %L$q$, e), 'must store the signed PDF');
+  perform pg_temp.expect_error(format($q$update app.agreements set status = 'cancelled' where id = %L$q$, e), 'needs a reason');
+  update app.agreements set status = 'cancelled', cancelled_by = pg_temp.k('vic'), cancel_reason = 'Footer showed the wrong version' where id = e;
+  perform pg_temp.expect_error(format($q$update app.agreements set cancel_reason = 'other' where id = %L$q$, e), 'cancelled and cannot change');
+  perform pg_temp.expect_error(format($q$insert into app.agreement_events (tenant_id, agreement_id, type) values (app.current_tenant(), %L, 'x'); update app.agreement_events set detail = 'x'$q$, e), 'permission denied|insert-only');
 end $$;
 
-\echo '7. DocuSign sends: numbered per allowance year, insert-only, refused beyond the allowance'
+\echo '7. Adobe Sign transactions: numbered per allowance year, insert-only, refused beyond the allowance'
 do $$
 declare e uuid; n integer; used integer;
 begin
-  select count(*) into used from app.docusign_sends where allowance_year = app.allowance_year(now(), 1);
-  select id into e from app.envelopes where record_number = 'POL-003' and status = 'voided';
-  insert into app.docusign_sends (tenant_id, allowance_year, send_no, envelope_id, sent_by) values (app.current_tenant(), 1900, 999, e, pg_temp.k('vic')) returning send_no into n;
+  select count(*) into used from app.signing_transactions where allowance_year = app.allowance_year(now(), 1);
+  select id into e from app.agreements where record_number = 'POL-003' and status = 'cancelled';
+  insert into app.signing_transactions (tenant_id, allowance_year, transaction_no, agreement_id, sent_by) values (app.current_tenant(), 1900, 999, e, pg_temp.k('vic')) returning transaction_no into n;
   assert n = used + 1, format('send number should be %s, got %s', used + 1, n);
-  assert (select allowance_year from app.docusign_sends where envelope_id = e) = app.allowance_year(now(), 1), 'allowance year not set by the database';
-  perform pg_temp.expect_error(format($q$update app.docusign_sends set send_no = 1 where envelope_id = %L$q$, e), 'permission denied|insert-only');
+  assert (select allowance_year from app.signing_transactions where agreement_id = e) = app.allowance_year(now(), 1), 'allowance year not set by the database';
+  perform pg_temp.expect_error(format($q$update app.signing_transactions set transaction_no = 1 where agreement_id = %L$q$, e), 'permission denied|insert-only');
 end $$;
 reset role;
-update app.settings set docusign_allowance = (select count(*) from app.docusign_sends where tenant_id = pg_temp.k('tenant') and allowance_year = app.allowance_year(now(), 1)) where tenant_id = pg_temp.k('tenant');
+update app.settings set signing_allowance = (select count(*) from app.signing_transactions where tenant_id = pg_temp.k('tenant') and allowance_year = app.allowance_year(now(), 1)) where tenant_id = pg_temp.k('tenant');
 set role veqms_app;
 select set_config('app.tenant_id', pg_temp.k('tenant')::text, false);
 do $$
 declare e uuid; vid uuid;
 begin
   select id into vid from app.document_versions where document_id = pg_temp.k('VP-001');
-  insert into app.envelopes (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
+  insert into app.agreements (tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256)
   values (app.current_tenant(), 'document', pg_temp.k('VP-001'), 'VP-001', vid, '1.0', 'VP-001 v1.0 · Approval', 'Document approval', pg_temp.k('vic'), '{"footer":true,"version":true,"documentId":true,"dates":true}', 'b', 'h') returning id into e;
-  perform pg_temp.expect_error(format($q$insert into app.docusign_sends (tenant_id, allowance_year, send_no, envelope_id, sent_by) values (app.current_tenant(), 0, 0, %L, %L)$q$, e, pg_temp.k('vic')), 'allowance of .* is used up');
+  perform pg_temp.expect_error(format($q$insert into app.signing_transactions (tenant_id, allowance_year, transaction_no, agreement_id, sent_by) values (app.current_tenant(), 0, 0, %L, %L)$q$, e, pg_temp.k('vic')), 'allowance of .* is used up');
 end $$;
 reset role;
-update app.settings set docusign_allowance = 500 where tenant_id = pg_temp.k('tenant');
+update app.settings set signing_allowance = 500 where tenant_id = pg_temp.k('tenant');
 set role veqms_app;
 select set_config('app.tenant_id', pg_temp.k('tenant')::text, false);
 
@@ -191,9 +191,11 @@ do $$ begin
   perform pg_temp.expect_error(format($q$update app.document_versions set state = 'Effective' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '2.1')), 'cannot change state');
 end $$;
 
-\echo '9. Signatures are insert-only; record numbers are gap-free'
+\echo '9. Signatures are insert-only and only come from Adobe Sign (or KSTARRS); record numbers are gap-free'
 do $$ begin
   perform pg_temp.expect_error('update app.signatures set meaning = ''Reviewed''', 'permission denied|insert-only');
+  perform pg_temp.expect_error(format($q$insert into app.signatures (tenant_id, record_type, record_id, record_number, user_id, meaning, signed_at, source, content_sha256, statement)
+    values (app.current_tenant(), 'document', %L, 'SOP-012', %L, 'Approved', now(), 'in_app', 'x', 'Signed in the app')$q$, pg_temp.k('SOP-012'), pg_temp.k('vic')), 'signatures_source_check');
   assert app.next_number('WI') = 'WI-005' and app.next_number('WI') = 'WI-006', 'numbering not sequential';
 end $$;
 

@@ -2,7 +2,7 @@
 import { createPool, type Pool } from '@veqms/db';
 import { loadConfig, type Config } from './config.ts';
 import { buildApp } from './app.ts';
-import { createDocuSign } from './integrations/docusign.ts';
+import { createAdobeSign } from './integrations/adobesign.ts';
 import { createStorage } from './integrations/storage.ts';
 
 // Scope for Azure Database for PostgreSQL with Entra authentication. Check it against Microsoft's current docs.
@@ -26,10 +26,10 @@ async function main(): Promise<void> {
   let log: { error: (obj: object, msg: string) => void } = { error: (obj, msg) => console.error(msg, obj) };
   // Log the message and code only: pg errors carry the whole client object, which is large and holds connection details.
   const pool = await poolFor(cfg, (err) => log.error({ err: { message: err.message, code: (err as { code?: string }).code } }, 'Database connection lost; it will be replaced on the next request'));
-  const app = buildApp({ cfg, pool, docusign: createDocuSign(cfg), storage: createStorage(cfg) });
+  const app = buildApp({ cfg, pool, esign: createAdobeSign(cfg), storage: createStorage(cfg) });
   log = app.log;
   if (cfg.devAuthAllowed) app.log.warn('Development sign-in (X-Dev-User) is ON. Never use this setting in production.');
-  if (cfg.DOCUSIGN_MODE === 'mock') app.log.warn('DocuSign is in MOCK mode: nothing is sent to DocuSign and signatures are simulated.');
+  if (cfg.ADOBE_SIGN_MODE === 'mock') app.log.warn('Adobe Sign is in MOCK mode: nothing is sent to Adobe Sign and signatures are simulated.');
   const stop = async () => { await app.close(); await pool.end(); process.exit(0); };
   process.on('SIGTERM', () => void stop());
   process.on('SIGINT', () => void stop());

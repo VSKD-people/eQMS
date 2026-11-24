@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "VeQMS API: Entra ID auth, documents, DocuSign approvals, training records, reports",
+  "description": "VeQMS API: Entra ID auth, documents, Adobe Sign approvals, training records, reports",
   "main": "./dist/server.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
