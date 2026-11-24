@@ -139,6 +139,7 @@ export async function complete(db: Db, me: Person, via: string, id: string, quiz
   const r = await getRecord(db, id);
   if (r.user_id !== me.id) throw forbidden(`Only ${r.user_name} can confirm this record.`);
   if (!['Assigned', 'Overdue'].includes(status(r))) throw conflict('This record isn’t open.');
+  if (!(await pdfOpened(db, me.id, r))) throw conflict(`Open the PDF of ${r.document_number} v${r.version} first. VeQMS records that you opened it.`);
   const d = await one<{ training_quiz: boolean }>(db, 'select training_quiz from app.documents where id = $1', [r.document_id]);
   let quizResult: string | null = null;
   if (d.training_quiz) {
@@ -155,6 +156,13 @@ export async function complete(db: Db, me: Person, via: string, id: string, quiz
     [id, ackStatement(s.ack_statement, r.document_number, r.version), quizResult, via]);
   await closeTasks(db, { recordId: r.document_id, kinds: ['training'], assigneeId: me.id });
   return toApi(await getRecord(db, id));
+}
+
+// Has this person opened the PDF of the record's version since it was allocated? (logged by documents.logPdfOpen)
+export async function pdfOpened(db: Db, userId: string, r: Pick<RecordRow, 'document_id' | 'document_number' | 'version' | 'assigned_at'>): Promise<boolean> {
+  return !!(await maybe(db, `select 1 from app.audit_log a join app.document_versions v on v.document_id = $2 and v.version = $3
+    where a.actor_id = $1 and a.action = 'read' and a.object_type = 'Document' and a.object_id = $4 and a.after->>'versionId' = v.id::text and a.at >= $5 limit 1`,
+    [userId, r.document_id, r.version, r.document_number, r.assigned_at]));
 }
 
 export async function correct(db: Db, me: Person, id: string, reason: string, retrain: boolean) {

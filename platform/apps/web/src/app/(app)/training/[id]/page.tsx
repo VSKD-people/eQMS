@@ -21,10 +21,12 @@ export default async function ConfirmTrainingPage({ params, searchParams }: { pa
     );
   }
   const n = encodeURIComponent(r.documentNumber);
-  const [doc, quiz] = await Promise.all([
+  const [doc, quiz, seen] = await Promise.all([
     loadOrNull<DocumentDetail>(`/documents/${n}`),
-    loadOrNull<{ questions: { q: string; options: string[] }[] }>(`/documents/${n}/quiz`)
+    loadOrNull<{ questions: { q: string; options: string[] }[] }>(`/documents/${n}/quiz`),
+    loadOrNull<{ opened: boolean }>(`/training/records/${encodeURIComponent(r.id)}/opened`)
   ]);
+  const opened = seen?.opened ?? false;
   const questions = quiz?.questions ?? [];
   const pdfHref = `/files/documents/${n}/pdf?version=${encodeURIComponent(r.version)}`;
   // The text on screen is only shown when it is the version being trained on; otherwise the trainee reads the PDF.
@@ -64,6 +66,7 @@ export default async function ConfirmTrainingPage({ params, searchParams }: { pa
         ) : null}
         <section className="card card-pad" aria-labelledby="confirm-h">
           <h2 id="confirm-h" className="label mb-8">{questions.length ? '3' : '2'} · Confirm</h2>
+          {!opened ? <div className="callout warn mb-16" role="status"><strong>Open the PDF of v{r.version} first.</strong> Use the button in step 1. VeQMS records when you open it; reload this page or confirm afterwards.</div> : null}
           <dl className="dl mb-16">
             <div><dt>Signed in as</dt><dd>{me.user.name}</dd></div>
             <div><dt>Account</dt><dd>{me.user.email}</dd></div>

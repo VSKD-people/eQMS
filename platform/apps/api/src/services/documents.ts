@@ -16,6 +16,11 @@ export interface DocRow {
 }
 export interface VersionRow { id: string; version: string; kind: string; state: string; summary: string; content: Block[]; content_sha256: string; created_at: Date; approved_at: Date | null; agreement_id: string | null; migrated_from: string | null }
 
+// Every PDF open is logged with the version it showed. Trainees must have opened the version before they confirm.
+export async function logPdfOpen(db: Db, d: { number: string }, v: { id: string; version: string }): Promise<void> {
+  await audit(db, 'read', 'Document', d.number, `Opened the PDF of ${d.number} v${v.version}`, null, { versionId: v.id, version: v.version });
+}
+
 export async function docByNumber(db: Db, number: string): Promise<DocRow> {
   const d = await maybe<DocRow>(db, 'select * from app.documents where number = $1', [number]);
   if (!d) throw notFound(`Document ${number} doesn’t exist.`);

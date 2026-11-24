@@ -2,6 +2,7 @@
 // come in Phase 2 (see BUILD_PROMPT.md).
 import type { FastifyInstance } from 'fastify';
 import { mapSeq, maybe, rows, type Db } from '@veqms/db';
+import { signatureTag } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
 import { conflict, forbidden, notFound } from '../lib/http.ts';
 import type { Person } from '../lib/people.ts';
@@ -76,7 +77,7 @@ export function closureRoutes(api: FastifyInstance, ctx: Ctx): void {
       const q = query({ approver: uuid.optional() }, req.query);
       const out = await ctx.run(req, async (db) => {
         const r = await signing.planForClosure(db, kind, param(p, req.params).number, q.approver);
-        const signers = r.plan.signers.map((s, i) => ({ name: r.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: `\\s${i + 1}\\` }));
+        const signers = r.plan.signers.map((s, i) => ({ name: r.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
         await audit(db, 'read', kind === 'capa' ? 'CAPA' : 'Quality event', r.t.number, `Opened the closure PDF of ${r.t.number}`);
         const bytes = await closurePdf({ number: r.t.number, title: r.t.title, purpose: r.t.purpose, owner: r.people.find((x) => x.id === r.t.ownerId)?.name ?? '', lines: r.t.lines, signers, generatedAt: new Date() });
         return { bytes, name: `${r.t.number}_closure.pdf` };

@@ -141,8 +141,11 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const sop12 = open.find((r: any) => r.documentNumber === 'SOP-012' && (r.status === 'Assigned' || r.status === 'Overdue'));
   ok(!!sop12, 'Daniel has SOP-012 to read');
   await fails(as('lena', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, undefined)), /Only Daniel/, 'only the trainee can confirm');
-  await fails(as('daniel', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, [0, 0, 0])), /check question/, 'wrong quiz answers are refused');
   const qa = await sys((db) => training.quiz(db, sop12!.documentId));
+  await fails(as('daniel', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, qa.map((q: any) => q.answer_index))), /Open the PDF of SOP-012 v3\.0 first/, 'cannot confirm before opening the PDF of the version');
+  await as('daniel', async (db) => { const d = await docs.docByNumber(db, 'SOP-012'); await docs.logPdfOpen(db, d, await docs.currentVersion(db, d.id)); });
+  ok(await as('daniel', (db, me) => training.pdfOpened(db, me.id, { document_id: sop12!.documentId, document_number: 'SOP-012', version: sop12!.version, assigned_at: new Date(sop12!.assignedAt) })), 'opening the PDF is logged with its version');
+  await fails(as('daniel', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, [0, 0, 0])), /check question/, 'wrong quiz answers are refused');
   const done = await as('daniel', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, qa.map((q: any) => q.answer_index)));
   ok(done.status === 'Complete' && /read and understood SOP-012, version 3.0/.test(done.statement ?? '') && done.quizResult === '3/3', 'confirmed with the statement and quiz result');
   await fails(as('daniel', (db, me) => training.complete(db, me, 'Development sign-in', sop12!.id, qa.map((q: any) => q.answer_index))), /isn’t open/, 'cannot confirm twice');

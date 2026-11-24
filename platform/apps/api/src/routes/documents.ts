@@ -1,7 +1,7 @@
 // Documents: draft, review, the Adobe Sign approval send, audience and the read-and-understood records.
 import type { FastifyInstance } from 'fastify';
 import { maybe, one } from '@veqms/db';
-import { DOC_TYPES, ROLES } from '@veqms/domain';
+import { DOC_TYPES, ROLES, signatureTag } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
 import { forbidden, notFound } from '../lib/http.ts';
 import { person } from '../lib/people.ts';
@@ -114,9 +114,9 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
       let signers: { name: string; roleLabel: string; meaning: string; anchor: string }[] = [];
       try {
         const plan = await signing.planForDocument(db, n);
-        signers = plan.plan.signers.map((s, i) => ({ name: plan.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: `\\s${i + 1}\\` }));
+        signers = plan.plan.signers.map((s, i) => ({ name: plan.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
       } catch { /* no approvers chosen yet: the preview has no signature lines */ }
-      await audit(db, 'read', 'Document', d.number, `Opened the PDF of ${d.number} v${v.version}`);
+      await docs.logPdfOpen(db, d, v);
       return { bytes: await documentPdf({ number: d.number, title: d.title, version: v.version, classification: d.classification, owner: owner?.name ?? '', generatedAt: new Date(), blocks: v.content, signers }), name: `${d.number}_v${v.version}.pdf` };
     });
     return pdf(reply, out.bytes, out.name);

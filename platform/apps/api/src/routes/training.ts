@@ -27,6 +27,13 @@ export function trainingRoutes(api: FastifyInstance, ctx: Ctx): void {
     return training.listRecords(db, { userId: q.userId, documentNumber: q.documentNumber, status: q.status, all: q.all === '1' });
   }));
 
+  // Whether the trainee has opened the PDF of this record's version yet (they must before confirming).
+  api.get('/training/records/:id/opened', (req) => ctx.run(req, async (db, me) => {
+    const r = await training.getRecord(db, param(id, req.params).id);
+    if (r.user_id !== me.id) need(me, 'training.org');
+    return { opened: await training.pdfOpened(db, r.user_id, r) };
+  }));
+
   api.get('/training/records/:id', (req) => ctx.run(req, async (db, me) => {
     const rid = param(id, req.params).id;
     const r = await training.getRecord(db, rid);

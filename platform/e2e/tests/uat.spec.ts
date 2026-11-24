@@ -90,12 +90,17 @@ test('3 · POL-004: cancel, resubmit, corrected send, decline back to draft', as
   await expectDocState(jim, 'POL-004', 'Draft');
 });
 
-test('4 · Daniel confirms SOP-012 with the quiz; a correction leaves the original marked Corrected', async ({ browser }) => {
+test('4 · Daniel opens SOP-012, confirms with the quiz; a correction leaves the original marked Corrected', async ({ browser }) => {
   const daniel = await signIn(browser, 'daniel');
   await daniel.goto('/training');
   await daniel.locator('main div', { has: daniel.getByText(/^SOP-012 Backup and Restore Procedure/) }).getByRole('link', { name: 'Start' }).first().click();
   await expect(daniel).toHaveURL(/\/training\/[0-9a-f-]{36}$/);
   const recordUrl = daniel.url();
+  // He must open the PDF of the version before he can confirm; VeQMS records the open.
+  await expect(daniel.getByRole('status').filter({ hasText: 'Open the PDF of v3.0 first' })).toBeVisible();
+  const [pdf] = await Promise.all([daniel.waitForEvent('popup'), daniel.getByRole('link', { name: /Open PDF of v3\.0/ }).click()]);
+  await pdf.waitForLoadState().catch(() => undefined);
+  await pdf.close();
   // Answers from the demo seed: every quarter; 1 hour; encrypted and copied to a second region.
   await daniel.getByRole('group', { name: /How often is a restore test run/ }).getByLabel('Every quarter').check();
   await daniel.getByRole('group', { name: /recovery point objective/ }).getByLabel('1 hour').check();
