@@ -122,3 +122,16 @@ the app (not Part 11). This answers open questions 5 and 29 in the spec; both we
 - Get brand sign-off for the functional UI colours (greys, tints, status colours) and the marque favicon.
 - Test in Safari and Firefox, and with VoiceOver.
 - Port to Next.js + TypeScript per Step 1, keeping this prototype as the reference for screens and flows.
+  Started: see "Full-stack platform" below.
+
+## Full-stack platform (`platform/`)
+
+The live build: PostgreSQL 16, a Fastify API, a Next.js web app and Azure UK South infrastructure, Phase 1 scope.
+Start with `platform/README.md` and `platform/BUILD_PROMPT.md` (rules, first tasks, later phases, open decisions);
+the documentation set is `platform/docs/01` to `09`. The prototype stays the reference for screens and flows.
+
+- The database enforces the compliance rules (row-level security, append-only audit chain, insert-only signatures,
+  locked training records, DocuSign allowance). Don't move a rule from SQL into the API only.
+- Checks: `npm run typecheck`, `npm test`, `npm run db:test` in `platform/`; CI is `.github/workflows/platform-ci.yml`.
+- Status when written: database and API logic run and tested against PostgreSQL 16; API and web type-checked
+  against stand-in types only (npm was blocked in the build sandbox); nothing built with real packages or deployed.

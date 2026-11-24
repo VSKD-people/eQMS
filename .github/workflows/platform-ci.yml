@@ -1,0 +1,96 @@
+# VeQMS platform CI: type-check, unit tests, build, and the database invariant tests on PostgreSQL 16.
+name: Platform CI
+
+on:
+  pull_request:
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Add `cache: npm` and `cache-dependency-path: platform/package-lock.json` once the lockfile is committed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else
+            echo "::warning::No package-lock.json yet. Commit one so CI installs exactly what was tested."
+            npm install
+          fi
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Domain unit tests
+        run: npm test --workspace @veqms/domain
+
+      - name: Build
+        run: npm run build
+
+      - name: Make sure psql is available
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Database invariant tests (row-level security, audit chain, locked records, DocuSign allowance)
+        run: bash packages/db/test/run.sh
+
+      - name: Migrate and seed a scratch database with the Node runner
+        run: |
+          psql -d postgres -c "drop database if exists veqms_ci" -c "create database veqms_ci"
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/migrate.js
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/migrate.js   # second run must be a no-op
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/seed.js
+
+      - name: Other workspace tests (API integration tests use the seeded database)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/veqms_ci
+          DEV_AUTH: '1'
+          DOCUSIGN_MODE: mock
+          STORAGE_MODE: local
+          LOCAL_STORAGE_DIR: ${{ runner.temp }}/veqms-storage
+        run: npm test --workspaces --if-present

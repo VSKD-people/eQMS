@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "uksouth" },
+    "namePrefix": { "value": "veqms" },
+    "deployApps": { "value": false },
+    "entraApiAudience": { "value": "api://<api-client-id>" },
+    "entraWebClientId": { "value": "<web-client-id>" },
+    "entraApiScope": { "value": "api://<api-client-id>/access_as_user" },
+    "postgresAdminGroupObjectId": { "value": "<object-id-of-db-admin-group>" },
+    "postgresAdminGroupName": { "value": "VeQMS database administrators" },
+    "postgresSkuName": { "value": "Standard_D2ds_v5" },
+    "postgresSkuTier": { "value": "GeneralPurpose" },
+    "postgresHighAvailability": { "value": "Disabled" },
+    "recordsImmutabilityDays": { "value": 3650 },
+    "appBaseUrl": { "value": "" },
+    "apiExternal": { "value": true },
+    "docusignMode": { "value": "mock" },
+    "docusignAuthServer": { "value": "account-d.docusign.com" },
+    "docusignBaseUri": { "value": "https://demo.docusign.net" },
+    "docusignIntegrationKey": { "value": "" },
+    "docusignUserId": { "value": "" },
+    "docusignAccountId": { "value": "" },
+    "graphMailFrom": { "value": "" }
+  }
+}
