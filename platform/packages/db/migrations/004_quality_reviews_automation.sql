@@ -23,6 +23,10 @@ create table app.change_requests (
   closed_at timestamptz,
   unique (tenant_id, number)
 );
+-- Every amendment starts as a change request: each document version links to the one that produced it, which closes
+-- when that version becomes Effective. (Phase 1 creates these automatically; full change control is Phase 2.)
+alter table app.document_versions add column change_request_id uuid references app.change_requests(id);
+
 create table app.cr_actions (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references app.tenants(id),

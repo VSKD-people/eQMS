@@ -21,7 +21,7 @@ create table app.documents (
   number text not null,                    -- POL-004
   doc_type text not null,
   title text not null,
-  state text not null default 'Draft' check (state in ('Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete')),
+  state text not null default 'Draft' check (state in ('Draft', 'In review', 'In approval', 'Signing', 'Effective', 'Superseded', 'Obsolete')),
   classification text not null default 'Internal' check (classification in ('Public', 'Internal', 'Confidential', 'Restricted')),
   owner_id uuid not null references app.users(id),
   author_id uuid not null references app.users(id),
@@ -49,25 +49,35 @@ create table app.document_versions (
   document_id uuid not null references app.documents(id),
   version text not null,
   kind text not null check (kind in ('major', 'minor')),
-  state text not null default 'Draft' check (state in ('Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete')),
+  state text not null default 'Draft' check (state in ('Draft', 'In review', 'In approval', 'Signing', 'Effective', 'Superseded', 'Obsolete')),
   summary text not null default '',
   content jsonb not null default '[]',     -- [{t:'h'|'p', x:'text'}]; real files live in blob storage
   source_blob text,                        -- uploaded DOCX/PDF, converted to PDF on our server
-  content_sha256 text not null,
+  content_sha256 text not null,            -- once submitted: the SHA-256 of the locked PDF (pdf_blob)
+  pdf_blob text,                           -- the PDF locked at submit: reviewed, approved, signed and published as is
+  verification jsonb,                      -- the four checks ticked at submit {footer, version, documentId, dates, note, by, at}
+  retrain boolean not null default true,   -- decided at approval: does the change need retraining?
+  retrain_reason text,                     -- required when no retraining is needed
   created_by uuid not null references app.users(id),
   created_at timestamptz not null default now(),
   approved_at timestamptz,
   agreement_id uuid,                        -- the completed approval agreement
   migrated_from text,                      -- e.g. 'KSTARRS' for approvals made before go-live
-  unique (document_id, version)
+  unique (document_id, version),
+  check (retrain or coalesce(retrain_reason, '') <> ''),
+  check (verification is null or ((verification->>'footer')::boolean and (verification->>'version')::boolean and (verification->>'documentId')::boolean and (verification->>'dates')::boolean))
 );
 -- Content is editable only while the version is a draft. Approved versions only move to Superseded or Obsolete.
 create or replace function app.version_guard() returns trigger language plpgsql as $$
 begin
   if tg_op = 'DELETE' then raise exception 'document versions cannot be deleted' using errcode = 'P0001'; end if;
-  if (new.content is distinct from old.content or new.content_sha256 is distinct from old.content_sha256 or new.version is distinct from old.version)
+  if (new.content is distinct from old.content or new.content_sha256 is distinct from old.content_sha256 or new.version is distinct from old.version
+      or new.pdf_blob is distinct from old.pdf_blob or new.verification is distinct from old.verification)
      and old.state <> 'Draft' then
     raise exception 'version % of document % is locked (state %): start a new version to change it', old.version, old.document_id, old.state using errcode = 'P0001';
+  end if;
+  if old.state in ('Signing', 'Effective', 'Superseded', 'Obsolete') and (new.retrain is distinct from old.retrain or new.retrain_reason is distinct from old.retrain_reason) then
+    raise exception 'the retraining decision for version % is fixed once it is out for signing', old.version using errcode = 'P0001';
   end if;
   if old.state in ('Superseded', 'Obsolete') and new.state is distinct from old.state then
     raise exception 'a % version cannot change state', old.state using errcode = 'P0001';
@@ -99,7 +109,11 @@ create table app.document_approvers (
   document_id uuid not null references app.documents(id),
   user_id uuid not null references app.users(id),
   position integer not null check (position in (1, 2)),
-  status text not null default 'Waiting' check (status in ('Waiting', 'Your turn', 'Signed')),
+  status text not null default 'Waiting' check (status in ('Waiting', 'To approve', 'Approved', 'Signed')),
+  decided_at timestamptz,                  -- approved in VeQMS (before signing in Adobe Sign)
+  retrain boolean,                         -- this approver's retraining decision
+  retrain_reason text,
+  comment text,
   signed_at timestamptz,
   primary key (document_id, user_id),
   unique (document_id, position)

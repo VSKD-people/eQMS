@@ -68,12 +68,12 @@ insert into app.templates (tenant_id, code, name, kind, doc_type, version, state
 -- Documents
 insert into app.documents (id, tenant_id, number, doc_type, title, state, classification, owner_id, author_id, process, tags, effective_at, approval_due, training_days, training_quiz) values
   (pg_temp.k('POL-001'), pg_temp.k('tenant'), 'POL-001', 'Policy', 'Information Security Policy', 'Effective', 'Internal', pg_temp.k('vic'), pg_temp.k('vic'), 'ISMS · Governance', '{A.5.1}', pg_temp.d(-160), null, 14, true),
-  (pg_temp.k('POL-003'), pg_temp.k('tenant'), 'POL-003', 'Policy', 'Information Classification Policy', 'Review closed', 'Internal', pg_temp.k('vic'), pg_temp.k('vic'), 'ISMS · Information handling', '{A.5.12}', pg_temp.d(-290), null, 14, true),
-  (pg_temp.k('POL-004'), pg_temp.k('tenant'), 'POL-004', 'Policy', 'Access Control Policy', 'In approval', 'Internal', pg_temp.k('sam'), pg_temp.k('sam'), 'ISMS · Access control', '{A.5.15,A.8.3}', pg_temp.d(-390), pg_temp.d(-2, 17), 14, true),
+  (pg_temp.k('POL-003'), pg_temp.k('tenant'), 'POL-003', 'Policy', 'Information Classification Policy', 'Draft', 'Internal', pg_temp.k('vic'), pg_temp.k('vic'), 'ISMS · Information handling', '{A.5.12}', pg_temp.d(-290), null, 14, true),
+  (pg_temp.k('POL-004'), pg_temp.k('tenant'), 'POL-004', 'Policy', 'Access Control Policy', 'Signing', 'Internal', pg_temp.k('sam'), pg_temp.k('sam'), 'ISMS · Access control', '{A.5.15,A.8.3}', pg_temp.d(-390), pg_temp.d(-2, 17), 14, true),
   (pg_temp.k('SOP-012'), pg_temp.k('tenant'), 'SOP-012', 'Procedure', 'Backup and Restore Procedure', 'Effective', 'Internal', pg_temp.k('sam'), pg_temp.k('sam'), 'ISMS · Continuity', '{A.8.13}', pg_temp.d(-16), null, 14, true),
   (pg_temp.k('SOP-018'), pg_temp.k('tenant'), 'SOP-018', 'Procedure', 'Patch Management', 'Effective', 'Internal', pg_temp.k('omar'), pg_temp.k('omar'), 'ISMS · Vulnerability mgmt', '{A.8.8}', pg_temp.d(-90), null, 14, false),
   (pg_temp.k('VEN-001'), pg_temp.k('tenant'), 'VEN-001', 'Vendor approval', 'Offsite Backup Storage Provider', 'Effective', 'Confidential', pg_temp.k('tom'), pg_temp.k('grace'), 'ISMS · Supplier management', '{A.5.19}', pg_temp.d(-40), null, 14, false),
-  (pg_temp.k('VP-001'), pg_temp.k('tenant'), 'VP-001', 'Validation plan', 'Validation Plan: VeQMS Electronic Quality Management System', 'Review closed', 'Internal', pg_temp.k('vic'), pg_temp.k('priya'), 'ISMS · Governance', '{CSV,"Part 11"}', null, null, 14, false);
+  (pg_temp.k('VP-001'), pg_temp.k('tenant'), 'VP-001', 'Validation plan', 'Validation Plan: VeQMS Electronic Quality Management System', 'Draft', 'Internal', pg_temp.k('vic'), pg_temp.k('priya'), 'ISMS · Governance', '{CSV,"Part 11"}', null, null, 14, false);
 
 create or replace function pg_temp.body(p text) returns jsonb language sql immutable as
 $$ select jsonb_build_array(jsonb_build_object('t', 'h', 'x', '1. Purpose'), jsonb_build_object('t', 'p', 'x', p), jsonb_build_object('t', 'h', 'x', '2. Scope'), jsonb_build_object('t', 'p', 'x', 'Applies to all staff, contractors and systems in the ISMS scope.')) $$;
@@ -81,26 +81,26 @@ $$ select jsonb_build_array(jsonb_build_object('t', 'h', 'x', '1. Purpose'), jso
 insert into app.document_versions (id, tenant_id, document_id, version, kind, state, summary, content, content_sha256, created_by, created_at, approved_at, migrated_from) values
   (pg_temp.k('POL-001@3.0'), pg_temp.k('tenant'), pg_temp.k('POL-001'), '3.0', 'major', 'Effective', 'Added objectives for 2026.', pg_temp.body('Set direction and support for information security.'), pg_temp.sha('POL-001@3.0'), pg_temp.k('vic'), pg_temp.d(-175), pg_temp.d(-161), 'KSTARRS'),
   (pg_temp.k('POL-003@1.0'), pg_temp.k('tenant'), pg_temp.k('POL-003'), '1.0', 'major', 'Effective', 'First issue.', pg_temp.body('Label information so everyone knows how to handle it.'), pg_temp.sha('POL-003@1.0'), pg_temp.k('vic'), pg_temp.d(-300), pg_temp.d(-290), 'KSTARRS'),
-  (pg_temp.k('POL-003@1.1'), pg_temp.k('tenant'), pg_temp.k('POL-003'), '1.1', 'minor', 'Review closed', 'Added handling rules for printing and downloads.', pg_temp.body('Label information; Confidential may not be printed.'), pg_temp.sha('POL-003@1.1'), pg_temp.k('vic'), pg_temp.d(-4), null, null),
+  (pg_temp.k('POL-003@1.1'), pg_temp.k('tenant'), pg_temp.k('POL-003'), '1.1', 'minor', 'Draft', 'Added handling rules for printing and downloads.', pg_temp.body('Label information; Confidential may not be printed.'), pg_temp.sha('POL-003@1.1'), pg_temp.k('vic'), pg_temp.d(-4), null, null),
   (pg_temp.k('POL-004@1.0'), pg_temp.k('tenant'), pg_temp.k('POL-004'), '1.0', 'major', 'Effective', 'First issue.', pg_temp.body('Grant, review and remove access.'), pg_temp.sha('POL-004@1.0'), pg_temp.k('sam'), pg_temp.d(-400), pg_temp.d(-390), 'KSTARRS'),
-  (pg_temp.k('POL-004@2.0'), pg_temp.k('tenant'), pg_temp.k('POL-004'), '2.0', 'major', 'In approval', 'Quarterly access reviews; leavers lose access within 60 minutes.', pg_temp.body('Grant, review and remove access; quarterly reviews.'), pg_temp.sha('POL-004@2.0'), pg_temp.k('sam'), pg_temp.d(-14), null, null),
+  (pg_temp.k('POL-004@2.0'), pg_temp.k('tenant'), pg_temp.k('POL-004'), '2.0', 'major', 'Signing', 'Quarterly access reviews; leavers lose access within 60 minutes.', pg_temp.body('Grant, review and remove access; quarterly reviews.'), pg_temp.sha('POL-004@2.0'), pg_temp.k('sam'), pg_temp.d(-14), null, null),
   (pg_temp.k('SOP-012@2.1'), pg_temp.k('tenant'), pg_temp.k('SOP-012'), '2.1', 'minor', 'Superseded', 'Updated contact list.', pg_temp.body('Restore data after loss.'), pg_temp.sha('SOP-012@2.1'), pg_temp.k('sam'), pg_temp.d(-300), pg_temp.d(-298), 'KSTARRS'),
   (pg_temp.k('SOP-012@3.0'), pg_temp.k('tenant'), pg_temp.k('SOP-012'), '3.0', 'major', 'Effective', 'Point-in-time restore; second region; quarterly tests.', pg_temp.body('Restore data after loss, corruption or ransomware.'), pg_temp.sha('SOP-012@3.0'), pg_temp.k('sam'), pg_temp.d(-30), pg_temp.d(-16), null),
   (pg_temp.k('SOP-018@1.1'), pg_temp.k('tenant'), pg_temp.k('SOP-018'), '1.1', 'minor', 'Effective', 'Patch windows moved to Tuesday evenings.', pg_temp.body('Keep systems patched.'), pg_temp.sha('SOP-018@1.1'), pg_temp.k('omar'), pg_temp.d(-95), pg_temp.d(-90), null),
   (pg_temp.k('VEN-001@1.0'), pg_temp.k('tenant'), pg_temp.k('VEN-001'), '1.0', 'major', 'Effective', 'First approval of the provider.', pg_temp.body('Offsite storage for encrypted backup copies.'), pg_temp.sha('VEN-001@1.0'), pg_temp.k('grace'), pg_temp.d(-50), pg_temp.d(-40), null),
-  (pg_temp.k('VP-001@1.0'), pg_temp.k('tenant'), pg_temp.k('VP-001'), '1.0', 'major', 'Review closed', 'First issue.', pg_temp.body('How we validate the eQMS before go-live.'), pg_temp.sha('VP-001@1.0'), pg_temp.k('priya'), pg_temp.d(-12), null, null);
+  (pg_temp.k('VP-001@1.0'), pg_temp.k('tenant'), pg_temp.k('VP-001'), '1.0', 'major', 'Draft', 'First issue.', pg_temp.body('How we validate the eQMS before go-live.'), pg_temp.sha('VP-001@1.0'), pg_temp.k('priya'), pg_temp.d(-12), null, null);
 
 insert into app.document_reviewers (tenant_id, document_id, user_id, status, reviewed_at) values
   (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('priya'), 'Reviewed', pg_temp.d(-11)),
   (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('omar'), 'Reviewed', pg_temp.d(-6, 15)),
-  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('priya'), 'Reviewed', pg_temp.d(-1)),
-  (pg_temp.k('tenant'), pg_temp.k('VP-001'), pg_temp.k('omar'), 'Reviewed', pg_temp.d(-2, 16));
-insert into app.document_approvers (tenant_id, document_id, user_id, position, status) values
-  (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('vic'), 1, 'Your turn'),
-  (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('tom'), 2, 'Waiting'),
-  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('vic'), 1, 'Waiting'),   -- Victoria wrote it: sending is blocked (SoD)
-  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('tom'), 2, 'Waiting'),
-  (pg_temp.k('tenant'), pg_temp.k('VP-001'), pg_temp.k('vic'), 1, 'Waiting');
+  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('priya'), 'Not started', null),
+  (pg_temp.k('tenant'), pg_temp.k('VP-001'), pg_temp.k('omar'), 'Not started', null);
+insert into app.document_approvers (tenant_id, document_id, user_id, position, status, decided_at, retrain) values
+  (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('vic'), 1, 'Approved', pg_temp.d(-6, 14), true),   -- approved in VeQMS, then the agreement went out
+  (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('tom'), 2, 'Approved', pg_temp.d(-6, 15), true),
+  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('vic'), 1, 'Waiting', null, null),   -- Victoria wrote it: submitting with her as approver is blocked (SoD)
+  (pg_temp.k('tenant'), pg_temp.k('POL-003'), pg_temp.k('tom'), 2, 'Waiting', null, null),
+  (pg_temp.k('tenant'), pg_temp.k('VP-001'), pg_temp.k('vic'), 1, 'Waiting', null, null);
 
 -- Audiences
 insert into app.audience_groups (tenant_id, document_id, group_id)
@@ -194,8 +194,8 @@ end $$;
 insert into app.tasks (tenant_id, kind, record_type, record_id, record_number, assignee_id, due_at, note, ref)
 values
   (pg_temp.k('tenant'), 'esign', 'document', pg_temp.k('POL-004'), 'POL-004', pg_temp.k('vic'), pg_temp.d(-2, 17), 'QA approver 1 of 2 · author and reviewers have signed', pg_temp.k('env:POL-004')),
-  (pg_temp.k('tenant'), 'send-approval', 'document', pg_temp.k('POL-003'), 'POL-003', pg_temp.k('vic'), pg_temp.d(2, 17), 'Verify the PDF, then send one Adobe Sign agreement', null),
-  (pg_temp.k('tenant'), 'send-approval', 'document', pg_temp.k('VP-001'), 'VP-001', pg_temp.k('vic'), pg_temp.d(3, 17), 'QA approval of a validation plan', null);
+  (pg_temp.k('tenant'), 'author', 'document', pg_temp.k('POL-003'), 'POL-003', pg_temp.k('vic'), pg_temp.d(2, 17), 'Check the PDF and submit v1.1 for review', null),
+  (pg_temp.k('tenant'), 'author', 'document', pg_temp.k('VP-001'), 'VP-001', pg_temp.k('priya'), pg_temp.d(3, 17), 'Check the PDF and submit the validation plan for review', null);
 insert into app.tasks (tenant_id, kind, record_type, record_id, record_number, assignee_id, due_at, ref)
 select tenant_id, 'training', 'document', document_id, document_number, user_id, due_at, id from app.training_records where completed_at is null;
 

@@ -200,8 +200,11 @@ update app.settings set signing_allowance = 500 where tenant_id = pg_temp.k('ten
 set role veqms_app;
 select set_config('app.tenant_id', pg_temp.k('tenant')::text, false);
 
-\echo '8. Document versions: content locked after draft; approved versions only move to Superseded or Obsolete'
+\echo '8. Document versions: content and locked PDF fixed after draft; retraining decision needs a reason and is fixed once signing; approved versions only move to Superseded or Obsolete'
 do $$ begin
+  perform pg_temp.expect_error(format($q$update app.document_versions set pdf_blob = 'other.pdf' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '3.0')), 'is locked');
+  perform pg_temp.expect_error(format($q$update app.document_versions set retrain = false, retrain_reason = 'Typo' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '3.0')), 'retraining decision');
+  perform pg_temp.expect_error(format($q$update app.document_versions set retrain = false where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('VP-001'))), 'document_versions_check');
   perform pg_temp.expect_error(format($q$update app.document_versions set content = '[]' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '3.0')), 'is locked');
   perform pg_temp.expect_error(format($q$update app.document_versions set state = 'Draft' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '3.0')), 'can only become');
   perform pg_temp.expect_error(format($q$update app.document_versions set state = 'Effective' where id = %L$q$, (select id from app.document_versions where document_id = pg_temp.k('SOP-012') and version = '2.1')), 'cannot change state');
