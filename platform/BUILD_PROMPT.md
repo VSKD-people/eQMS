@@ -138,7 +138,9 @@ alert; leaver test meets the target; performance test; validation report signed 
 From the specs and the Phase 1 build. Ask the owner before the phase that needs each one:
 
 - RPO and RTO; retention schedule and the storage immutability period (Bicep default is a placeholder).
-- Two-person rule for role grants (R3); audit anchoring interval (R4); leaver and availability targets (R5, R6).
+- Two-person rule for role grants (R3); audit anchoring interval (R4; built with Step 1's 15 minutes as the default);
+  leaver and availability targets (R5, R6).
+- Retention period for IP addresses and devices in the audit trail (built with 90 days as the default).
 - Who holds System Administrator in production and who signs UAT (R2); independent code reviewer (R1).
 - Whether titles of Restricted documents may appear in email.
 - Whether a first effective version should be numbered 1.0 (the prototype and Phase 1 keep 0.1).

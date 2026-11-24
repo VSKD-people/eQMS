@@ -149,7 +149,8 @@ Adobe Sign account.
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | GET | `/training/my` | | `{ open: TrainingRecord[]; history: TrainingRecord[] }` |
-| POST | `/training/records/:id/complete` | `{ confirm: true, quizAnswers?: number[] }` | `TrainingRecord` (trainee only; system time) |
+| POST | `/training/records/:id/complete` | `{ confirm: true, quizAnswers?: number[] }` | `TrainingRecord` (trainee only; system time). `409` until the trainee has opened the PDF of that version since it was allocated |
+| GET | `/training/records/:id/opened` | | `{ opened: boolean }`: whether the trainee has opened the PDF of the record's version |
 | GET | `/training/records?userId=&documentNumber=&status=&all=1` | | `TrainingRecord[]` (training.org). Without `status`, only live records unless `all=1`; with `status`, every record in that status |
 | GET | `/training/records/:id` | | `{ record: TrainingRecord; corrections: TrainingRecord[]; audit: AuditEntry[] }` |
 | POST | `/training/records/:id/corrections` | `{ reason, retrain: boolean }` | `TrainingRecord` (Quality Manager) |
@@ -161,7 +162,7 @@ Adobe Sign account.
 |---|---|---|
 | GET | `/reports/:name.:format` name = `training-matrix` · `training-records` · `document-status` · `approvals-register` · `signing-transactions`; format = `xlsx` · `pdf`; same query filters as the screens | file, stamped "Generated (UTC) … by …", export logged |
 | GET | `/audit?objectType=&objectId=&action=&before=&limit=` | `AuditEntry[]` newest first (audit.read; `before` = seq for paging; viewing is itself logged). Object types: Document, CAPA, Quality event, Training record, Training, User, Group, Settings, Report, Audit trail |
-| GET | `/audit/verify` | `{ ok, entries, brokenAt }` |
+| GET | `/audit/verify` | `{ ok, entries, brokenAt, anchor: { anchored, seq, at, matches, problem } }`. `ok` is false if the chain is broken or doesn't match its latest anchor |
 | GET / PUT | `/settings` | `{ signingAllowance, allowanceYearStartMonth, allowanceWarnAt, ackStatement, reminderDays, overdueRepeatDays }` (PUT: qm, admin; logged with old and new values). `ackStatement` must contain `{doc}` and `{version}`. GET also returns `signingGoLive` and `signatureStatement` (read-only) |
 
 ### SCIM 2.0 for Entra ID provisioning (no prefix)

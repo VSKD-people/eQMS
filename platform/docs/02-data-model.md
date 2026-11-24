@@ -28,11 +28,13 @@ VeQMS tenant), `agreement_directory` (Adobe Sign agreement ID → tenant, for we
 | `004_quality_reviews_automation` | `change_requests`, `cr_actions`, `observations`, `quality_events`, `capas`, `capa_actions`, `evidence`, `periodic_reviews`, `record_links`, `automation_rules`, `automation_runs`, `dead_letters` |
 | `005_rls_and_grants` | row-level security on every tenant table; grants |
 | `006_webhook_inbox` | `webhook_inbox`: Adobe Sign notifications queued for the worker, unique per notification ID. No tenant (like `agreement_directory`); the API can't delete from it |
+| `007_audit_anchors` | `audit_anchors`: each anchor written to the `records` container (tenant, entry number, hash, time, blob key); insert-only |
 
 ## Rules enforced in the database
 
 | Rule | How |
 |---|---|
+| IP address and device kept apart | `audit_log.client_info_id` (covered by the hash) links to `audit_client_info` (IP, user agent), which the API can't change or delete; `app.purge_client_info()` deletes rows after `settings.client_info_retention_days`, and the chain still verifies |
 | Audit log is append-only and tamper-evident | `audit_log` insert trigger takes a per-tenant advisory lock, numbers entries without gaps (`seq`), and stores `hash = sha256(previous hash + entry)`. Update and delete are refused. `app.verify_audit_chain()` recomputes the chain and returns the first broken entry |
 | Everything important is audited | Triggers on training records; the API calls `app.audit()` for every other change, inside the same transaction |
 | Signatures are insert-only and only from Adobe Sign | `signatures` refuses update and delete. `source` is `adobe`, or `kstarrs` for migrated approvals: nothing is signed inside VeQMS |

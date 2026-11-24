@@ -83,6 +83,9 @@ param adobeSignClientId string = ''
 @description('Give the API its own public HTTPS address, so Adobe Sign webhooks and Entra SCIM provisioning can reach /webhooks/adobe-sign/<token> and /scim/v2. Leave false only if the web app proxies those paths.')
 param apiExternal bool = false
 
+@description('How often the audit anchor job runs (cron, UTC). Every 15 minutes by default, as Step 1 proposes; the interval is open decision R4.')
+param auditAnchorCron string = '*/15 * * * *'
+
 @description('Shared QMS mailbox for email notifications. Empty = in-app notifications only.')
 param graphMailFrom string = ''
 
@@ -362,6 +365,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     adobeSignAuth: adobeSignAuth
     adobeSignApiAccessPoint: adobeSignApiAccessPoint
     adobeSignClientId: adobeSignClientId
+    auditAnchorCron: auditAnchorCron
     graphMailFrom: graphMailFrom
     apiExternal: apiExternal
   }

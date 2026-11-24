@@ -32,7 +32,8 @@ database refuses any signature that didn't come from Adobe Sign (or KSTARRS, for
 | T05 Signer denies approving | Adobe Sign audit report and signed PDF stored with SHA-256 hashes; agreement ID and every status event kept | Built (mock); live untested |
 | T06 Approved file swapped in storage | Files written once (`wx` locally; blob container with a retention policy in Azure); hashes in the database | Built locally; Azure policy is Deployment |
 | T07 DBA edits or deletes audit rows | Append-only `audit_log`, hash chain, `app.verify_audit_chain()`, daily and on-demand checks | Built |
-| T08 Super-admin re-hashes the chain | Needs anchoring the chain head outside the database (the spec's 15-minute anchors) | Later (open decision R4) |
+| T08 Super-admin re-hashes the chain | The `veqms-anchor` job writes the chain head to the immutable `records` container every 15 minutes (default, as Step 1 proposes); `GET /audit/verify` compares the latest anchor with the chain, so a rewrite shows as a mismatch. A change made after the last anchor is caught only by the chain check | Built, untested in Azure; interval open decision R4 |
+| T-privacy IP address and device in the audit trail | Kept apart from the chain in `audit_client_info`, linked by ID, and deleted after `settings.client_info_retention_days` (default 90, to confirm); the chain covers only the link, so it still verifies | Built |
 | T09 Audit entries lost on error | The audit entry is in the same transaction as the change: both happen or neither does. Refusals are logged in their own transaction | Built |
 | T10 Reading or editing outside your rights | Permission check on every route; classification check on documents, agreement views and downloads; row-level security per tenant | Built |
 | T11 Author approves own record | Signing plan refuses author or reviewer as QA approver, and owner as closure approver; the refusal is logged | Built |

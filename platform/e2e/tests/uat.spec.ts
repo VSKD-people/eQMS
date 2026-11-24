@@ -98,8 +98,12 @@ test('4 · Daniel opens SOP-012, confirms with the quiz; a correction leaves the
   const recordUrl = daniel.url();
   // He must open the PDF of the version before he can confirm; VeQMS records the open.
   await expect(daniel.getByRole('status').filter({ hasText: 'Open the PDF of v3.0 first' })).toBeVisible();
-  const [pdf] = await Promise.all([daniel.waitForEvent('popup'), daniel.getByRole('link', { name: /Open PDF of v3\.0/ }).click()]);
-  await pdf.waitForLoadState().catch(() => undefined);
+  // The PDF opens in a new tab; wait for its response (that request is what logs the open), not for the tab to load.
+  const [pdf] = await Promise.all([
+    daniel.waitForEvent('popup'),
+    daniel.context().waitForEvent('response', (r) => /\/files\/documents\/SOP-012\/pdf/.test(r.url()) && r.status() === 200),
+    daniel.getByRole('link', { name: /Open PDF of v3\.0/ }).click()
+  ]);
   await pdf.close();
   // Answers from the demo seed: every quarter; 1 hour; encrypted and copied to a second region.
   await daniel.getByRole('group', { name: /How often is a restore test run/ }).getByLabel('Every quarter').check();

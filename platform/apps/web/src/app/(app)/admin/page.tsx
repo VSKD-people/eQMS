@@ -35,7 +35,7 @@ async function AuditTab({ sp }: { sp: SP }) {
   const f = { objectType: OBJECT_TYPES.includes(sp.objectType ?? '') ? sp.objectType! : '', objectId: (sp.objectId ?? '').slice(0, 100) };
   const [rows, check] = await Promise.all([
     load<AuditEntry[]>(`/audit${qs({ ...f, limit: 200 })}`),
-    sp.verify === '1' ? load<{ ok: boolean; entries: number; brokenAt: number | null }>('/audit/verify') : Promise.resolve(null)
+    sp.verify === '1' ? load<{ ok: boolean; entries: number; brokenAt: number | null; anchor: { anchored: boolean; seq: number | null; at: string | null; matches: boolean | null; problem: string | null } }>('/audit/verify') : Promise.resolve(null)
   ]);
   return (
     <>
@@ -50,8 +50,10 @@ async function AuditTab({ sp }: { sp: SP }) {
         <a className="btn" href={`/admin${qs({ tab: 'audit', ...f, verify: 1 })}`}>Verify the chain</a>
       </form>
       {check ? (check.ok
-        ? <div className="callout ok mb-16" role="status"><strong>Chain verified.</strong> {check.entries} entries checked; every hash matches the one before it.</div>
-        : <div className="callout warn mb-16" role="alert"><strong>The chain is broken at entry {check.brokenAt}.</strong> Treat this as a data-integrity incident and tell the Quality Manager now.</div>) : null}
+        ? <div className="callout ok mb-16" role="status"><strong>Chain verified.</strong> {check.entries} entries checked; every hash matches the one before it.
+            {' '}{check.anchor.anchored ? `The latest anchor (entry ${check.anchor.seq}, ${fmtUtc(check.anchor.at)}) matches.` : 'No anchor has been written yet.'}</div>
+        : <div className="callout warn mb-16" role="alert"><strong>{check.brokenAt ? `The chain is broken at entry ${check.brokenAt}.` : 'The chain does not match its anchor.'}</strong>
+            {' '}{check.anchor.problem ?? ''} Treat this as a data-integrity incident and tell the Quality Manager now.</div>) : null}
       {rows.length ? (
         <div className="table-wrap"><table className="t"><caption className="sr-only">Audit trail, newest first</caption>
           <thead><tr><th scope="col">#</th><th scope="col">When (UTC)</th><th scope="col">Who</th><th scope="col">Action</th><th scope="col">Record</th><th scope="col">Summary</th></tr></thead>

@@ -1,5 +1,5 @@
 // Container apps and jobs: veqms-api (internal ingress), veqms-web (public HTTPS), veqms-migrate (manual job)
-// and veqms-reminders (daily at 06:00 UTC). Secrets come from Key Vault through managed identities; nothing
+// veqms-reminders (daily at 06:00 UTC) and veqms-anchor (audit anchors, every 15 minutes by default). Secrets come from Key Vault through managed identities; nothing
 // secret is written here. NOT VALIDATED: check with `az bicep build` and what-if before first use.
 
 param location string
@@ -29,6 +29,9 @@ param adobeSignAuth string
 param adobeSignApiAccessPoint string
 param adobeSignClientId string
 param graphMailFrom string
+
+@description('How often the audit anchor job writes the chain head to the records container (cron, UTC). Every 15 minutes by default, as Step 1 proposes; the interval is open decision R4.')
+param auditAnchorCron string = '*/15 * * * *'
 
 @description('false: the API is reachable only inside the environment. Adobe Sign webhooks and Entra SCIM must reach /webhooks/adobe-sign/<token> and /scim/v2 from the internet, so either set this true (API gets its own public HTTPS address; every route still needs a bearer token, the webhook token or the SCIM token) or proxy those two paths through the web app.')
 param apiExternal bool = false
@@ -232,6 +235,41 @@ resource reminders 'Microsoft.App/jobs@2024-03-01' = {
           name: 'reminders'
           image: apiImage
           command: [ 'node', '/app/with-pg-token.mjs', 'node', 'apps/api/dist/jobs/reminders.js' ]
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
+          env: apiEnv
+        }
+      ]
+    }
+  }
+}
+
+// Audit anchors: the audit chain head written to the immutable records container (every 15 minutes by default, see
+// auditAnchorCron), so the chain can't be rewritten unnoticed.
+resource anchorJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: 'veqms-anchor'
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${appIdentityId}': {} }
+  }
+  properties: {
+    environmentId: environmentId
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 300
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: { cronExpression: auditAnchorCron, parallelism: 1, replicaCompletionCount: 1 }
+      registries: [ { server: registryServer, identity: appIdentityId } ]
+      secrets: apiSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'anchor'
+          image: apiImage
+          command: [ 'node', '/app/with-pg-token.mjs', 'node', 'apps/api/dist/jobs/anchor.js' ]
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: apiEnv
         }

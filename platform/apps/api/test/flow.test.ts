@@ -15,6 +15,7 @@ import * as admin from '../src/routes/admin.ts';
 import { createAdobeSign } from '../src/integrations/adobesign.ts';
 import { sendQueuedEmail } from '../src/integrations/mail.ts';
 import { HttpError } from '../src/lib/http.ts';
+import { anchor, checkLatest } from '../src/services/anchor.ts';
 
 test('API flow: Adobe Sign approvals, training records, closures, admin', { skip: process.env.DATABASE_URL ? false : 'set DATABASE_URL to a freshly seeded database' }, async () => {
   // Act as the API's database role, whatever login the test connects with. The role is set when each connection
@@ -236,6 +237,14 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   await fails(as('sam', (db, me) => signing.sendDocument(db, deps, me, 'POL-004', { verification: V, approvers: [ids.vic!] })), /Adobe Sign transactions is used up/, 'send refused when the allowance of transactions is used up');
   const chain = await sys((db) => one<any>(db, 'select * from app.verify_audit_chain()'));
   ok(chain.ok === true, `audit chain intact: ${chain.entries} entries`);
+  const a1st = await sys((db) => anchor(db, storage as any));
+  ok(!!a1st && a1st.seq === Number(chain.entries), `audit anchor written for entry ${a1st?.seq}`);
+  ok((await sys((db) => anchor(db, storage as any))) === null, 'no new anchor while the chain has not grown');
+  ok((await sys((db) => checkLatest(db, storage as any))).matches === true, 'the latest anchor matches the chain');
+  const anchorKey = [...files.keys()].find((k) => k.startsWith('audit-anchors/'))!;
+  files.set(anchorKey, Buffer.from(JSON.stringify({ ...a1st, hash: '0'.repeat(64) })));
+  const bad = await sys((db) => checkLatest(db, storage as any));
+  ok(bad.matches === false && /differs/.test(bad.problem ?? ''), 'a changed anchor file is reported');
   const actions = await sys((db) => rows<any>(db, `select action, count(*)::int as n from app.audit_log group by action order by action`));
   console.log('  audit actions: ' + actions.map((a: any) => `${a.action}=${a.n}`).join(', '));
   console.log(`\n${checks} checks passed`);

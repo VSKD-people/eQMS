@@ -5,6 +5,7 @@ import { ROLES, type Role } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
 import { badRequest, conflict, forbidden, notFound } from '../lib/http.ts';
 import { people, type Person } from '../lib/people.ts';
+import { checkLatest } from '../services/anchor.ts';
 import { audit, notify } from '../lib/work.ts';
 import { body, need, param, query, uuid, z } from '../lib/params.ts';
 import { reconcileUser } from '../services/training.ts';
@@ -134,7 +135,9 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.get('/audit/verify', (req) => ctx.run(req, async (db, me) => {
     need(me, 'audit.read');
     const r = await maybe<{ ok: boolean; entries: string; broken_at: string | null }>(db, 'select * from app.verify_audit_chain()');
-    await audit(db, 'audit.verify', 'Audit trail', '*', r?.ok ? `Verified the audit chain: ${r.entries} entries intact` : `Audit chain check FAILED at entry ${r?.broken_at}`);
-    return { ok: !!r?.ok, entries: Number(r?.entries ?? 0), brokenAt: r?.broken_at ? Number(r.broken_at) : null };
+    const anchorCheck = await checkLatest(db, ctx.storage);
+    const anchorNote = !anchorCheck.anchored ? 'no anchor yet' : anchorCheck.matches ? `latest anchor (entry ${anchorCheck.seq}) matches` : `ANCHOR MISMATCH: ${anchorCheck.problem}`;
+    await audit(db, 'audit.verify', 'Audit trail', '*', r?.ok ? `Verified the audit chain: ${r.entries} entries intact; ${anchorNote}` : `Audit chain check FAILED at entry ${r?.broken_at}; ${anchorNote}`);
+    return { ok: !!r?.ok && anchorCheck.matches !== false, entries: Number(r?.entries ?? 0), brokenAt: r?.broken_at ? Number(r.broken_at) : null, anchor: anchorCheck };
   }));
 }

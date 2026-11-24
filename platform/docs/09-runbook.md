@@ -40,6 +40,7 @@ points, not tested values; tune them after the first month.
 | API or web app down | Container app replica count, or failed readiness probes | No ready replica for 5 minutes |
 | Server errors | HTTP 5xx from `veqms-api` and `veqms-web` | Any sustained run of 5xx; tune after a month |
 | Reminders job failed | Job execution status for `veqms-reminders` | Any failed run |
+| Audit anchor job failed | Job execution status for `veqms-anchor` | Any failed run (anchors stop until it's fixed) |
 | Migration failed | Job execution status for `veqms-migrate` | Any failed run (the deploy workflow also stops) |
 | Database health | PostgreSQL CPU, storage used, failed connections | Storage nearing the limit; repeated failed connections |
 | Key Vault denied | Key Vault diagnostic logs, `Forbidden` results | Any (usually a role assignment or secret name problem) |
@@ -60,10 +61,9 @@ ContainerAppConsoleLogs_CL
 
 Logs must never hold secrets, tokens or document contents. If you find any, treat it as an incident.
 
-**Not in Phase 1:** the spec (Step 1, audit trail section) proposes writing the chain hash to a write-once container
-every 15 minutes, an hourly verifier and a nightly full check that raise a security alert on a mismatch. Phase 1 has
-only the on-demand check below. Until the anchors exist, run the weekly check and keep the residual risk on the risk
-register.
+**Audit anchors:** the `veqms-anchor` job writes the chain head to the write-once `records` container every 15
+minutes (Step 1's proposal; open decision R4). Alert on any failed run of the job. The spec's hourly verifier and
+nightly full check aren't built yet: until they are, run the check below weekly.
 
 ## Daily training reminders
 
@@ -204,7 +204,11 @@ Every change writes a hash-chained entry to the audit log. The check recomputes 
 broken entry.
 
 - Weekly, before every external audit, after every restore and after any incident: a Quality Manager runs
-  `GET /api/v1/audit/verify` and records the result `{ ok, entries, brokenAt }`.
+  `GET /api/v1/audit/verify` (Administration → Audit trail → Verify the chain) and records the result
+  `{ ok, entries, brokenAt, anchor }`. `anchor.matches` false means the chain no longer matches the head stored
+  outside the database: treat it like a broken chain.
+- The anchor files are in the `records` container under `audit-anchors/<tenant>/`. An auditor can compare any of them
+  with the audit entry it names.
 - Database administrators can run the same check with `app.verify_audit_chain()` (see the restore drill).
 
 If `ok` is false:
@@ -261,6 +265,8 @@ people can reach without VeQMS.
   deployment. Once the schedule is approved and validation is complete, set the period and lock it. Locking can't be
   undone, and a locked period can only be extended.
 - Database backups: 35 days. Log Analytics: 90 days (set in the Bicep). Change these only through change control.
+- IP addresses and devices recorded with audit entries: `settings.client_info_retention_days` (default 90, **to
+  confirm**). The daily job deletes them when due and logs how many; the audit entries themselves stay.
 - Legal hold: if records are needed for a dispute or investigation, a legal hold on the blob container stops changes
   regardless of the retention period. Agree with legal who can set and lift it.
 
