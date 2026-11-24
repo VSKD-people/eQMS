@@ -10,12 +10,13 @@ export interface RecordRow {
   id: string; user_id: string; user_name: string; document_id: string; document_number: string; title: string; version: string;
   allocated_by: string | null; allocated_by_name: string | null; alloc_reason: string; assigned_at: Date; due_at: Date | null; completed_at: Date | null;
   statement: string | null; quiz_result: string | null; via: string | null; agreement_id: string | null; correction_of: string | null;
-  correction_reason: string | null; no_retrain: boolean; closed_at: Date | null; closed_reason: string | null; effective_version: string | null; corrected: boolean;
+  correction_reason: string | null; no_retrain: boolean; closed_at: Date | null; closed_reason: string | null; effective_version: string | null; training_versions: string[] | null; corrected: boolean;
 }
 
 const RECORD_SELECT = `
   select r.*, u.name as user_name, a.name as allocated_by_name,
     (select v.version from app.document_versions v where v.document_id = r.document_id and v.state = 'Effective' limit 1) as effective_version,
+    app.training_versions(r.document_id) as training_versions,
     exists (select 1 from app.training_records c where c.correction_of = r.id) as corrected
   from app.training_records r join app.users u on u.id = r.user_id left join app.users a on a.id = r.allocated_by`;
 
@@ -23,7 +24,7 @@ const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
 
 export function status(r: RecordRow, now = new Date()): TrainingStatus {
   return trainingStatus({ id: r.id, userId: r.user_id, documentId: r.document_id, version: r.version, dueAt: iso(r.due_at), completedAt: iso(r.completed_at), closedAt: iso(r.closed_at), correctionOf: r.correction_of, noRetrain: r.no_retrain },
-    { now, effectiveVersion: r.effective_version, correctedIds: new Set(r.corrected ? [r.id] : []) });
+    { now, effectiveVersion: r.effective_version, equivalentVersions: r.training_versions ?? [], correctedIds: new Set(r.corrected ? [r.id] : []) });
 }
 
 export function toApi(r: RecordRow) {
@@ -45,8 +46,13 @@ export async function audienceOf(db: Db, documentId: string): Promise<Audience &
 }
 
 async function effective(db: Db, documentId: string) {
-  return maybe<{ id: string; number: string; title: string; version: string }>(db,
-    `select d.id, d.number, d.title, v.version from app.documents d join app.document_versions v on v.document_id = d.id and v.state = 'Effective' where d.id = $1`, [documentId]);
+  return maybe<{ id: string; number: string; title: string; version: string; counts: string[] }>(db,
+    `select d.id, d.number, d.title, v.version, app.training_versions(d.id) as counts from app.documents d join app.document_versions v on v.document_id = d.id and v.state = 'Effective' where d.id = $1`, [documentId]);
+}
+// Training on any version that still counts (see app.training_versions), complete or still open: no new allocation needed.
+async function hasCurrentRecord(db: Db, userId: string, doc: { id: string; counts: string[] }): Promise<boolean> {
+  return !!(await maybe(db, `select 1 from app.training_records r where r.user_id = $1 and r.document_id = $2 and r.version = any($3::text[])
+    and r.closed_at is null and not r.no_retrain and not exists (select 1 from app.training_records c where c.correction_of = r.id) limit 1`, [userId, doc.id, doc.counts]));
 }
 
 async function allocate(db: Db, doc: { id: string; number: string; title: string; version: string }, userId: string, reason: string, by: string | null, days: number): Promise<boolean> {
@@ -74,10 +80,12 @@ async function closeOpen(db: Db, where: string, params: unknown[], reason: strin
 export async function allocateDocument(db: Db, documentId: string, reason: string, by: string | null): Promise<number> {
   const doc = await effective(db, documentId);
   if (!doc) return 0;
-  await closeOpen(db, 'document_id = $1 and version <> $2', [documentId, doc.version], `Superseded by v${doc.version}`);
+  // Open allocations of versions that no longer count close as superseded. When the approver decided the new version
+  // needs no retraining, earlier training still counts and only people without any is allocated the new version.
+  await closeOpen(db, 'document_id = $1 and not (version = any($2::text[]))', [documentId, doc.counts], `Superseded by v${doc.version}`);
   const aud = await audienceOf(db, documentId);
   let n = 0;
-  for (const p of await people(db)) if (inAudience(aud, p) && (await allocate(db, doc, p.id, reason, by, aud.daysToComplete))) n++;
+  for (const p of await people(db)) if (inAudience(aud, p) && !(await hasCurrentRecord(db, p.id, doc)) && (await allocate(db, doc, p.id, reason, by, aud.daysToComplete))) n++;
   await automationRan(db, 'RULE-09', 'document', documentId, 'Done', n ? `Allocated v${doc.version} to ${n} people; earlier records kept as superseded` : hasAudience(aud) ? 'Everyone in the audience already has a record' : 'No training audience');
   return n;
 }
@@ -92,7 +100,7 @@ export async function reconcileUser(db: Db, userId: string, reason: string): Pro
     const aud = await audienceOf(db, d.id);
     if (inAudience(aud, p)) {
       const doc = await effective(db, d.id);
-      if (doc && (await allocate(db, doc, userId, reason, null, aud.daysToComplete))) added++;
+      if (doc && !(await hasCurrentRecord(db, userId, doc)) && (await allocate(db, doc, userId, reason, null, aud.daysToComplete))) added++;
     } else {
       closed += await closeOpen(db, 'user_id = $1 and document_id = $2 and correction_of is null', [userId, d.id], `${reason}: no longer in the audience`);
     }
@@ -209,8 +217,8 @@ export async function setAudience(db: Db, me: Person, documentId: string, a: { g
 }
 
 export async function matrix(db: Db, group?: string) {
-  const docs = await rows<{ id: string; number: string; title: string; version: string }>(db,
-    `select d.id, d.number, d.title, v.version from app.documents d join app.document_versions v on v.document_id = d.id and v.state = 'Effective' order by d.number`);
+  const docs = await rows<{ id: string; number: string; title: string; version: string; counts: string[] }>(db,
+    `select d.id, d.number, d.title, v.version, app.training_versions(d.id) as counts from app.documents d join app.document_versions v on v.document_id = d.id and v.state = 'Effective' order by d.number`);
   const everyone = (await people(db)).filter((p) => p.status === 'active' && !p.roles.includes('auditor') && (!group || p.groups.includes(group)));
   const all = await rows<RecordRow>(db, RECORD_SELECT);
   const withStatus = all.map((r) => ({ ...toApi(r), userId: r.user_id, assignedAt: iso(r.assigned_at)! }));
@@ -221,7 +229,7 @@ export async function matrix(db: Db, group?: string) {
     const recs = withStatus.filter((r) => r.documentId === d.id);
     if (!hasAudience(aud) && !recs.length) continue;
     shown.push(d);
-    for (const p of everyone) (cells[p.id] ??= {})[d.id] = matrixCell(p, aud, d.version, recs);
+    for (const p of everyone) (cells[p.id] ??= {})[d.id] = matrixCell(p, aud, d.version, recs, d.counts);
   }
   return { documents: shown.map((d) => ({ id: d.id, number: d.number, title: d.title, currentVersion: d.version })), people: everyone.map((p) => ({ id: p.id, name: p.name, jobTitle: p.jobTitle })), cells };
 }

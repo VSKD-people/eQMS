@@ -91,6 +91,9 @@ test('training status: superseded, corrected, correction, withdrawn, overdue, co
   assert.equal(trainingStatus(base, { ...ctx, correctedIds: new Set(['r1']) }), 'Corrected');
   assert.equal(trainingStatus({ ...base, correctionOf: 'r0', noRetrain: true }, ctx), 'Correction');
   assert.equal(trainingStatus(base, { ...ctx, effectiveVersion: null }), 'Obsolete');
+  // v3.1 approved without retraining: training on v3.0 still counts.
+  assert.equal(trainingStatus({ ...base, completedAt: '2026-11-02T00:00:00Z' }, { ...ctx, effectiveVersion: '3.1', equivalentVersions: ['3.0', '3.1'] }), 'Complete');
+  assert.equal(trainingStatus({ ...base, version: '2.1', completedAt: '2026-01-01T00:00:00Z' }, { ...ctx, effectiveVersion: '3.1', equivalentVersions: ['3.0', '3.1'] }), 'Superseded');
 });
 
 test('matrix cell shows superseded training and missing allocations', () => {
@@ -100,6 +103,9 @@ test('matrix cell shows superseded training and missing allocations', () => {
   assert.deepEqual(matrixCell(u, a, '3.0', [old]), { status: 'Superseded', versionTrained: '2.1', currentVersion: '3.0', recordId: 'o' });
   assert.equal(matrixCell(u, a, '3.0', [])?.status, 'Not allocated');
   assert.equal(matrixCell(U('lena', ['employee'], []), a, '3.0', []), null);
+  // 3.1 needed no retraining: Jake's 3.0 training is complete for 3.1.
+  const done30 = { ...old, id: 'n', version: '3.0', completedAt: '2026-06-01T00:00:00Z', status: 'Complete' as const, assignedAt: '2026-05-01T00:00:00Z' };
+  assert.deepEqual(matrixCell(u, a, '3.1', [old, done30], ['3.0', '3.1']), { status: 'Complete', versionTrained: '3.0', currentVersion: '3.1', recordId: 'n' });
 });
 
 test('permissions: auditor read-only, admin cannot manage training', () => {

@@ -48,12 +48,14 @@ export type DocumentDetail = {
   id: string; number: string; title: string; docType: string; state: string; classification: string; process: string; tags: string[];
   owner: Person; author: Person; effectiveAt: string | null; approvalDue: string | null;
   versions: { id: string; version: string; kind: string; state: string; summary: string; createdAt: string; approvedAt: string | null; agreementId: string | null; migratedFrom: string | null }[];
-  current: { version: string; state: string; summary: string; content: Block[]; contentSha256: string };
+  // pdf: the locked PDF made at submit (its hash is contentSha256); checkedAt: when the author made the four checks.
+  current: { version: string; state: string; summary: string; content: Block[]; contentSha256: string; pdf: { sha256: string; checkedAt: string | null } | null;
+    retrain: boolean; retrainReason: string | null; changeRequest: { number: string; state: string } | null };
   reviewers: { user: Person; status: string; reviewedAt: string | null }[];
-  approvers: { user: Person; position: 1 | 2; status: string }[];
+  approvers: { user: Person; position: 1 | 2; status: string; decidedAt: string | null; retrain: boolean | null; retrainReason: string | null }[];
   audience: Audience;
   agreement: AgreementSummary | null;
-  can: { edit: boolean; submit: boolean; review: boolean; sendBack: boolean; send: boolean; sign: boolean; cancel: boolean; newVersion: boolean; changeAudience: boolean };
+  can: { edit: boolean; submit: boolean; review: boolean; approve: boolean; sendBack: boolean; sign: boolean; cancel: boolean; newVersion: boolean; changeAudience: boolean };
 };
 
 export type ApprovalPlan = { subject: string; signers: Signer[]; problems: string[]; allowance: Allowance };

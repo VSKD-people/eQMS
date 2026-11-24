@@ -36,7 +36,7 @@ export function relDue(iso: string | null | undefined): { text: string; cls: str
 
 const STATE_CLS: Record<string, string> = {
   Effective: 'chip-done', Closed: 'chip-done', Complete: 'chip-done', Completed: 'chip-done', completed: 'chip-done', Signed: 'chip-done', signed: 'chip-done', Reviewed: 'chip-done',
-  'In review': 'chip-turn', 'In approval': 'chip-turn', 'Review closed': 'chip-turn', Assigned: 'chip-turn', sent: 'chip-turn', delivered: 'chip-turn', 'Your turn': 'chip-turn',
+  'In review': 'chip-turn', 'In approval': 'chip-turn', Signing: 'chip-turn', Assigned: 'chip-turn', sent: 'chip-turn', delivered: 'chip-turn', 'Your turn': 'chip-turn',
   'Effectiveness check': 'chip-due', Assessment: 'chip-due', Superseded: 'chip-due', 'Not allocated': 'chip-overdue',
   Overdue: 'chip-overdue', declined: 'chip-overdue', Declined: 'chip-overdue',
   Draft: 'chip-outline', Obsolete: 'chip-outline', Withdrawn: 'chip-outline', Corrected: 'chip-outline', Correction: 'chip-outline',

@@ -5,9 +5,9 @@ import { Chip, Cls, Notice, Stepper, Tabs } from '@/components/ui';
 import { AgreementCard, AgreementFiles, AgreementStatus } from '@/components/agreement';
 import { MockSignPanel } from '@/components/MockSign';
 import { AudienceFields } from '../AudienceFields';
-import { changeAudience, markReviewed, newVersion, sendBack, cancelAgreement } from '../actions';
+import { approveDocument, changeAudience, markReviewed, newVersion, sendBack, cancelAgreement } from '../actions';
 
-const STATES = ['Draft', 'In review', 'Review closed', 'In approval', 'Effective'];
+const STATES = ['Draft', 'In review', 'In approval', 'Signing', 'Effective'];
 
 type Props = { params: Promise<{ number: string }>; searchParams: Promise<{ tab?: string; all?: string; ok?: string; err?: string }> };
 
@@ -19,7 +19,9 @@ export default async function DocumentPage({ params, searchParams }: Props) {
   const tab = ['document', 'history', 'approval', 'training'].includes(sp.tab ?? '') ? (sp.tab as string) : 'document';
   const [d, me] = await Promise.all([load<DocumentDetail>(`/documents/${encodeURIComponent(number)}`), getMe()]);
   const env = d.agreement;
-  const labels: Record<string, string> = { 'Review closed': 'Review closed · verify and send', 'In approval': env && env.status === 'sent' ? `Adobe Sign · ${env.signed} of ${env.signers.length} signed` : 'In approval' };
+  const approved = d.approvers.filter((a) => a.status === 'Approved' || a.status === 'Signed').length;
+  const labels: Record<string, string> = { 'In approval': d.state === 'In approval' ? `In approval · ${approved} of ${d.approvers.length}` : 'In approval',
+    Signing: env && env.status === 'sent' ? `Adobe Sign · ${env.signed} of ${env.signers.length} signed` : 'Signing' };
 
   return (
     <>
@@ -32,7 +34,6 @@ export default async function DocumentPage({ params, searchParams }: Props) {
         <div className="btn-row">
           {d.can.edit ? <a className="btn" href={`/documents/${d.number}/edit`}>Edit draft</a> : null}
           {d.can.submit ? <a className="btn btn-primary" href={`/documents/${d.number}/submit`}>Submit for review</a> : null}
-          {d.can.send ? <a className="btn btn-primary" href={`/documents/${d.number}/send`}>Verify and send to Adobe Sign</a> : null}
           <a className="btn" href={`/files/documents/${d.number}/pdf`}>PDF</a>
         </div>
       </div>
@@ -43,20 +44,31 @@ export default async function DocumentPage({ params, searchParams }: Props) {
       {d.state !== 'Obsolete' ? <div className="card mb-16"><Stepper states={STATES} current={d.state === 'Superseded' ? 'Effective' : d.state} labels={labels} /></div>
         : <div className="callout warn mb-16"><strong>Obsolete.</strong> Archived, not deleted; it stays in the register and audit trail.</div>}
 
-      {(d.can.review || d.can.sendBack || d.can.newVersion) ? (
+      {(d.can.review || d.can.approve || d.can.sendBack || d.can.newVersion) ? (
         <div className="card card-pad mb-16"><div className="label mb-8">Actions</div><div className="stack-sm">
           {d.can.review ? (
             <details><summary className="btn-link" style={{ padding: 0 }}>Mark reviewed</summary>
               <form action={markReviewed.bind(null, d.number)} className="mt-8">
                 <div className="field"><label htmlFor="rc">Comment (optional)</label><textarea className="textarea" id="rc" name="comment" /></div>
                 <button className="btn btn-primary mt-8" type="submit">Mark reviewed</button>
-                <p className="small muted mt-8">When you’re the last reviewer, review closes and the owner is asked to verify and send the Adobe Sign agreement.</p>
+                <p className="small muted mt-8">When you’re the last reviewer, the QA approvers are asked to approve it.</p>
+              </form></details>) : null}
+          {d.can.approve ? (
+            <details open><summary className="btn-link" style={{ padding: 0 }}>Approve</summary>
+              <form action={approveDocument.bind(null, d.number)} className="mt-8">
+                <fieldset className="mb-8"><legend>Does this change need retraining?</legend>
+                  <label className="check"><input type="radio" name="retrain" value="yes" defaultChecked /> Yes: everyone in the audience reads and confirms the new version</label>
+                  <label className="check"><input type="radio" name="retrain" value="no" /> No: existing training on the previous version still counts</label></fieldset>
+                <div className="field"><label htmlFor="rr">If no, why not? (required for no)</label><textarea className="textarea" id="rr" name="reason" placeholder="For example: corrects a typing error; what people do doesn’t change." /></div>
+                <div className="field mt-8"><label htmlFor="ac">Comment (optional)</label><textarea className="textarea" id="ac" name="comment" /></div>
+                <button className="btn btn-primary mt-8" type="submit">Approve</button>
+                <p className="small muted mt-8">You sign later in Adobe Sign. When the last QA approver approves, the locked PDF goes to Adobe Sign at once in one agreement with every signer. If any approver says retraining is needed, it is.</p>
               </form></details>) : null}
           {d.can.sendBack ? (
-            <details><summary className="btn-link" style={{ padding: 0 }}>Send back to draft</summary>
+            <details><summary className="btn-link" style={{ padding: 0 }}>Return to the author</summary>
               <form action={sendBack.bind(null, d.number)} className="mt-8">
                 <div className="field"><label htmlFor="sb">Reason (required)</label><textarea className="textarea" id="sb" name="reason" required /></div>
-                <button className="btn mt-8" type="submit">Send back</button>
+                <button className="btn mt-8" type="submit">Return to the author</button>
               </form></details>) : null}
           {d.can.newVersion ? (
             <details><summary className="btn-link" style={{ padding: 0 }}>Start a new version</summary>
@@ -66,7 +78,7 @@ export default async function DocumentPage({ params, searchParams }: Props) {
                   <label className="check"><input type="radio" name="kind" value="minor" /> Minor: wording, layout or corrections</label></fieldset>
                 <div className="field"><label htmlFor="nv">Why is it changing? (required)</label><textarea className="textarea" id="nv" name="summary" required /></div>
                 <button className="btn mt-8" type="submit">Start draft</button>
-                <p className="small muted mt-8">v{d.current.version} stays effective until the new version’s Adobe Sign agreement completes.</p>
+                <p className="small muted mt-8">This opens a change request for the new version. v{d.current.version} stays effective until the new version’s Adobe Sign agreement completes.</p>
               </form></details>) : null}
         </div></div>) : null}
 
@@ -82,13 +94,17 @@ export default async function DocumentPage({ params, searchParams }: Props) {
           <div className="card ctx-card"><span className="label">Details</span><dl className="dl">
             <div><dt>Owner</dt><dd>{d.owner.name}</dd></div><div><dt>Author</dt><dd>{d.author.name}</dd></div>
             <div><dt>Quality process</dt><dd>{d.process}</dd></div><div><dt>Effective</dt><dd>{fmtDate(d.effectiveAt)}</dd></div>
-            {d.approvalDue && d.state === 'In approval' ? <div><dt>Approval due</dt><dd>{fmtDate(d.approvalDue)}</dd></div> : null}
+            {d.current.changeRequest ? <div><dt>Change request</dt><dd>{d.current.changeRequest.number} · {d.current.changeRequest.state}</dd></div> : null}
+            {d.current.pdf ? <div><dt>Locked PDF</dt><dd className="mono small">{d.current.pdf.sha256.slice(0, 16)}…</dd></div> : null}
+            {['Signing', 'Effective'].includes(d.current.state) ? <div><dt>Retraining</dt><dd>{d.current.retrain ? 'Needed' : `Not needed: ${d.current.retrainReason ?? ''}`}</dd></div> : null}
+            {d.approvalDue && d.state === 'Signing' ? <div><dt>Signing due</dt><dd>{fmtDate(d.approvalDue)}</dd></div> : null}
             <div><dt>Tags</dt><dd>{d.tags.join(', ') || '—'}</dd></div>
           </dl></div>
           <div className="card ctx-card"><span className="label">People</span>
             {d.reviewers.map((r) => <div className="people-row" key={r.user.id}><span className="who"><span>{r.user.name} · Reviewer</span></span><span className="status-text">{r.status}</span></div>)}
-            {d.approvers.map((a) => <div className="people-row" key={a.user.id}><span className="who"><span>{a.user.name} · QA approver {d.approvers.length > 1 ? a.position : ''}</span></span><span className="status-text">{a.status}</span></div>)}
-            <p className="small muted mt-8" style={{ marginBottom: 0 }}>Adobe Sign signing order: author, reviewers, then QA approver.</p>
+            {d.approvers.map((a) => <div className="people-row" key={a.user.id}><span className="who"><span>{a.user.name} · QA approver {d.approvers.length > 1 ? a.position : ''}</span></span>
+              <span className="status-text" title={a.retrain === false ? `No retraining: ${a.retrainReason ?? ''}` : undefined}>{a.status}{a.retrain === false ? ' · no retraining' : a.retrain ? ' · retraining' : ''}</span></div>)}
+            <p className="small muted mt-8" style={{ marginBottom: 0 }}>Reviewed and approved here, then signed in Adobe Sign: author, reviewers, then QA approvers.</p>
           </div>
           {env ? <AgreementCard e={env} /> : null}
         </aside>
@@ -122,7 +138,7 @@ function History({ d }: { d: DocumentDetail }) {
 async function Approval({ d }: { d: DocumentDetail }) {
   const list = await load<{ items: AgreementSummary[] }>(`/agreements?record=${encodeURIComponent(d.number)}`).catch(() => ({ items: d.agreement ? [d.agreement] : [] }));
   const items = list.items.filter((e) => e.recordNumber === d.number);
-  if (!items.length) return <div className="empty"><h3>No Adobe Sign agreements yet</h3><p>{d.state === 'Review closed' ? 'Verify the PDF and send it to Adobe Sign.' : 'An agreement is sent once review closes.'}</p></div>;
+  if (!items.length) return <div className="empty"><h3>No Adobe Sign agreements yet</h3><p>The agreement goes to Adobe Sign when the last QA approver approves.</p></div>;
   return (
     <div className="stack">
       {items.map((e) => (

@@ -3,46 +3,52 @@
 // Run once, in order, against a freshly seeded database. Scenarios touch different records, so one failing
 // doesn't stop the others.
 import { test, expect } from '@playwright/test';
-import { signIn, expectOk, expectRefused, mockSign, mockDecline, verifyAndSend, expectDocState } from './helpers';
+import { signIn, expectOk, expectRefused, mockSign, mockDecline, verifyAndSend, expectDocState, checkPdfAndSubmit, markReviewed, approveDoc } from './helpers';
 
-test('1 · Victoria cannot send POL-003 she wrote: blocked on screen and logged, refused by the API and logged', async ({ browser }) => {
+test('1 · Victoria cannot submit POL-003 she wrote with herself as QA approver: not offered, refused by the API and logged', async ({ browser }) => {
   const vic = await signIn(browser, 'victoria');
-  await vic.goto('/documents/POL-003/send');
-  await expect(vic.locator('.callout.warn[role=alert]')).toContainText(/segregation of duties/i);
-  await expect(vic.getByRole('button', { name: 'Send to Adobe Sign' })).toBeDisabled();
+  await vic.goto('/documents/POL-003/submit');
+  await expect(vic.locator('#a1 option', { hasText: 'Victoria' })).toHaveCount(0);
 
-  // Being shown the block is itself logged.
-  await vic.goto('/admin?tab=audit&objectId=POL-003');
-  await expect(vic.locator('main tbody tr', { hasText: 'Send page shown with sending blocked' })).toHaveCount(1);
-  await vic.goto('/documents/POL-003/send');
-
-  // The API checks again even if the browser is bypassed: enable the button and post the form anyway.
-  for (const c of await vic.getByRole('group', { name: /Verification check/ }).getByRole('checkbox').all()) await c.check();
-  await vic.getByRole('button', { name: 'Send to Adobe Sign' }).evaluate((b) => b.removeAttribute('disabled'));
-  await vic.getByRole('button', { name: 'Send to Adobe Sign' }).click();
+  // The API checks again even if the browser is bypassed: put her back in the list and post the form anyway.
+  await vic.goto('/documents/POL-003?tab=training');
+  await vic.getByText('Change audience').click();
+  await vic.getByText(/Named people/).click();
+  const vicId = await vic.getByLabel(/Victoria/).getAttribute('value');
+  await vic.goto('/documents/POL-003/submit');
+  await vic.locator('#a1').evaluate((s, id) => { const o = document.createElement('option'); o.value = id!; o.text = 'Victoria'; s.appendChild(o); (s as HTMLSelectElement).value = id!; }, vicId);
+  await vic.getByRole('button', { name: 'Make the PDF' }).click();
   await expectRefused(vic, /segregation of duties/i);
 
   // The refusal reached the audit trail even though the request rolled back.
   await vic.goto('/admin?tab=audit&objectId=POL-003');
-  await expect(vic.locator('main tbody tr', { hasText: /agreement not sent \(blocked\): .*segregation of duties/i })).toHaveCount(1);
+  await expect(vic.locator('main tbody tr', { hasText: /Submit refused: .*segregation of duties/i })).toHaveCount(1);
 });
 
-test('2 · VP-001: verify and send, sign in order, becomes Effective, training follows', async ({ browser }) => {
-  const vic = await signIn(browser, 'victoria');
-  await vic.goto('/documents/VP-001/send');
-  await verifyAndSend(vic);
-  await expectOk(vic, 'Sent to Adobe Sign');
-  await expectDocState(vic, 'VP-001', 'In approval');
+test('2 · VP-001: Carrie checks the locked PDF and submits, Omar reviews, Victoria approves, the agreement goes out, all sign, Effective', async ({ browser }) => {
+  const carrie = await signIn(browser, 'carrie');
+  await carrie.goto('/documents/VP-001/submit');
+  await carrie.getByRole('button', { name: 'Make the PDF' }).click();
+  await expectOk(carrie, 'PDF made and locked');
+  await checkPdfAndSubmit(carrie, 'VP-001');
+  await expectDocState(carrie, 'VP-001', 'In review');
 
-  // Victoria is the QA approver, so she has no Sign button until the author and reviewer have signed.
+  const omar = await signIn(browser, 'omar');
+  await markReviewed(omar, 'VP-001');
+  await expectDocState(omar, 'VP-001', 'In approval');
+
+  // Victoria is the only QA approver: her approval sends the agreement to Adobe Sign at once.
+  const vic = await signIn(browser, 'victoria');
+  await approveDoc(vic, 'VP-001');
+  await expectDocState(vic, 'VP-001', 'Signing');
+  // She has no Sign button until the author and reviewer have signed.
   await expect(vic.getByRole('button', { name: /^Sign \(/ })).toHaveCount(0);
 
-  const carrie = await signIn(browser, 'carrie');
   await mockSign(carrie, '/documents/VP-001', 'Authored');
-  const omar = await signIn(browser, 'omar');
   await mockSign(omar, '/documents/VP-001', 'Reviewed');
   await mockSign(vic, '/documents/VP-001', 'Approved');
   await expectDocState(vic, 'VP-001', 'Effective');
+  await expect(vic.locator('.ctx-card')).toContainText('CR-019 · Closed');
 
   // Signing the agreement counts as training for the author and reviewer.
   await vic.goto('/documents/VP-001?tab=training');
@@ -55,7 +61,7 @@ test('2 · VP-001: verify and send, sign in order, becomes Effective, training f
   await expect(jim.locator('main')).toContainText('VP-001');
 });
 
-test('3 · POL-004: cancel, resubmit, corrected send, decline back to draft', async ({ browser }) => {
+test('3 · POL-004: cancel, resubmit, PJ returns it, resubmit, both approve (no retraining), corrected send, decline back to draft', async ({ browser }) => {
   const jim = await signIn(browser, 'jim');
   await jim.goto('/documents/POL-004?tab=approval');
   await jim.getByText('Cancel this agreement').click();
@@ -64,25 +70,40 @@ test('3 · POL-004: cancel, resubmit, corrected send, decline back to draft', as
   await expectOk(jim, 'Agreement cancelled');
   await expectDocState(jim, 'POL-004', 'Draft');
 
-  // Resubmit with Carrie as the only reviewer.
+  // Resubmit with Carrie as the only reviewer (Victoria and PJ stay the QA approvers).
   await jim.goto('/documents/POL-004/submit');
   const reviewers = jim.getByRole('group', { name: /Reviewers/ });
   for (const c of await reviewers.getByRole('checkbox').all()) await c.uncheck();
   await reviewers.getByLabel(/Carrie Foreman/).check();
-  await jim.getByRole('button', { name: 'Submit for review' }).click();
-  await expectOk(jim, 'Submitted');
+  await jim.getByRole('button', { name: 'Make the PDF' }).click();
+  await expectOk(jim, 'PDF made and locked');
+  await checkPdfAndSubmit(jim, 'POL-004');
 
   const carrie = await signIn(browser, 'carrie');
-  await carrie.goto('/documents/POL-004');
-  await carrie.getByText('Mark reviewed', { exact: true }).first().click();
-  await carrie.getByRole('button', { name: 'Mark reviewed' }).click();
-  await expectOk(carrie, 'Marked reviewed');
-  await expectDocState(carrie, 'POL-004', 'Review closed');
+  await markReviewed(carrie, 'POL-004');
+  await expectDocState(carrie, 'POL-004', 'In approval');
+
+  // PJ returns it to the author from approval.
+  const pj = await signIn(browser, 'pj');
+  await pj.goto('/documents/POL-004');
+  await pj.getByText('Return to the author', { exact: true }).first().click();
+  await pj.getByLabel('Reason (required)').fill('Clause 4 needs the 60-minute rule for leavers.');
+  await pj.getByRole('button', { name: 'Return to the author' }).click();
+  await expectOk(pj, 'Returned to the author');
+  await expectDocState(pj, 'POL-004', 'Draft');
+
+  // The locked PDF is unchanged, so Jim checks it again and resubmits.
+  await jim.goto('/documents/POL-004/submit');
+  await checkPdfAndSubmit(jim, 'POL-004');
+  await markReviewed(carrie, 'POL-004');
+  const vic = await signIn(browser, 'victoria');
+  await approveDoc(vic, 'POL-004', 'Clarifies the existing rules; what staff do is unchanged.');
+  await expectDocState(vic, 'POL-004', 'In approval');
+  await approveDoc(pj, 'POL-004', 'Wording only; no new steps for staff.');
+  await expectDocState(pj, 'POL-004', 'Signing');
 
   // The corrected agreement is a new transaction, linked to the cancelled one.
-  await jim.goto('/documents/POL-004/send');
-  await verifyAndSend(jim);
-  await expectOk(jim, 'Sent to Adobe Sign');
+  await jim.goto('/documents/POL-004?tab=approval');
   await expect(jim.locator('main')).toContainText('Correction');
 
   await mockSign(jim, '/documents/POL-004', 'Authored');

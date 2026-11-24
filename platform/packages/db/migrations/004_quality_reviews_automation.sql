@@ -26,6 +26,14 @@ create table app.change_requests (
 -- Every amendment starts as a change request: each document version links to the one that produced it, which closes
 -- when that version becomes Effective. (Phase 1 creates these automatically; full change control is Phase 2.)
 alter table app.document_versions add column change_request_id uuid references app.change_requests(id);
+create or replace function app.version_cr_guard() returns trigger language plpgsql as $$
+begin
+  if old.change_request_id is not null and new.change_request_id is distinct from old.change_request_id then
+    raise exception 'the change request behind version % cannot change', old.version using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+create trigger document_versions_cr_guard before update on app.document_versions for each row execute function app.version_cr_guard();
 
 create table app.cr_actions (
   id uuid primary key default gen_random_uuid(),

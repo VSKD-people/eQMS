@@ -50,12 +50,42 @@ export async function mockDecline(page: Page, recordPath: string, reason: string
   await expectOk(page, 'Declined (mock Adobe Sign)');
 }
 
-// The four verification ticks on every send form, then Send to Adobe Sign.
+// The four verification ticks on a closure send form, then Send to Adobe Sign.
 export async function verifyAndSend(page: Page): Promise<void> {
   const checks = page.getByRole('group', { name: /Verification check/ }).getByRole('checkbox');
   await expect(checks).toHaveCount(4);
   for (const c of await checks.all()) await c.check();
   await page.getByRole('button', { name: 'Send to Adobe Sign' }).click();
+}
+
+// Submit, step 2: open the locked PDF (it must download), tick the four checks, submit.
+export async function checkPdfAndSubmit(page: Page, number: string): Promise<void> {
+  const pdf = await page.request.get(`/files/documents/${number}/pdf`);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()['content-type']).toContain('application/pdf');
+  const checks = page.getByRole('group', { name: /Checks/ }).getByRole('checkbox');
+  await expect(checks).toHaveCount(4);
+  for (const c of await checks.all()) await c.check();
+  await page.getByRole('button', { name: 'Submit for review' }).click();
+  await expectOk(page, 'Submitted');
+}
+
+export async function markReviewed(page: Page, number: string): Promise<void> {
+  await page.goto(`/documents/${number}`);
+  await page.getByText('Mark reviewed', { exact: true }).first().click();
+  await page.getByRole('button', { name: 'Mark reviewed' }).click();
+  await expectOk(page, 'Marked reviewed');
+}
+
+// A QA approver approves in VeQMS. Without a reason, retraining is needed (the default).
+export async function approveDoc(page: Page, number: string, noRetrainReason?: string): Promise<void> {
+  await page.goto(`/documents/${number}`);
+  if (noRetrainReason) {
+    await page.getByLabel(/No: existing training/).check();
+    await page.getByLabel(/If no, why not/).fill(noRetrainReason);
+  }
+  await page.getByRole('button', { name: 'Approve', exact: true }).click();
+  await expectOk(page, 'Approved');
 }
 
 // The version chip in the record header reads "v<version> · <state>".

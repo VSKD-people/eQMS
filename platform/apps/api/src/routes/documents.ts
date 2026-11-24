@@ -1,16 +1,16 @@
-// Documents: draft, review, the Adobe Sign approval send, audience and the read-and-understood records.
+// Documents: draft, submit (locked PDF and its check), review, approval in VeQMS (the last approval sends the Adobe
+// Sign agreement), audience and the read-and-understood records.
 import type { FastifyInstance } from 'fastify';
 import { maybe, one } from '@veqms/db';
-import { DOC_TYPES, ROLES, signatureTag } from '@veqms/domain';
+import { DOC_TYPES, ROLES } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
 import { forbidden, notFound } from '../lib/http.ts';
-import { person } from '../lib/people.ts';
 import { audit } from '../lib/work.ts';
 import { body, need, noContent, number, param, pdf, query, uuid, z } from '../lib/params.ts';
 import * as docs from '../services/documents.ts';
 import * as signing from '../services/agreements.ts';
 import * as training from '../services/training.ts';
-import { documentPdf } from '../services/pdf.ts';
+import { renderDocumentPdf } from '../services/plans.ts';
 
 const verification = z.object({ footer: z.literal(true), version: z.literal(true), documentId: z.literal(true), dates: z.literal(true), note: z.string().max(1000).optional() });
 const audience = z.object({
@@ -45,10 +45,18 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return noContent(reply);
   });
 
-  api.post('/documents/:number/submit', async (req, reply) => {
+  // Submit, step 1: choose the people, then the draft is converted to PDF, hashed and locked for checking.
+  api.post('/documents/:number/pdf', (req) => ctx.run(req, (db, me) => {
     const { number: n } = param(p, req.params);
     const b = body(z.object({ reviewers: z.array(uuid).max(20), approvers: z.array(uuid).min(1).max(2) }), req.body);
-    await ctx.run(req, (db, me) => docs.submit(db, me, n, b.reviewers, b.approvers));
+    return docs.preparePdf(db, me, ctx.storage, n, b.reviewers, b.approvers);
+  }));
+
+  // Submit, step 2: the four checks on the locked PDF (pdfSha256 is the hash of the PDF the author was shown).
+  api.post('/documents/:number/submit', async (req, reply) => {
+    const { number: n } = param(p, req.params);
+    const b = body(z.object({ verification, pdfSha256: z.string().regex(/^[0-9a-f]{64}$/) }), req.body);
+    await ctx.run(req, (db, me) => docs.submit(db, me, n, b.verification, b.pdfSha256));
     return noContent(reply);
   });
 
@@ -58,6 +66,13 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     await ctx.run(req, (db, me) => docs.review(db, me, n, b.comment));
     return noContent(reply);
   });
+
+  // A QA approver approves in VeQMS and decides on retraining. The last approval sends the Adobe Sign agreement.
+  api.post('/documents/:number/approve', (req) => ctx.run(req, (db, me) => {
+    const { number: n } = param(p, req.params);
+    const b = body(z.object({ retrain: z.boolean(), reason: z.string().max(2000).optional(), comment: z.string().max(4000).optional() }), req.body);
+    return docs.approve(db, me, n, b, (tx, by, num) => signing.sendApprovedDocument(tx, ctx, by, num));
+  }));
 
   api.post('/documents/:number/send-back', async (req, reply) => {
     const { number: n } = param(p, req.params);
@@ -72,23 +87,17 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return docs.newVersion(db, me, n, b.kind, b.summary);
   }));
 
-  // What the agreement will look like before anything is sent: signers in order, problems that block the send, and the allowance.
+  // What the agreement will look like: signers in order, problems that block it, and the allowance.
   api.get('/documents/:number/approval-plan', (req) => ctx.run(req, async (db, me) => {
     const { number: n } = param(p, req.params);
-    const q = query({ approvers: z.string().optional() }, req.query);
-    const ids = q.approvers ? q.approvers.split(',').filter(Boolean).map((x) => uuid.parse(x)) : undefined;
-    const r = await signing.planForDocument(db, n, ids);
+    const q = query({ approvers: z.string().optional(), reviewers: z.string().optional() }, req.query);
+    const ids = (x?: string) => (x === undefined ? undefined : x.split(',').filter(Boolean).map((y) => uuid.parse(y)));
+    const r = await signing.planForDocument(db, n, { approvers: ids(q.approvers), reviewers: ids(q.reviewers) });
     await docs.assertVisible(db, me, r.d);
     await signing.logBlockedPlan(db, r.plan, 'document', n);
     const name = (id: string) => r.people.find((x) => x.id === id)?.name ?? '';
     return { subject: r.plan.subject, purpose: r.plan.purpose, version: r.v.version, problems: r.plan.problems,
       signers: r.plan.signers.map((s) => ({ ...s, name: name(s.userId), status: 'waiting', signedAt: null })), allowance: await signing.allowance(db) };
-  }));
-
-  api.post('/documents/:number/agreements', (req) => ctx.run(req, (db, me) => {
-    const { number: n } = param(p, req.params);
-    const b = body(z.object({ verification, approvers: z.array(uuid).min(1).max(2) }), req.body);
-    return signing.sendDocument(db, ctx, me, n, b);
   }));
 
   api.put('/documents/:number/audience', (req) => ctx.run(req, async (db, me) => {
@@ -99,7 +108,8 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
     return training.setAudience(db, me, d.id, b);
   }));
 
-  // The exact PDF that goes into the agreement (footer, version, document ID and signature page), for the verification check.
+  // The locked PDF of a version (the one checked, signed and published). A draft not yet converted gets a preview made
+  // from its text, without signature fields.
   api.get('/documents/:number/pdf', async (req, reply) => {
     const { number: n } = param(p, req.params);
     const q = query({ version: z.string().regex(/^\d+\.\d+$/).optional() }, req.query);
@@ -110,14 +120,9 @@ export function documentRoutes(api: FastifyInstance, ctx: Ctx): void {
         ? await maybe<docs.VersionRow>(db, 'select * from app.document_versions where document_id = $1 and version = $2', [d.id, q.version])
         : await docs.currentVersion(db, d.id);
       if (!v) throw notFound('That version doesn’t exist.');
-      const owner = await person(db, d.owner_id);
-      let signers: { name: string; roleLabel: string; meaning: string; anchor: string }[] = [];
-      try {
-        const plan = await signing.planForDocument(db, n);
-        signers = plan.plan.signers.map((s, i) => ({ name: plan.people.find((x) => x.id === s.userId)?.name ?? '', roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
-      } catch { /* no approvers chosen yet: the preview has no signature lines */ }
       await docs.logPdfOpen(db, d, v);
-      return { bytes: await documentPdf({ number: d.number, title: d.title, version: v.version, classification: d.classification, owner: owner?.name ?? '', generatedAt: new Date(), blocks: v.content, signers }), name: `${d.number}_v${v.version}.pdf` };
+      const bytes = v.pdf_blob ? new Uint8Array(await ctx.storage.get(v.pdf_blob)) : await renderDocumentPdf(db, d, v, null, []);
+      return { bytes, name: `${d.number}_v${v.version}${v.pdf_blob ? '' : '_preview'}.pdf` };
     });
     return pdf(reply, out.bytes, out.name);
   });

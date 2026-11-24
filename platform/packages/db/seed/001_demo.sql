@@ -90,6 +90,15 @@ insert into app.document_versions (id, tenant_id, document_id, version, kind, st
   (pg_temp.k('VEN-001@1.0'), pg_temp.k('tenant'), pg_temp.k('VEN-001'), '1.0', 'major', 'Effective', 'First approval of the provider.', pg_temp.body('Offsite storage for encrypted backup copies.'), pg_temp.sha('VEN-001@1.0'), pg_temp.k('grace'), pg_temp.d(-50), pg_temp.d(-40), null),
   (pg_temp.k('VP-001@1.0'), pg_temp.k('tenant'), pg_temp.k('VP-001'), '1.0', 'major', 'Draft', 'First issue.', pg_temp.body('How we validate the eQMS before go-live.'), pg_temp.sha('VP-001@1.0'), pg_temp.k('priya'), pg_temp.d(-12), null, null);
 
+-- Every amendment starts as a change request, which closes when the version it produces becomes Effective.
+insert into app.change_requests (id, tenant_id, number, title, size, state, owner_id, process, description, reason, created_at) values
+  (pg_temp.k('CR-018'), pg_temp.k('tenant'), 'CR-018', 'POL-004 v2.0: Access Control Policy', 'Major', 'In execution', pg_temp.k('sam'), 'ISMS · Access control', 'Quarterly access reviews; leavers lose access within 60 minutes.', 'Quarterly access reviews; leavers lose access within 60 minutes.', pg_temp.d(-14)),
+  (pg_temp.k('CR-019'), pg_temp.k('tenant'), 'CR-019', 'VP-001 v1.0: Validation Plan: VeQMS Electronic Quality Management System', 'Major', 'In execution', pg_temp.k('priya'), 'ISMS · Governance', 'New document', 'New document', pg_temp.d(-12)),
+  (pg_temp.k('CR-020'), pg_temp.k('tenant'), 'CR-020', 'POL-003 v1.1: Information Classification Policy', 'Minor', 'In execution', pg_temp.k('vic'), 'ISMS · Information handling', 'Added handling rules for printing and downloads.', 'Added handling rules for printing and downloads.', pg_temp.d(-4));
+update app.document_versions set change_request_id = pg_temp.k('CR-018') where id = pg_temp.k('POL-004@2.0');
+update app.document_versions set change_request_id = pg_temp.k('CR-019') where id = pg_temp.k('VP-001@1.0');
+update app.document_versions set change_request_id = pg_temp.k('CR-020') where id = pg_temp.k('POL-003@1.1');
+
 insert into app.document_reviewers (tenant_id, document_id, user_id, status, reviewed_at) values
   (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('priya'), 'Reviewed', pg_temp.d(-11)),
   (pg_temp.k('tenant'), pg_temp.k('POL-004'), pg_temp.k('omar'), 'Reviewed', pg_temp.d(-6, 15)),
@@ -214,7 +223,7 @@ values (pg_temp.k('tenant'), 'effectiveness', 'capa', pg_temp.k('CAPA-005'), 'CA
 
 insert into app.counters (tenant_id, prefix, value) values
   (pg_temp.k('tenant'), 'POL', 10), (pg_temp.k('tenant'), 'SOP', 21), (pg_temp.k('tenant'), 'WI', 4), (pg_temp.k('tenant'), 'VEN', 1), (pg_temp.k('tenant'), 'VP', 1), (pg_temp.k('tenant'), 'VR', 0), (pg_temp.k('tenant'), 'UAR', 0), (pg_temp.k('tenant'), 'RA', 0),
-  (pg_temp.k('tenant'), 'QE', 17), (pg_temp.k('tenant'), 'CAPA', 9), (pg_temp.k('tenant'), 'CR', 17), (pg_temp.k('tenant'), 'PR', 37);
+  (pg_temp.k('tenant'), 'QE', 17), (pg_temp.k('tenant'), 'CAPA', 9), (pg_temp.k('tenant'), 'CR', 20), (pg_temp.k('tenant'), 'PR', 37);
 
 select app.audit('seed', 'Tenant', pg_temp.k('tenant')::text, 'Loaded demo data (sample records, import mode)');
 

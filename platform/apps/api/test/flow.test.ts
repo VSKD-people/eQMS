@@ -1,10 +1,13 @@
 // End-to-end run of the API services against a freshly seeded database, as the veqms_app role (row-level
 // security, grants and database rules all apply). It changes data: CI migrates and seeds a scratch database just
 // before it (see .github/workflows/platform-ci.yml). Skipped when DATABASE_URL is not set.
-// Covers Route 1 (Adobe Sign approvals: send, sign in order, complete, cancel, decline, correction send, closures,
-// webhook-style status sync) and Route 2 (allocation, confirmation, quiz, locks, corrections), plus admin and email.
+// Covers Route 1 (the amendment flow: change request, locked PDF and its check at submit, review, approval in VeQMS
+// with the retraining decision, the agreement sent on the last approval, signing in order, cancel, decline, returns,
+// closures, webhook-style status sync) and Route 2 (allocation, confirmation, quiz, locks, corrections), plus admin
+// and email.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createPool, withTenant, rows, one, type Db } from '@veqms/db';
 import { personByOid, people } from '../src/lib/people.ts';
 import * as signing from '../src/services/agreements.ts';
@@ -25,8 +28,8 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const pool = createPool({ connectionString: url.toString() });
   const tenantId = (await pool.query('select tenant_id from app.tenant_directory where entra_tenant_id = $1', ['dev-tenant'])).rows[0].tenant_id;
   // The test changes data, so it needs a freshly seeded database. Say so plainly rather than fail halfway through.
-  const fresh = (await withTenant(pool, { tenantId, userId: null }, (db) => rows<{ state: string }>(db, "select state from app.documents where number = 'VP-001'")))[0];
-  assert.equal(fresh?.state, 'Review closed', 'This test needs a freshly migrated and seeded database (npm run db:migrate && npm run db:seed on an empty database).');
+  const fresh = await withTenant(pool, { tenantId, userId: null }, (db) => rows<{ number: string; state: string }>(db, "select number, state from app.documents where number in ('VP-001', 'POL-004') order by number"));
+  assert.equal(fresh.map((d) => d.state).join(), 'Signing,Draft', 'This test needs a freshly migrated and seeded database (npm run db:migrate && npm run db:seed on an empty database).');
   const files = new Map<string, Buffer>();
   const storage = { put: async (k: string, b: Uint8Array) => { if (files.has(k)) throw new Error('exists ' + k); files.set(k, Buffer.from(b)); }, get: async (k: string) => files.get(k)! };
   const deps = { esign: createAdobeSign({ ADOBE_SIGN_MODE: 'mock' } as any), storage };
@@ -48,6 +51,22 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   async function signAll(envId: string, order: string[]) {
     for (const who of order) await as(who, (db, me) => signing.mockAct(db, deps, me, envId, 'sign'));
   }
+  // The amendment flow's steps, as the API routes call them.
+  const sendWith = (dp: any) => (tx: Db, by: any, n: string) => signing.sendApprovedDocument(tx, dp, by, n);
+  const makePdf = (who: string, n: string, reviewers: string[], approvers: string[]) => as(who, (db, me) => docs.preparePdf(db, me, storage as any, n, reviewers, approvers));
+  async function submitDoc(who: string, n: string, reviewers: string[], approvers: string[]) {
+    const { sha256 } = await makePdf(who, n, reviewers, approvers);
+    await as(who, (db, me) => docs.submit(db, me, n, V, sha256));
+    return sha256;
+  }
+  const approve = (who: string, n: string, o: { retrain?: boolean; reason?: string } = {}, dp: any = deps) =>
+    as(who, (db, me) => docs.approve(db, me, n, { retrain: o.retrain ?? true, reason: o.reason }, sendWith(dp)));
+  const sentFor = async (n: string) => {
+    const r = await sys((db) => one<{ id: string }>(db, `select id from app.agreements where record_number = $1 order by sent_at desc limit 1`, [n]));
+    return as('vic', (db, me) => signing.detail(db, me, r.id));
+  };
+  const versionOf = (n: string) => sys((db) => one<any>(db, `select v.*, c.number as cr_number, c.state as cr_state from app.document_versions v join app.documents d on d.id = v.document_id
+    left join app.change_requests c on c.id = v.change_request_id where d.number = $1 order by v.created_at desc limit 1`, [n]));
 
   console.log('Allowance and planning');
   const a0 = await as('vic', (db) => signing.allowance(db));
@@ -62,20 +81,39 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const before = (await sys((db) => one<{ n: number }>(db, `select count(*)::int as n from app.audit_log where action = 'sod.block'`))).n;
   await as('vic', (db) => signing.logBlockedPlan(db, planVp.plan, 'document', 'VP-001'));
   ok((await sys((db) => one<{ n: number }>(db, `select count(*)::int as n from app.audit_log where action = 'sod.block'`))).n === before, 'a plan without a segregation-of-duties problem logs nothing');
-  const sod = await fails(as('vic', (db, me) => signing.sendDocument(db, deps, me, 'POL-003', { verification: V, approvers: [ids.vic!, ids.tom!] })), /segregation of duties/, 'POL-003 send blocked (SoD)');
-  ok(sod instanceof HttpError && sod.log?.action === 'sod.block', 'the SoD refusal carries an audit note for the error handler');
-  await fails(as('vic', (db, me) => signing.sendDocument(db, deps, me, 'VP-001', { verification: { ...V, dates: false } as any, approvers: [ids.vic!] })), /verification/, 'send refused until all four verification checks are ticked');
-  await fails(as('daniel', (db, me) => signing.sendDocument(db, deps, me, 'VP-001', { verification: V, approvers: [ids.vic!] })), /owner|role/, 'an employee cannot send');
+  const sod = await fails(makePdf('vic', 'POL-003', [ids.priya!], [ids.vic!, ids.tom!]), /segregation of duties/, 'POL-003: submitting with its author as QA approver is refused (SoD)');
+  ok(sod instanceof HttpError && sod.log?.action === 'sod.block' && /^Submit refused/.test(sod.log.summary), 'the SoD refusal at submit carries an audit note for the error handler');
 
-  console.log('Route 1: VP-001 sent, signed in order, completed');
-  const e1 = await as('vic', (db, me) => signing.sendDocument(db, deps, me, 'VP-001', { verification: V, approvers: [ids.vic!] }));
-  ok(e1.transactionNo === base + 1 && e1.allowanceYear === a0.year && e1.status === 'sent', `one send counted: send ${e1.transactionNo} of ${a0.year}`);
-  ok(e1.signers.map((s: any) => `${s.meaning}:${s.routingOrder}:${s.status}`).join(',') === 'Authored:1:sent,Reviewed:2:waiting,Approved:3:waiting', 'signing order: author, reviewer, QA approver; only the author has it');
-  ok(await docState('VP-001') === 'In approval', 'VP-001 is In approval');
+  console.log('Route 1: VP-001 submitted (locked PDF, four checks), reviewed, approved, signed in order, Effective');
+  ok((await versionOf('VP-001')).cr_number === 'CR-019', 'the amendment started as a change request (CR-019)');
+  await fails(as('daniel', (db, me) => docs.preparePdf(db, me, storage as any, 'VP-001', [ids.omar!], [ids.vic!])), /author or owner/, 'only the author or owner can submit');
+  await fails(as('priya', (db, me) => docs.submit(db, me, 'VP-001', V, '0'.repeat(64))), /Make the PDF/, 'no submit before the PDF is made');
+  const pdf1 = await makePdf('priya', 'VP-001', [ids.omar!], [ids.vic!]);
+  const v1 = await versionOf('VP-001');
+  ok(v1.pdf_blob && v1.content_sha256 === pdf1.sha256 && createHash('sha256').update(files.get(v1.pdf_blob)!).digest('hex') === pdf1.sha256, 'the draft is converted to PDF, hashed and locked; the version hash is the PDF hash');
+  await fails(as('priya', (db, me) => docs.submit(db, me, 'VP-001', { ...V, dates: false } as any, pdf1.sha256)), /four checks/, 'submit refused until all four checks are ticked');
+  await fails(as('priya', (db, me) => docs.submit(db, me, 'VP-001', V, 'f'.repeat(64))), /PDF changed/, 'submit refused for a PDF other than the one checked');
+  await as('priya', (db, me) => docs.submit(db, me, 'VP-001', V, pdf1.sha256));
+  ok(await docState('VP-001') === 'In review' && (await versionOf('VP-001')).verification?.by === ids.priya, 'submitted: In review, with who made the checks');
+  await fails(as('priya', (db, me) => docs.saveDraft(db, me, 'VP-001', [{ t: 'p', x: 'Changed' }], 'x')), /Only a draft/, 'the submitted draft can no longer be edited');
+  await fails(sys((db) => db.query(`update app.document_versions set pdf_blob = 'other.pdf' where id = $1`, [v1.id])), /is locked/, 'the database refuses to swap the locked PDF');
+  await fails(approve('vic', 'VP-001'), /isn’t waiting for approval/, 'no approval before review');
+  await as('omar', (db, me) => docs.review(db, me, 'VP-001', 'Looks right'));
+  ok(await docState('VP-001') === 'In approval', 'review complete: In approval');
+  const ta = await sys((db) => rows<any>(db, `select assignee_id from app.tasks where record_number = 'VP-001' and kind = 'approve-doc' and status = 'open'`));
+  ok(ta.length === 1 && ta[0].assignee_id === ids.vic, 'the QA approver has an approve task');
+  await fails(approve('daniel', 'VP-001'), /QA approver/, 'only a QA approver on the document can approve');
+  await fails(approve('vic', 'VP-001', { retrain: false, reason: 'n/a' }), /why no retraining/, '"no retraining" needs a reason');
+  ok((await approve('vic', 'VP-001')).sent === true, 'last approval: sent to Adobe Sign at once');
+  const e1 = await sentFor('VP-001');
+  ok(e1.transactionNo === base + 1 && e1.allowanceYear === a0.year && e1.status === 'sent', `one transaction counted: ${e1.transactionNo} of ${a0.year}`);
+  ok(e1.signers.map((s: any) => `${s.meaning}:${s.routingOrder}:${s.status}`).join(',') === 'Authored:1:sent,Reviewed:2:waiting,Approved:3:waiting', 'every signer added at once, in order: author, reviewer, QA approver; only the author has it');
+  ok(e1.files.original.sha256 === pdf1.sha256 && e1.verification?.by === ids.priya, 'the agreement carries the locked PDF the author checked, and their check');
+  ok(await docState('VP-001') === 'Signing', 'VP-001 is Signing');
   const t1 = await sys((db) => rows(db, `select kind, assignee_id from app.tasks where record_number = 'VP-001' and status = 'open' order by kind`));
-  ok(t1.some((t: any) => t.kind === 'esign' && t.assignee_id === ids.priya) && t1.filter((t: any) => t.kind === 'fyi').length === 2, 'tasks: author signs now; reviewer and approver get FYIs');
+  ok(t1.some((t: any) => t.kind === 'esign' && t.assignee_id === ids.priya) && t1.filter((t: any) => t.kind === 'fyi').length === 2 && !t1.some((t: any) => t.kind === 'approve-doc'), 'tasks: author signs now; reviewer and approver get FYIs');
   await fails(as('vic', (db, me) => signing.mockAct(db, deps, me, e1.id, 'sign')), /isn’t your turn/, 'QA approver cannot sign before the author and reviewer');
-  await fails(as('vic', (db, me) => signing.sendDocument(db, deps, me, 'VP-001', { verification: V, approvers: [ids.vic!] })), /Review closed|already out/, 'no second agreement while one is out');
+  await fails(approve('vic', 'VP-001'), /isn’t waiting for approval/, 'no second approval or agreement while one is out');
   await as('priya', (db, me) => signing.mockAct(db, deps, me, e1.id, 'sign'));
   const mid = await as('vic', (db, me) => signing.detail(db, me, e1.id));
   ok(mid.signers.find((s: any) => s.meaning === 'Reviewed')?.status === 'sent' && mid.signed === 1, 'after the author signs, the reviewer is up');
@@ -83,6 +121,7 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const d1 = await as('vic', (db, me) => signing.detail(db, me, e1.id));
   ok(d1.status === 'completed' && d1.files.signed && d1.files.auditReport, 'agreement completed; signed PDF and audit report stored with hashes');
   ok(await docState('VP-001') === 'Effective', 'VP-001 is Effective');
+  ok((await versionOf('VP-001')).cr_state === 'Closed', 'its change request CR-019 closed');
   const sig1 = await sys((db) => rows(db, `select meaning, source from app.signatures where record_number = 'VP-001' order by meaning`));
   ok(sig1.length === 3 && sig1.every((s: any) => s.source === 'adobe'), '3 signatures recorded from Adobe Sign');
   const tr1 = await sys((db) => rows<any>(db, `select r.user_id, r.completed_at, r.agreement_id, r.alloc_reason from app.training_records r where r.document_number = 'VP-001'`));
@@ -102,18 +141,34 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   ok(await docState('POL-004') === 'Draft', 'cancelled: POL-004 back to Draft');
   const v4 = await as('sam', (db, me) => signing.detail(db, me, e4.id));
   ok(v4.status === 'cancelled' && v4.reason === 'Wrong date in the footer' && v4.signers.filter((s: any) => s.status === 'cancelled').length === 2, 'cancel reason kept; unsigned signers voided');
-  await as('sam', (db, me) => docs.submit(db, me, 'POL-004', [ids.priya!], [ids.vic!, ids.tom!]));
+  const ap4 = await sys((db) => rows<any>(db, `select status, retrain from app.document_approvers a join app.documents d on d.id = a.document_id where d.number = 'POL-004'`));
+  ok(ap4.every((a) => a.status === 'Waiting' && a.retrain === null), 'cancelled: the approvals are undone; it goes through review and approval again');
+  const sha4 = await submitDoc('sam', 'POL-004', [ids.priya!], [ids.vic!, ids.tom!]);
   ok(await docState('POL-004') === 'In review', 'resubmitted for review');
   await fails(as('omar', (db, me) => docs.review(db, me, 'POL-004')), /pending reviewer/, 'only a named reviewer can review');
   await as('priya', (db, me) => docs.review(db, me, 'POL-004', 'Fine'));
-  ok(await docState('POL-004') === 'Review closed', 'last reviewer closes the review');
-  const e5 = await as('sam', (db, me) => signing.sendDocument(db, deps, me, 'POL-004', { verification: V, approvers: [ids.vic!, ids.tom!] }));
+  ok(await docState('POL-004') === 'In approval', 'last reviewer: In approval');
+  ok((await approve('vic', 'POL-004', { retrain: false, reason: 'Wording only; what staff do is unchanged.' })).sent === false && await docState('POL-004') === 'In approval', 'first of two approvals: nothing sent yet');
+  await fails(as('daniel', (db, me) => docs.sendBack(db, me, 'POL-004', 'Not for me')), /Only a reviewer, an approver/, 'someone not on the document cannot return it');
+  await as('tom', (db, me) => docs.sendBack(db, me, 'POL-004', 'Clause 4 needs the 60-minute rule for leavers'));
+  ok(await docState('POL-004') === 'Draft', 'a QA approver returned it to the author');
+  const rt = await sys((db) => rows<any>(db, `select note from app.tasks where record_number = 'POL-004' and kind = 'resubmit' and status = 'open'`));
+  ok(rt.length === 1 && /60-minute/.test(rt[0].note), 'the author has a resubmit task with the reason');
+  await as('sam', (db, me) => docs.submit(db, me, 'POL-004', V, sha4));
+  await as('priya', (db, me) => docs.review(db, me, 'POL-004', 'Fine'));
+  await approve('vic', 'POL-004', { retrain: false, reason: 'Wording only; what staff do is unchanged.' });
+  ok((await approve('tom', 'POL-004', { retrain: false, reason: 'Clarifies an existing rule; no new steps.' })).sent === true, 'second approval: sent');
+  const v4b = await versionOf('POL-004');
+  ok(v4b.retrain === false && /Wording only/.test(v4b.retrain_reason) && /no new steps/.test(v4b.retrain_reason), 'both approvers said no retraining: recorded on the version with their reasons');
+  const e5 = await sentFor('POL-004');
   ok(e5.correctionOf === e4.id && e5.transactionNo === base + 2, 'correction send: linked to the cancelled agreement, counted as a new transaction');
   await as('sam', (db, me) => signing.mockAct(db, deps, me, e5.id, 'sign'));
   await as('priya', (db, me) => signing.mockAct(db, deps, me, e5.id, 'decline', 'Section 3 contradicts SOP-018'));
   const d5 = await as('sam', (db, me) => signing.detail(db, me, e5.id));
   ok(d5.status === 'declined' && /SOP-018/.test(d5.reason ?? ''), 'declined with the reason recorded');
   ok(await docState('POL-004') === 'Draft', 'declined: POL-004 back to Draft');
+  const v4c = await versionOf('POL-004');
+  ok(v4c.retrain === true && v4c.retrain_reason === null && v4c.cr_state === 'In execution', 'declined: the retraining decision is reset; the change request stays open');
   const rs = await sys((db) => rows(db, `select note from app.tasks where record_number = 'POL-004' and kind = 'resubmit' and status = 'open'`));
   ok(rs.length === 1 && /SOP-018/.test((rs[0] as any).note), 'author has a resubmit task with the reason');
 
@@ -122,20 +177,27 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const nd = await as('sam', (db, me) => docs.create(db, me, { docType: 'Procedure', title: 'Firewall Change Procedure', classification: 'Internal', ownerId: ids.sam!, process: 'ISMS · Network',
     audience: { groups: ['Support team'], roles: [], users: [ids.lena!], daysToComplete: 10, quiz: false } }));
   ok(/^SOP-\d+$/.test(nd.number), `numbered ${nd.number}`);
+  ok((await versionOf(nd.number)).cr_state === 'In execution', 'creating a document opened its change request');
   const noAudience = { groups: [], roles: [], users: [], daysToComplete: 14, quiz: false };
   const uar = await as('vic', (db, me) => docs.create(db, me, { docType: 'User access review', title: 'Q4 access review: finance systems', classification: 'Confidential', ownerId: ids.vic!, process: 'ISMS · Access control', audience: noAudience }));
   const ra = await as('vic', (db, me) => docs.create(db, me, { docType: 'Risk assessment', title: 'Cloud backup provider risk assessment', classification: 'Confidential', ownerId: ids.vic!, process: 'ISMS · Risk', audience: noAudience }));
   ok(uar.number === 'UAR-001' && ra.number === 'RA-001', `new document types: ${uar.number} and ${ra.number}, approved through Adobe Sign like any controlled document`);
   await as('sam', (db, me) => docs.saveDraft(db, me, nd.number, [{ t: 'h', x: '1. Purpose' }, { t: 'p', x: 'Control firewall changes.' }], 'First draft'));
-  await as('sam', (db, me) => docs.submit(db, me, nd.number, [], [ids.tom!]));
-  ok(await docState(nd.number) === 'Review closed', 'no reviewers: straight to Review closed');
-  const e6 = await as('sam', (db, me) => signing.sendDocument(db, deps, me, nd.number, { verification: V, approvers: [ids.tom!] }));
+  const firstPdf = (await makePdf('sam', nd.number, [], [ids.tom!])).sha256;
+  await as('sam', (db, me) => docs.saveDraft(db, me, nd.number, [{ t: 'h', x: '1. Purpose' }, { t: 'p', x: 'Control and record firewall changes.' }], 'First draft'));
+  ok(!(await versionOf(nd.number)).pdf_blob, 'editing the draft clears its PDF');
+  await fails(as('sam', (db, me) => docs.submit(db, me, nd.number, V, firstPdf)), /Make the PDF/, 'so the old PDF cannot be submitted');
+  await submitDoc('sam', nd.number, [], [ids.tom!]);
+  ok(await docState(nd.number) === 'In approval', 'no reviewers: straight to approval');
+  await approve('tom', nd.number);
+  const e6 = await sentFor(nd.number);
+  ok(e6.signers.length === 2 && e6.status === 'sent', 'sent with the author and the QA approver');
   await signAll(e6.id, ['sam', 'tom']);
   ok(await docState(nd.number) === 'Effective', `${nd.number} Effective`);
   const tr6 = await sys((db) => rows<any>(db, `select user_id from app.training_records where document_number = $1 and completed_at is null`, [nd.number]));
   ok(tr6.some((r) => r.user_id === ids.daniel) && tr6.some((r) => r.user_id === ids.lena) && !tr6.some((r) => r.user_id === ids.jake), 'audience (Support team + Lena) allocated; others not');
   const nv = await as('sam', (db, me) => docs.newVersion(db, me, nd.number, 'minor', 'Typo fix'));
-  ok(nv.version === '0.2', 'new minor version 0.2 started from the effective 0.1');
+  ok(nv.version === '0.2' && /^CR-\d+$/.test(nv.changeRequest), `new minor version 0.2 started from the effective 0.1, with its change request ${nv.changeRequest}`);
 
   console.log('Route 2: read and understood');
   const open = await as('daniel', (db) => training.listRecords(db, { userId: ids.daniel }));
@@ -193,8 +255,9 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const ldeps = { esign: live, storage };
   const emailOf = async (k: string) => (await sys((db) => one<{ e: string }>(db, 'select lower(email) as e from app.users where id = $1', [ids[k]]))).e;
   const samEmail = await emailOf('sam'), vicEmail = await emailOf('vic');
-  await as('sam', (db, me) => docs.submit(db, me, nd.number, [], [ids.vic!]));
-  const e7 = await as('sam', (db, me) => signing.sendDocument(db, ldeps, me, nd.number, { verification: V, approvers: [ids.vic!] }));
+  await submitDoc('sam', nd.number, [], [ids.vic!]);
+  await approve('vic', nd.number, { retrain: false, reason: 'Typo fix only; what people do is unchanged.' }, ldeps);
+  const e7 = await sentFor(nd.number);
   ok(sent[0]?.participants.map((p: any) => `${p.email}:${p.order}`).join(',') === `${samEmail}:1,${vicEmail}:2`, 'Adobe Sign gets one participant per signer, in order, by email');
   const dir = await pool.query('select agreement_id from app.agreement_directory where provider_agreement_id = $1', ['adobe-fake-1']);
   ok(dir.rows[0]?.agreement_id === e7.id, 'agreement directory maps the Adobe Sign ID to the agreement (for webhooks)');
@@ -207,11 +270,16 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   await sys((db) => signing.fromProvider(db, ldeps, e7.id, 'poll'));
   const c7 = await as('sam', (db, me) => signing.detail(db, me, e7.id));
   ok(c7.status === 'completed' && (await docState(nd.number)) === 'Effective', 'completed from Adobe Sign status; v0.2 Effective');
-  const sup = await sys((db) => rows<any>(db, `select r.closed_reason from app.training_records r where r.document_number = $1 and r.version = '0.1' and r.completed_at is null and r.closed_at is not null`, [nd.number]));
-  ok(sup.length > 0, 'open v0.1 allocations closed when v0.2 became effective');
+  // v0.2 needed no retraining: v0.1 training still counts, so nobody is allocated v0.2 and open v0.1 allocations stay open.
+  const v01 = await sys((db) => rows<any>(db, `select r.version, r.closed_at from app.training_records r where r.document_number = $1 and r.completed_at is null`, [nd.number]));
+  ok(v01.length > 0 && v01.every((r) => r.version === '0.1' && !r.closed_at), 'no retraining: open v0.1 allocations stay open and nobody is allocated v0.2');
+  const dan = (await as('daniel', (db) => training.listRecords(db, { userId: ids.daniel }))).find((r: any) => r.documentNumber === nd.number);
+  ok(dan?.status === 'Assigned', 'and Daniel’s v0.1 record still counts (Assigned, not Superseded)');
   // Adobe Sign reports a signer's rejection as CANCELLED; the REJECTED event makes it a decline, not a cancellation.
   const tomEmail = await emailOf('tom');
-  const e8 = await as('vic', (db, me) => signing.sendDocument(db, ldeps, me, 'POL-003', { verification: V, approvers: [ids.tom!] }));
+  await submitDoc('vic', 'POL-003', [], [ids.tom!]);
+  await approve('tom', 'POL-003', {}, ldeps);
+  const e8 = await sentFor('POL-003');
   agState = { status: 'CANCELLED', cancelComment: null, outcomes: [{ email: vicEmail, outcome: 'signed', at: new Date().toISOString(), comment: null }, { email: tomEmail, outcome: 'declined', at: new Date().toISOString(), comment: 'Section 3 contradicts the handling standard.' }] };
   await sys((db) => signing.fromProvider(db, ldeps, e8.id, 'webhook'));
   const d8 = await as('vic', (db, me) => signing.detail(db, me, e8.id));
@@ -233,8 +301,10 @@ test('API flow: Adobe Sign approvals, training records, closures, admin', { skip
   const a1 = await as('vic', (db) => signing.allowance(db));
   ok(a1.used === base + 8, `allowance used: ${a1.used} (${base} seeded + 8 transactions in this run)`);
   await sys((db) => db.query('update app.settings set signing_allowance = $1 where tenant_id = app.current_tenant()', [a1.used]));
-  await as('sam', (db, me) => docs.submit(db, me, 'POL-004', [], [ids.vic!]));
-  await fails(as('sam', (db, me) => signing.sendDocument(db, deps, me, 'POL-004', { verification: V, approvers: [ids.vic!] })), /Adobe Sign transactions is used up/, 'send refused when the allowance of transactions is used up');
+  await submitDoc('sam', 'POL-004', [], [ids.vic!]);
+  await fails(approve('vic', 'POL-004'), /Adobe Sign transactions is used up/, 'last approval refused when the allowance of transactions is used up');
+  const st = await sys((db) => one<any>(db, `select d.state, a.status from app.documents d join app.document_approvers a on a.document_id = d.id where d.number = 'POL-004'`));
+  ok(st.state === 'In approval' && st.status === 'To approve', 'nothing half-done: the approval rolled back and can be given once the allowance is raised');
   const chain = await sys((db) => one<any>(db, 'select * from app.verify_audit_chain()'));
   ok(chain.ok === true, `audit chain intact: ${chain.entries} entries`);
   const a1st = await sys((db) => anchor(db, storage as any));

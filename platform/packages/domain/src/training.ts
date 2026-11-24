@@ -20,6 +20,9 @@ export function inAudience(a: Audience | null | undefined, u: UserRef): boolean 
 export interface StatusContext {
   now: Date;
   effectiveVersion: string | null; // null when the document has no effective version (e.g. obsolete)
+  // Earlier versions whose training still counts: the versions since the last one that needed retraining (an approver
+  // can decide a change needs no retraining). Absent or empty: only the effective version counts.
+  equivalentVersions?: readonly string[];
   correctedIds: ReadonlySet<string>; // ids of records that a later record corrects
 }
 
@@ -27,7 +30,7 @@ export function trainingStatus(r: TrainingRecordLike, ctx: StatusContext): Train
   if (r.correctionOf && r.noRetrain) return 'Correction';
   if (ctx.correctedIds.has(r.id)) return 'Corrected';
   if (!ctx.effectiveVersion) return 'Obsolete';
-  if (ctx.effectiveVersion !== r.version) return 'Superseded';
+  if (ctx.effectiveVersion !== r.version && !(ctx.equivalentVersions ?? []).includes(r.version)) return 'Superseded';
   if (r.closedAt) return 'Withdrawn';
   if (r.completedAt) return 'Complete';
   if (r.dueAt && new Date(r.dueAt).getTime() < ctx.now.getTime()) return 'Overdue';
@@ -44,15 +47,17 @@ export interface MatrixCell { status: MatrixStatus; versionTrained: string | nul
 
 export function matrixCell(
   user: UserRef, audience: Audience | null, currentVersion: string,
-  records: (TrainingRecordLike & { status: TrainingStatus; assignedAt: string })[]
+  records: (TrainingRecordLike & { status: TrainingStatus; assignedAt: string })[],
+  equivalentVersions: readonly string[] = []
 ): MatrixCell | null {
+  const counts = (v: string) => v === currentVersion || equivalentVersions.includes(v);
   const mine = records.filter((r) => r.userId === user.id && !r.noRetrain && !r.closedAt).sort((a, b) => (a.assignedAt < b.assignedAt ? 1 : -1));
-  const cur = mine.find((r) => r.version === currentVersion && r.status !== 'Corrected');
+  const cur = mine.find((r) => counts(r.version) && r.status !== 'Corrected');
   if (cur) {
     const status: MatrixStatus = cur.status === 'Complete' ? 'Complete' : cur.status === 'Overdue' ? 'Overdue' : 'Assigned';
     return { status, versionTrained: cur.completedAt ? cur.version : null, currentVersion, recordId: cur.id };
   }
-  const older = mine.filter((r) => r.completedAt && r.version !== currentVersion).sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
+  const older = mine.filter((r) => r.completedAt && !counts(r.version)).sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
   if (inAudience(audience, user)) return { status: older ? 'Superseded' : 'Not allocated', versionTrained: older?.version ?? null, currentVersion, recordId: older?.id ?? null };
   if (older) return { status: 'Not required', versionTrained: older.version, currentVersion, recordId: older.id };
   return null;

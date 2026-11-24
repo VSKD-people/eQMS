@@ -26,7 +26,8 @@ export interface UserRef {
   groups: string[]; // group names
 }
 
-export const DOC_STATES = ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'] as const;
+// Draft → In review → In approval (approved in VeQMS) → Signing (one Adobe Sign agreement) → Effective.
+export const DOC_STATES = ['Draft', 'In review', 'In approval', 'Signing', 'Effective', 'Superseded', 'Obsolete'] as const;
 export type DocState = (typeof DOC_STATES)[number];
 
 export const DOC_TYPES = [

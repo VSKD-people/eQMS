@@ -126,4 +126,15 @@ begin
 end $$;
 create trigger training_records_audit after insert or update on app.training_records for each row execute function app.training_audit();
 
+-- The versions of a document whose training still counts: the effective version and, back to the last version that
+-- needed retraining, the ones before it. An approver can decide a change needs no retraining (document_versions.retrain).
+create or replace function app.training_versions(p_document uuid) returns text[] language sql stable as $$
+  with eff as (select created_at from app.document_versions where document_id = p_document and state = 'Effective'),
+  base as (select max(v.created_at) as at from app.document_versions v, eff
+           where v.document_id = p_document and v.retrain and v.created_at <= eff.created_at and v.state in ('Effective', 'Superseded'))
+  select coalesce(array_agg(v.version order by v.created_at), '{}') from app.document_versions v, eff, base
+  where v.document_id = p_document and v.state in ('Effective', 'Superseded')
+    and v.created_at >= coalesce(base.at, eff.created_at) and v.created_at <= eff.created_at
+$$;
+
 reset role;

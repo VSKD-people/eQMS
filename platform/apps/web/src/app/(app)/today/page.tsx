@@ -7,14 +7,14 @@ export const metadata = { title: 'Today' };
 
 const LABEL: Record<string, [string, string]> = {
   'esign': ['Sign in Adobe Sign', 'Open'],
-  'send-approval': ['Verify and send · Adobe Sign', 'Verify and send'],
+  'approve-doc': ['Approve · Document', 'Approve'],
   training: ['Read and understood', 'Start training'],
   'review-doc': ['Review · Document', 'Review'],
   author: ['Draft · Document', 'Continue draft'],
   resubmit: ['Sent back · Document', 'Revise draft'],
   effectiveness: ['Effectiveness check · CAPA', 'Record result'],
   'qe-assess': ['Assess · Quality event', 'Open'],
-  fyi: ['FYI · You sign in Adobe Sign later', 'View']
+  fyi: ['FYI · You approve or sign later', 'View']
 };
 
 // Where each task's action lives.
@@ -24,7 +24,6 @@ function href(t: Task): string {
   if (t.kind === 'esign' && t.recordType !== 'document' && t.ref) return `/approvals/${t.ref}`;
   if (t.recordType === 'capa') return `/quality/capas/${t.recordNumber}`;
   if (t.recordType === 'quality_event') return `/quality/events/${t.recordNumber}`;
-  if (t.kind === 'send-approval') return `/documents/${t.recordNumber}/send`;
   if (t.kind === 'esign') return `/documents/${t.recordNumber}?tab=approval`;
   return `/documents/${t.recordNumber}`;
 }

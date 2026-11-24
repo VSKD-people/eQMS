@@ -5,7 +5,7 @@ import { fmtDate, qs } from '@/lib/format';
 import { Chip, Cls, Notice } from '@/components/ui';
 
 export const metadata = { title: 'Documents' };
-const STATES = ['Draft', 'In review', 'Review closed', 'In approval', 'Effective', 'Superseded', 'Obsolete'];
+const STATES = ['Draft', 'In review', 'In approval', 'Signing', 'Effective', 'Superseded', 'Obsolete'];
 
 export default async function DocumentsPage({ searchParams }: { searchParams: Promise<{ q?: string; state?: string; type?: string; ok?: string; err?: string }> }) {
   const sp = await searchParams;

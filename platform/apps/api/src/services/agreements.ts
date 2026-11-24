@@ -11,7 +11,8 @@ import { people, person, type Person } from '../lib/people.ts';
 import { addTask, audit, automationRan, closeTasks, notify, dueIn } from '../lib/work.ts';
 import { assertVisible, docByNumber, currentVersion, makeEffective } from './documents.ts';
 import { recordFromAgreement } from './training.ts';
-import { documentPdf, closurePdf, mockAuditReport, stampSigned, type SignerLine } from './pdf.ts';
+import { closurePdf, mockAuditReport, stampSigned, type SignerLine } from './pdf.ts';
+import { LABEL, checkPlan, documentPlan } from './plans.ts';
 
 export interface Deps { esign: ESign; storage: Storage }
 
@@ -23,8 +24,8 @@ type SignerRow = { id: string; user_id: string; name: string; email: string; rol
 
 const ENV_SELECT = `select e.*, u.name as sent_by_name, s.allowance_year, s.transaction_no from app.agreements e join app.users u on u.id = e.sent_by left join app.signing_transactions s on s.agreement_id = e.id`;
 const iso = (d: Date | null) => (d ? new Date(d).toISOString() : null);
-// Audit trail names for record types, the same everywhere in the trail.
-export const LABEL: Record<AgreementRow['record_type'], string> = { document: 'Document', capa: 'CAPA', quality_event: 'Quality event' };
+// Audit trail names for record types, the signing-plan checks and the document PDF are shared with documents.ts.
+export { LABEL, logBlockedPlan } from './plans.ts';
 // Hash of the exact bytes stored, so anyone can check a file with sha256sum.
 const hashBytes = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 export type Source = 'app' | 'webhook' | 'poll';
@@ -83,14 +84,10 @@ export async function register(db: Db) {
 }
 
 // ---------- Planning ----------
-export async function planForDocument(db: Db, number: string, approverIds?: string[]) {
+export async function planForDocument(db: Db, number: string, choose?: { reviewers?: string[]; approvers?: string[] }) {
   const d = await docByNumber(db, number);
   const v = await currentVersion(db, d.id);
-  const rv = await rows<{ user_id: string }>(db, 'select user_id from app.document_reviewers where document_id = $1', [d.id]);
-  const ap = approverIds ?? (await rows<{ user_id: string }>(db, 'select user_id from app.document_approvers where document_id = $1 order by position', [d.id])).map((r) => r.user_id);
-  const ps = await people(db, [d.author_id, ...rv.map((r) => r.user_id), ...ap]);
-  const get = (id: string) => { const p = ps.find((x) => x.id === id); if (!p) throw badRequest('Unknown person in the signing order.'); return p; };
-  const plan = planDocumentAgreement({ documentNumber: d.number, title: d.title, version: v.version, author: get(d.author_id), reviewers: rv.map((r) => get(r.user_id)), approvers: ap.map(get) });
+  const { plan, people: ps } = await documentPlan(db, d, v.version, choose);
   return { d, v, plan, people: ps };
 }
 
@@ -121,22 +118,6 @@ export async function planForClosure(db: Db, kind: 'capa' | 'quality_event', num
 }
 
 // ---------- Sending ----------
-// The segregation-of-duties problem in a plan, if there is one (author, reviewer or owner as their own approver).
-function sodProblem(plan: SigningPlan): string | undefined {
-  return plan.problems.find((p) => /segregation of duties|can’t also|can’t approve/.test(p));
-}
-// Showing someone a plan they can't send because of segregation of duties is logged like a refused send: the send
-// page disables the button, so without this the block would never reach the audit trail.
-export async function logBlockedPlan(db: Db, plan: SigningPlan, recordType: AgreementRow['record_type'], recordNumber: string): Promise<void> {
-  const sod = sodProblem(plan);
-  if (sod) await audit(db, 'sod.block', LABEL[recordType], recordNumber, 'Send page shown with sending blocked: ' + sod);
-}
-async function checkPlan(db: Db, plan: SigningPlan, recordType: AgreementRow['record_type'], recordNumber: string): Promise<void> {
-  if (!plan.problems.length) return;
-  const e = conflict(plan.problems[0]!);
-  const sod = sodProblem(plan);
-  throw sod ? logged(e, { action: 'sod.block', objectType: LABEL[recordType], objectId: recordNumber, summary: 'Adobe Sign agreement not sent (blocked): ' + sod }) : e;
-}
 async function assertCanSend(db: Db, me: Person, recordId: string): Promise<void> {
   if (await maybe(db, `select 1 from app.agreements where record_id = $1 and status = 'sent'`, [recordId])) throw conflict('An agreement for this record is already out for signature.');
   const a = await allowance(db);
@@ -145,7 +126,7 @@ async function assertCanSend(db: Db, me: Person, recordId: string): Promise<void
 }
 
 async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: AgreementRow['record_type']; recordId: string; recordNumber: string; versionId: string | null; version: string | null;
-  plan: SigningPlan; pdf: Uint8Array; fileName: string; verification: Verification; ps: Person[] }) {
+  plan: SigningPlan; pdf: Uint8Array; fileName: string; verification: Verification; ps: Person[]; checkedAtSubmit?: { by: string; at: string } }) {
   await checkPlan(db, o.plan, o.recordType, o.recordNumber);
   if (!verificationComplete(o.verification)) throw badRequest('Tick all four verification checks (footer, version, document ID, dates) before sending.');
   const id = randomUUID();
@@ -154,7 +135,8 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: Agreeme
   const pdfKey = `agreements/${id}/original.pdf`;
   await deps.storage.put(pdfKey, o.pdf, 'application/pdf');
   const pdfSha = hashBytes(o.pdf);
-  const verification = { footer: true, version: true, documentId: true, dates: true, note: o.verification.note ?? '', by: me.id, at: new Date().toISOString() };
+  // Documents: the four checks were made on this same locked PDF at submit, so the record keeps who made them and when.
+  const verification = { footer: true, version: true, documentId: true, dates: true, note: o.verification.note ?? '', by: o.checkedAtSubmit?.by ?? me.id, at: o.checkedAtSubmit?.at ?? new Date().toISOString() };
   await db.query(`insert into app.agreements (id, tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256, correction_of)
     values ($1, app.current_tenant(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [id, o.recordType, o.recordId, o.recordNumber, o.versionId, o.version, o.plan.subject, o.plan.purpose, me.id, JSON.stringify(verification), pdfKey, pdfSha, correctionOf]);
@@ -171,7 +153,7 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: Agreeme
     await addTask(db, { kind: 'fyi', fyi: true, recordType: o.recordType, recordId: o.recordId, recordNumber: o.recordNumber, assigneeId: s.userId, ref: id,
       note: `You’re signer ${s.routingOrder} as ${s.roleLabel}. Adobe Sign will email you when it’s your turn.` });
   }
-  await audit(db, 'esign.verify', LABEL[o.recordType], o.recordNumber, `Verification check passed for ${o.plan.subject.split(' · ')[0]}: footer, version, document ID and dates`, null, verification);
+  if (!o.checkedAtSubmit) await audit(db, 'esign.verify', LABEL[o.recordType], o.recordNumber, `Verification check passed for ${o.plan.subject.split(' · ')[0]}: footer, version, document ID and dates`, null, verification);
   // Call Adobe Sign last: if it fails, the database transaction rolls back and no Adobe Sign transaction is counted.
   const dsId = await deps.esign.createAgreement({ name: o.plan.subject, pdf: o.pdf, fileName: o.fileName, veqmsAgreementId: id,
     message: 'VeQMS: please review and sign. Your signature meaning is printed next to your signature field.',
@@ -190,23 +172,24 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: Agreeme
   return summary(db, await byId(db, id));
 }
 
-export async function sendDocument(db: Db, deps: Deps, me: Person, number: string, body: { verification: Verification; approvers: string[] }) {
-  const { d, v, plan, people: ps } = await planForDocument(db, number, body.approvers);
-  await assertVisible(db, me, d);
-  if (d.state !== 'Review closed') throw conflict('Only a document in Review closed can be sent for approval.');
-  await checkPlan(db, plan, 'document', d.number);
-  if (![d.owner_id, d.author_id].includes(me.id) && !me.roles.includes('qm')) throw forbidden('Only the owner, the author or a Quality Manager can send this agreement.');
-  await assertCanSend(db, me, d.id);
-  const owner = await person(db, d.owner_id);
-  const signerLines: SignerLine[] = plan.signers.map((s, i) => ({ name: ps.find((p) => p.id === s.userId)!.name, roleLabel: s.roleLabel, meaning: s.meaning, anchor: signatureTag(i + 1) }));
-  const pdf = await documentPdf({ number: d.number, title: d.title, version: v.version, classification: d.classification, owner: owner?.name ?? '', generatedAt: new Date(), blocks: v.content, signers: signerLines });
-  await db.query('delete from app.document_approvers where document_id = $1', [d.id]);
-  for (const [i, a] of body.approvers.entries()) await db.query(`insert into app.document_approvers (tenant_id, document_id, user_id, position) values (app.current_tenant(), $1, $2, $3)`, [d.id, a, i + 1]);
-  const env = await dispatch(db, deps, me, { recordType: 'document', recordId: d.id, recordNumber: d.number, versionId: v.id, version: v.version, plan, pdf, fileName: `${d.number}_v${v.version}.pdf`, verification: body.verification, ps });
-  await db.query(`update app.documents set state = 'In approval', approval_due = $2 where id = $1`, [d.id, dueIn(5)]);
-  await db.query(`update app.document_versions set state = 'In approval', agreement_id = $2 where id = $1`, [v.id, env.id]);
-  await audit(db, 'state', 'Document', d.number, `Sent v${v.version} to Adobe Sign for approval`, { state: 'Review closed' }, { state: 'In approval' });
-  await closeTasks(db, { recordId: d.id, kinds: ['send-approval'] });
+// The last QA approver has approved in VeQMS: the locked PDF goes to Adobe Sign at once, with every signer added now
+// and in order (author, reviewers, QA approvers). One agreement, one transaction; nobody is added later.
+export async function sendApprovedDocument(db: Db, deps: Deps, by: Person, number: string) {
+  const { d, v, plan, people: ps } = await planForDocument(db, number);
+  if (d.state !== 'In approval') throw conflict('Only a document whose approval is complete goes to Adobe Sign.');
+  await checkPlan(db, plan, 'document', d.number); // roles or accounts may have changed since submit
+  if (await maybe(db, `select 1 from app.agreements where record_id = $1 and status = 'sent'`, [d.id])) throw conflict('An agreement for this document is already out for signature.');
+  const a = await allowance(db);
+  if (a.exhausted) throw conflict(`This year’s allowance of ${a.allowance} Adobe Sign transactions is used up, so the approved document can’t go out for signing. Talk to the Quality Manager.`);
+  const locked = await one<{ pdf_blob: string | null; verification: (Verification & { by: string; at: string }) | null }>(db, 'select pdf_blob, verification from app.document_versions where id = $1', [v.id]);
+  if (!locked.pdf_blob || !locked.verification) throw conflict(`v${v.version} has no locked PDF. Send it back and submit it again.`);
+  const pdf = new Uint8Array(await deps.storage.get(locked.pdf_blob));
+  const env = await dispatch(db, deps, by, { recordType: 'document', recordId: d.id, recordNumber: d.number, versionId: v.id, version: v.version, plan, pdf,
+    fileName: `${d.number}_v${v.version}.pdf`, verification: locked.verification, ps, checkedAtSubmit: { by: locked.verification.by, at: locked.verification.at } });
+  await db.query(`update app.documents set state = 'Signing', approval_due = $2 where id = $1`, [d.id, dueIn(5)]);
+  await db.query(`update app.document_versions set state = 'Signing', agreement_id = $2 where id = $1`, [v.id, env.id]);
+  await audit(db, 'state', 'Document', d.number, `Approved in VeQMS; v${v.version} sent to Adobe Sign with every signer`, { state: 'In approval' }, { state: 'Signing' });
+  await closeTasks(db, { recordId: d.id, kinds: ['approve-doc'] });
   return env;
 }
 
@@ -234,7 +217,6 @@ async function advance(db: Db, agreementId: string): Promise<void> {
   for (const s of ss.filter((x) => x.routing_order === cur && x.status === 'waiting')) {
     await db.query(`update app.agreement_signers set status = 'sent', sent_at = now() where id = $1`, [s.id]);
     await db.query(`insert into app.agreement_events (tenant_id, agreement_id, type, user_id, detail) values (app.current_tenant(), $1, 'sent', $2, 'Adobe Sign emailed the signing link')`, [agreementId, s.user_id]);
-    if (e.record_type === 'document' && s.meaning === 'Approved') await db.query(`update app.document_approvers set status = 'Your turn' where document_id = $1 and user_id = $2`, [e.record_id, s.user_id]);
     await closeTasks(db, { recordId: e.record_id, kinds: ['fyi'], assigneeId: s.user_id });
     await addTask(db, { kind: 'esign', recordType: e.record_type, recordId: e.record_id, recordNumber: e.record_number, assigneeId: s.user_id, dueAt: dueIn(5), ref: agreementId, note: `${s.role_label} · meaning: ${s.meaning} · use the link in your Adobe Sign email` });
     await notify(db, { to: [s.user_id], kind: 'action', mandatory: true, title: `Your turn to sign ${e.subject.split(' · ')[0]} in Adobe Sign`, body: 'Adobe Sign has emailed you the signing link.', recordType: e.record_type, recordId: e.record_id });
@@ -351,11 +333,15 @@ async function giveBack(db: Db, e: AgreementRow, how: 'declined' | 'cancelled', 
   const why = `Agreement ${how}${by ? ' by ' + ((await person(db, by))?.name ?? 'a signer') : ''}. Reason: ${reason}`;
   if (e.record_type === 'document') {
     const d = await one<{ id: string; number: string; author_id: string; owner_id: string }>(db, 'select id, number, author_id, owner_id from app.documents where id = $1', [e.record_id]);
-    await db.query(`update app.document_approvers set status = 'Waiting', signed_at = null where document_id = $1`, [d.id]);
+    // Back to the author: a change after sending goes through review and approval again.
+    await db.query(`update app.document_approvers set status = 'Waiting', decided_at = null, retrain = null, retrain_reason = null, comment = null, signed_at = null where document_id = $1`, [d.id]);
     await db.query(`update app.document_reviewers set status = 'Not started', reviewed_at = null where document_id = $1`, [d.id]);
     await db.query(`update app.documents set state = 'Draft' where id = $1`, [d.id]);
-    if (e.document_version_id) await db.query(`update app.document_versions set state = 'Draft' where id = $1`, [e.document_version_id]);
-    await audit(db, 'state', 'Document', d.number, 'Returned to draft: ' + why, { state: 'In approval' }, { state: 'Draft' });
+    if (e.document_version_id) {
+      await db.query(`update app.document_versions set state = 'Draft' where id = $1`, [e.document_version_id]);
+      await db.query(`update app.document_versions set retrain = true, retrain_reason = null where id = $1`, [e.document_version_id]);
+    }
+    await audit(db, 'state', 'Document', d.number, 'Returned to draft: ' + why, { state: 'Signing' }, { state: 'Draft' });
     await addTask(db, { kind: 'resubmit', recordType: 'document', recordId: d.id, recordNumber: d.number, assigneeId: d.author_id, dueAt: dueIn(5), note: why });
     await notify(db, { to: [d.author_id, d.owner_id], kind: 'warn', title: `${d.number} returned to draft`, body: why, recordType: 'document', recordId: d.id, href: `/documents/${d.number}` });
   } else {

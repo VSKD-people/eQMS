@@ -29,10 +29,30 @@ export async function saveDraft(number: string, fd: FormData) {
   await mutate(`/documents/${number}/draft`, { method: 'PUT', body: { content, summary } }, `/documents/${number}`, 'Draft saved.', `/documents/${number}/edit`);
 }
 
-export async function submitForReview(number: string, fd: FormData) {
+// Submit, step 1: choose the people; the draft is converted to PDF, hashed and locked.
+export async function preparePdf(number: string, fd: FormData) {
+  const page = `/documents/${number}/submit`;
   const approvers = [str(fd, 'a1'), str(fd, 'a2')].filter(Boolean);
-  if (approvers.length === 2 && approvers[0] === approvers[1]) redirect(withMsg(`/documents/${number}/submit`, 'err', 'Choose two different QA approvers.'));
-  await mutate(`/documents/${number}/submit`, { method: 'POST', body: { reviewers: list(fd, 'reviewers'), approvers } }, `/documents/${number}`, 'Submitted. Reviewers have been told.', `/documents/${number}/submit`);
+  if (!approvers.length) redirect(withMsg(page, 'err', 'Choose a QA approver.'));
+  if (approvers.length === 2 && approvers[0] === approvers[1]) redirect(withMsg(page, 'err', 'Choose two different QA approvers.'));
+  await mutate(`/documents/${number}/pdf`, { method: 'POST', body: { reviewers: list(fd, 'reviewers'), approvers } }, page, 'PDF made and locked. Open it, make the four checks, then submit.', page);
+}
+
+// Submit, step 2: the four checks on the locked PDF the author was shown (sha256 identifies it).
+export async function submitForReview(number: string, sha256: string, fd: FormData) {
+  const page = `/documents/${number}/submit`;
+  const v = { footer: bool(fd, 'footer'), version: bool(fd, 'version'), documentId: bool(fd, 'documentId'), dates: bool(fd, 'dates'), note: str(fd, 'note') };
+  if (!(v.footer && v.version && v.documentId && v.dates)) redirect(withMsg(page, 'err', 'Tick all four checks before submitting.'));
+  await mutate(`/documents/${number}/submit`, { method: 'POST', body: { verification: v, pdfSha256: sha256 } }, `/documents/${number}`, 'Submitted. Reviewers have been told.', page);
+}
+
+// A QA approver approves in VeQMS. Retraining is the default; "no retraining" needs a reason.
+export async function approveDocument(number: string, fd: FormData) {
+  const retrain = str(fd, 'retrain') !== 'no';
+  const reason = str(fd, 'reason');
+  if (!retrain && reason.length < 10) redirect(withMsg(`/documents/${number}`, 'err', 'Say why no retraining is needed.'));
+  await mutate(`/documents/${number}/approve`, { method: 'POST', body: { retrain, reason: retrain ? undefined : reason, comment: str(fd, 'comment') || undefined } }, `/documents/${number}`,
+    'Approved. If you were the last QA approver, the agreement has gone to Adobe Sign with every signer.');
 }
 
 export async function markReviewed(number: string, fd: FormData) {
@@ -42,7 +62,7 @@ export async function markReviewed(number: string, fd: FormData) {
 export async function sendBack(number: string, fd: FormData) {
   const reason = str(fd, 'reason');
   if (!reason) redirect(withMsg(`/documents/${number}`, 'err', 'Give a reason so the author knows what to fix.'));
-  await mutate(`/documents/${number}/send-back`, { method: 'POST', body: { reason } }, `/documents/${number}`, 'Sent back to draft.');
+  await mutate(`/documents/${number}/send-back`, { method: 'POST', body: { reason } }, `/documents/${number}`, 'Returned to the author.');
 }
 
 export async function newVersion(number: string, fd: FormData) {
@@ -51,17 +71,10 @@ export async function newVersion(number: string, fd: FormData) {
   await mutate(`/documents/${number}/versions`, { method: 'POST', body: { kind: str(fd, 'kind') === 'minor' ? 'minor' : 'major', summary } }, `/documents/${number}/edit`, 'New draft version started.', `/documents/${number}`);
 }
 
-export async function sendAgreement(number: string, approvers: string[], fd: FormData) {
-  const back = `/documents/${number}/send?approvers=${encodeURIComponent(approvers.join(','))}`;
-  const v = { footer: bool(fd, 'footer'), version: bool(fd, 'version'), documentId: bool(fd, 'documentId'), dates: bool(fd, 'dates'), note: str(fd, 'note') };
-  if (!(v.footer && v.version && v.documentId && v.dates)) redirect(withMsg(back, 'err', 'Tick all four verification checks before sending.'));
-  await mutate(`/documents/${number}/agreements`, { method: 'POST', body: { verification: v, approvers } }, `/documents/${number}?tab=approval`, 'Sent to Adobe Sign. The author signs first; Adobe Sign emails each signer in turn.', back);
-}
-
 export async function cancelAgreement(number: string, agreementId: string, fd: FormData) {
   const reason = str(fd, 'reason');
   if (!reason) redirect(withMsg(`/documents/${number}?tab=approval`, 'err', 'Give a reason for cancelling.'));
-  await mutate(`/agreements/${agreementId}/cancel`, { method: 'POST', body: { reason } }, `/documents/${number}?tab=approval`, 'Agreement cancelled. The document is back in draft; a corrected agreement is a new send.');
+  await mutate(`/agreements/${agreementId}/cancel`, { method: 'POST', body: { reason } }, `/documents/${number}?tab=approval`, 'Agreement cancelled. The document is back with its author, and goes through review and approval again.');
 }
 
 export async function changeAudience(number: string, fd: FormData) {
