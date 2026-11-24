@@ -255,6 +255,13 @@ then the production account. In short:
 Every agreement sent is one Adobe Sign transaction and counts against the allowance (500 a year by default, to be
 set to the contract's number in Settings). Watch it as described in the runbook.
 
+**SharePoint (the file store).** Follow [10 · SharePoint](10-sharepoint.md), "Setting it up": create the site with
+its Drafts and controlled libraries and the controlled library's columns; give the API identity `Sites.Selected`
+and grant it `write` on that one site; set the parameters `sharepointMode: live`, `sharepointSiteId`,
+`sharepointDraftsDriveId`, `sharepointControlledDriveId` and `sharepointColumns`, and redeploy. The `veqms-sharepoint`
+job then publishes and syncs every 15 minutes (`sharePointSyncCron`). Press **Sync now** in Administration →
+SharePoint once to record each library's starting point.
+
 **Entra ID provisioning (SCIM).** Enterprise applications → New application → create your own (non-gallery) →
 Provisioning → Automatic. Tenant URL `https://<api host>/scim/v2`, secret token = `scim-token`. Map users and the
 groups that drive training audiences (All staff, IT team, Managers, …), test the connection, provision a test user,

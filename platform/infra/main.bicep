@@ -89,6 +89,25 @@ param auditAnchorCron string = '*/15 * * * *'
 @description('Shared QMS mailbox for email notifications. Empty = in-app notifications only.')
 param graphMailFrom string = ''
 
+@allowed(['mock', 'live'])
+@description('Keep mock until the SharePoint site, its Drafts and controlled libraries, and the Sites.Selected grant are set up. See docs/10-sharepoint.md.')
+param sharepointMode string = 'mock'
+
+@description('SharePoint site ID (Graph), e.g. contoso.sharepoint.com,<guid>,<guid>.')
+param sharepointSiteId string = ''
+
+@description('Drive ID of the Drafts library (authors\' Word files).')
+param sharepointDraftsDriveId string = ''
+
+@description('Drive ID of the controlled library (published PDFs; only VeQMS writes there).')
+param sharepointControlledDriveId string = ''
+
+@description('Controlled library columns VeQMS sets on each published file, as a JSON object of internal names (number, version, status, effective, sha256).')
+param sharepointColumns string = '{"number":"DocumentNumber","version":"DocumentVersion","status":"DocumentStatus","effective":"EffectiveDate","sha256":"SHA256"}'
+
+@description('How often the SharePoint job publishes and syncs (cron, UTC).')
+param sharePointSyncCron string = '*/15 * * * *'
+
 param tags object = {
   system: 'VeQMS'
   environment: 'production'
@@ -367,6 +386,12 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     adobeSignClientId: adobeSignClientId
     auditAnchorCron: auditAnchorCron
     graphMailFrom: graphMailFrom
+    sharepointMode: sharepointMode
+    sharepointSiteId: sharepointSiteId
+    sharepointDraftsDriveId: sharepointDraftsDriveId
+    sharepointControlledDriveId: sharepointControlledDriveId
+    sharepointColumns: sharepointColumns
+    sharePointSyncCron: sharePointSyncCron
     apiExternal: apiExternal
   }
   dependsOn: [

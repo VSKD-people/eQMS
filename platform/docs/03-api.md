@@ -19,7 +19,7 @@ type Role = 'admin' | 'qm' | 'author' | 'reviewer' | 'approver' | 'process' | 'e
 
 type Me = { user: { id: string; name: string; email: string; initials: string; jobTitle: string | null; roles: Role[]; groups: string[]; clearance: string };
             permissions: string[]; tenant: { id: string; name: string };
-            via: 'Microsoft 365 single sign-on' | 'Development sign-in'; esignMode: 'live' | 'mock' };
+            via: 'Microsoft 365 single sign-on' | 'Development sign-in'; esignMode: 'live' | 'mock'; sharepointMode: 'live' | 'mock' };
 
 type Task = { id: string; kind: 'esign' | 'send-approval' | 'training' | 'review-doc' | 'author' | 'resubmit' | 'effectiveness' | 'qe-assess' | 'fyi' | string;
               recordType: 'document' | 'capa' | 'quality_event'; recordId: string; recordNumber: string; title: string;
@@ -90,9 +90,9 @@ Manager (segregation of duties). Every change is audited with old and new values
 | GET | `/document-types` | | `{ type, prefix }[]` |
 | POST | `/documents` | `{ docType, title, classification, ownerId, process, tags?, audience? }` | `{ id, number }`; opens a change request for v0.1 |
 | GET | `/documents/:number` | | document detail (below) |
-| PUT | `/documents/:number/draft` | `{ content: {t:'h'|'p', x:string}[], summary }` | `204` (draft only; clears a PDF made from the old text) |
-| POST | `/documents/:number/pdf` | `{ reviewers: string[], approvers: string[] }` | `{ sha256 }`. Submit, step 1: saves the people, converts the draft to PDF with a signature field per signer, hashes and locks it (the version hash becomes the PDF hash). Segregation-of-duties problems are refused here and logged |
-| POST | `/documents/:number/submit` | `{ verification: { footer, version, documentId, dates, note? }, pdfSha256 }` | `204` → In review, or In approval if no reviewers. Submit, step 2: the four checks on the locked PDF; `pdfSha256` must be the PDF the author was shown |
+| PUT | `/documents/:number/draft` | `{ content?: {t:'h'|'p', x:string}[], summary }` | `204` (draft only). With `content` (mock SharePoint: text written in VeQMS) it clears a PDF made from the old text. Without it, only the change summary: with live SharePoint the text is in Word, and sending `content` is refused |
+| POST | `/documents/:number/pdf` | `{ reviewers: string[], approvers: string[] }` | `{ sha256 }`. Submit, step 1: saves the people, converts the draft to PDF with a signature field per signer, hashes and locks it (the version hash becomes the PDF hash). With live SharePoint the Word file is converted by SharePoint and the signature page added. Segregation-of-duties problems are refused here and logged |
+| POST | `/documents/:number/submit` | `{ verification: { footer, version, documentId, dates, note? }, pdfSha256 }` | `204` → In review, or In approval if no reviewers. Submit, step 2: the four checks on the locked PDF; `pdfSha256` must be the PDF the author was shown, and (live SharePoint) the Word file must not have changed since |
 | POST | `/documents/:number/review` | `{ comment? }` | `204` (the last reviewer moves it to In approval) |
 | POST | `/documents/:number/approve` | `{ retrain: boolean, reason?, comment? }` | `{ sent }`. A QA approver approves in VeQMS. `retrain: false` needs a reason. The last approval sends the locked PDF to Adobe Sign at once (one transaction, every signer) → Signing; if the send fails, the approval rolls back |
 | POST | `/documents/:number/send-back` | `{ reason }` | `204` → Draft. A reviewer, approver, the owner, the author or a Quality Manager, while In review or In approval |
@@ -106,7 +106,9 @@ Manager (segregation of duties). Every change is audited with old and new values
 Document detail:
 ```ts
 { id, number, title, docType, state, classification, process, tags, owner: Person, author: Person, effectiveAt, approvalDue,
-  versions: { id, version, kind, state, summary, createdAt, approvedAt, agreementId, migratedFrom }[],
+  versions: { id, version, kind, state, summary, createdAt, approvedAt, agreementId, migratedFrom,
+    published: { status /* pending, published, superseded, failed */, webUrl, at } | null }[],
+  draft: { webUrl, editedAt } | null /* the Word file in the SharePoint Drafts library */,
   current: { version, state, summary, content: { t: 'h'|'p'; x: string }[], contentSha256,
     pdf: { sha256, checkedAt } | null /* the locked PDF */, retrain, retrainReason, changeRequest: { number, state } | null },
   reviewers: { user: Person; status; reviewedAt }[],
@@ -166,6 +168,11 @@ Adobe Sign account.
 | GET | `/reports/:name.:format` name = `training-matrix` · `training-records` · `document-status` · `approvals-register` · `signing-transactions`; format = `xlsx` · `pdf`; same query filters as the screens | file, stamped "Generated (UTC) … by …", export logged |
 | GET | `/audit?objectType=&objectId=&action=&before=&limit=` | `AuditEntry[]` newest first (audit.read; `before` = seq for paging; viewing is itself logged). Object types: Document, CAPA, Quality event, Training record, Training, User, Group, Settings, Report, Audit trail |
 | GET | `/audit/verify` | `{ ok, entries, brokenAt, anchor: { anchored, seq, at, matches, problem } }`. `ok` is false if the chain is broken or doesn't match its latest anchor |
+| GET | `/sharepoint` | `{ mode, runs: last sync per library, alerts: integrity alerts (open first), publishing: versions and their publish status }` (`audit.read`) |
+| POST | `/sharepoint/sync` | Publishes waiting versions, then syncs both libraries now (`admin.settings`) |
+| POST | `/sharepoint/alerts/:id/resolve` | `{ note }` (at least 10 characters). Quality Manager only (`integrity.resolve`); once |
+| POST | `/sharepoint/versions/:id/republish` | A version whose publishing failed goes back in the queue (`integrity.resolve`) |
+| POST | `/sharepoint/mock/outside-edit` | `{ number }`. Mock SharePoint only: simulates someone editing the published file outside VeQMS |
 | GET / PUT | `/settings` | `{ signingAllowance, allowanceYearStartMonth, allowanceWarnAt, ackStatement, reminderDays, overdueRepeatDays }` (PUT: qm, admin; logged with old and new values). `ackStatement` must contain `{doc}` and `{version}`. GET also returns `signingGoLive` and `signatureStatement` (read-only) |
 
 ### SCIM 2.0 for Entra ID provisioning (no prefix)

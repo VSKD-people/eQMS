@@ -1,14 +1,16 @@
 # 08 · Migrating from KSTARRS and SharePoint
 
 VeQMS replaces KSTARRS for approvals and training sign-off. This is the method for bringing existing records across.
-Phase 1 includes the database support (import mode) but **no import scripts**: the exports from KSTARRS and
-SharePoint weren't available to write them against. Write them once you have sample exports, and test them on a copy.
+Phase 1 includes the database support (import mode) and an import job for today's SharePoint library
+(`apps/api/src/jobs/import-sharepoint.ts`, reading the library through Microsoft Graph). There is no KSTARRS import
+script yet: its exports weren't available to write it against. Write it once you have a sample export, and test it on
+a copy.
 
 ## What to bring across
 
 | From | Records | Lands in |
 |---|---|---|
-| SharePoint (published QMS documents) | Current effective version of each controlled document: number, title, type, owner, classification, effective date, content or the PDF | `documents`, `document_versions` (`state = 'Effective'`, `migrated_from = 'SharePoint'` or `'KSTARRS'`) |
+| SharePoint (published QMS documents) | Current effective version of each controlled document: number, title, type, owner, classification, effective date, and the PDF | `documents`, `document_versions` (`state = 'Effective'`, `migrated_from = 'SharePoint'`, the PDF copied to records storage and its hash, `published_item_id` pointing at the file already in the controlled library). Use the import job below |
 | KSTARRS approvals | Who approved which version, when, with what meaning | `signatures` (`source = 'kstarrs'`), `document_versions.approved_at` |
 | KSTARRS training sign-offs | Who confirmed reading which version, when | `training_records` with the original `completed_at` and a statement saying it was migrated |
 | Open training items | Who still has to read what | Don't import: set each document's audience in VeQMS and let it allocate |
@@ -32,10 +34,28 @@ The demo seed (`packages/db/seed/001_demo.sql`) is a worked example: it runs as 
 mode, sets the tenant, and loads documents, versions, signatures marked `kstarrs`, agreements and training records
 with historical dates.
 
+## Importing the SharePoint library
+
+The import job reads the controlled library through Graph (no CSV export). Field mapping is a setting,
+`SHAREPOINT_IMPORT_MAP` (see [10 · SharePoint](10-sharepoint.md)); **the library's real column names are needed**
+before it can run.
+
+1. Provision people through Entra first: each document's owner must be an active VeQMS user.
+2. Dry run: `node apps/api/dist/jobs/import-sharepoint.js --tenant <tenant id>`. It prints how many files there are,
+   how many map cleanly, the hash of the listing, and every file it can't map with the reason. Nothing is written.
+   Fix the library or decide each problem with the Quality Manager.
+3. Apply on a staging copy: add `--apply`. Each document is imported in its own transaction as `veqms_owner` with
+   import mode on, with an `import` audit entry carrying the file's hash and the listing hash.
+4. Reconcile (below), then repeat on production.
+
+Run it from a workstation signed in with `az login` as someone who is the database owner and can read the library
+(the job uses `DefaultAzureCredential` for both). **Verify** this sign-in route before the real run.
+
 ## Method
 
 1. **Freeze** KSTARRS for new approvals from an agreed date; record that date as `settings.signing_go_live`.
-2. **Export** from KSTARRS and SharePoint to CSV. Keep the raw exports, hashed (SHA-256), as migration evidence.
+2. **Export** from KSTARRS to CSV, and run the SharePoint import as a dry run. Keep the raw exports and the dry-run
+   report, hashed (SHA-256), as migration evidence.
 3. **Map** each column to the tables above; agree how meanings map to Authored, Reviewed, Approved; list records that
    can't be mapped and decide each one.
 4. **Load into a staging copy** with a script that runs as `veqms_owner` with import mode on, inside one transaction

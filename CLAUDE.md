@@ -145,6 +145,11 @@ the documentation set is `platform/docs/01` to `09`. The prototype stays the ref
   live Adobe Sign client hasn't run against Adobe Sign yet; its "Verify before go-live" list is in that doc.
 - Checks: `npm run typecheck`, `npm test`, `npm run db:test` in `platform/`; browser tests in `platform/e2e` against
   `docker compose up --build`. CI is `.github/workflows/platform-ci.yml` (both jobs green on GitHub).
-- Status: built with the real packages (Next.js 16, zod 4, lockfile committed); every check and the nine UAT browser
-  scenarios pass; the Bicep compiles. Not yet run: anything in Azure, Entra sign-in, live Adobe Sign, Graph email.
+- Documents follow PJ Walters' amendment flow (24 Nov 2026): change request first; the PDF is made, hashed and locked at
+  submit and the author checks it; review and approval in VeQMS (with the retraining decision); the last approval sends
+  the Adobe Sign agreement. SharePoint is the file store: Word drafts, the locked PDF published to a controlled library,
+  a delta sync raising integrity alerts (`platform/docs/10-sharepoint.md`, with its own "Verify before go-live" list).
+- Status: built with the real packages (Next.js 16, zod 4, lockfile committed); every check and the ten UAT browser
+  scenarios pass; the Bicep compiles. Not yet run: anything in Azure, Entra sign-in, live Adobe Sign, live SharePoint,
+  Graph email.
   Deploys are manual only (`platform-deploy.yml`) until Azure is set up. Details: `platform/docs/07`.

@@ -264,3 +264,32 @@ test('9 · Every report exports as Excel and PDF, stamped and logged', async ({ 
   await vic.goto('/admin?tab=audit&objectType=Report');
   await expect(vic.locator('main tbody tr', { hasText: 'Exported' })).toHaveCount(reports.length * 2);
 });
+
+test('10 · VP-001 is published to the controlled library; an outside edit raises an integrity alert that Victoria resolves', async ({ browser }) => {
+  // Uses VP-001, which scenario 2 made Effective. Mock SharePoint: a local folder stands in for both libraries.
+  const vic = await signIn(browser, 'victoria');
+  await vic.goto('/admin?tab=sharepoint');
+  await vic.getByRole('button', { name: 'Sync now' }).click();
+  await expectOk(vic, 'Synced');
+  await expect(vic.locator('main tr', { hasText: 'VP-001 v1.0' })).toContainText('Published');
+  await vic.goto('/documents/VP-001');
+  await expect(vic.locator('.ctx-card').first()).toContainText('v1.0 (mock SharePoint)');
+
+  await vic.goto('/admin?tab=sharepoint');
+  await vic.getByLabel('Document number').fill('VP-001');
+  await vic.getByRole('button', { name: 'Edit it outside VeQMS' }).click();
+  await expectOk(vic, 'Simulated an outside edit');
+  await vic.getByRole('button', { name: 'Sync now' }).click();
+  await expectOk(vic, 'Synced');
+  const alert = vic.locator('.callout.warn[role=alert]', { hasText: 'Changed outside VeQMS · VP-001 v1.0' });
+  await expect(alert).toBeVisible();
+
+  await alert.getByText('Resolve', { exact: true }).click();
+  await alert.getByLabel(/What was found and done/).fill('Restored the file from the locked PDF; reminded the editor that the library is read-only.');
+  await alert.getByRole('button', { name: 'Mark resolved' }).click();
+  await expectOk(vic, 'Alert resolved');
+  await expect(vic.locator('main')).toContainText('Resolved by Victoria E.');
+  await vic.goto('/admin?tab=audit&objectId=VP-001');
+  await expect(vic.locator('main tbody tr', { hasText: /Integrity alert \(outside-change\): / })).toHaveCount(1);
+  await expect(vic.locator('main tbody tr', { hasText: /Integrity alert \(outside-change\) resolved by Victoria/ })).toHaveCount(1);
+});

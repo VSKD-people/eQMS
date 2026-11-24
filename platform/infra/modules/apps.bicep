@@ -1,5 +1,6 @@
 // Container apps and jobs: veqms-api (internal ingress), veqms-web (public HTTPS), veqms-migrate (manual job)
-// veqms-reminders (daily at 06:00 UTC) and veqms-anchor (audit anchors, every 15 minutes by default). Secrets come from Key Vault through managed identities; nothing
+// veqms-reminders (daily at 06:00 UTC), veqms-anchor (audit anchors, every 15 minutes by default) and veqms-sharepoint
+// (publishing and the SharePoint delta sync, every 15 minutes by default). Secrets come from Key Vault through managed identities; nothing
 // secret is written here. NOT VALIDATED: check with `az bicep build` and what-if before first use.
 
 param location string
@@ -29,6 +30,14 @@ param adobeSignAuth string
 param adobeSignApiAccessPoint string
 param adobeSignClientId string
 param graphMailFrom string
+param sharepointMode string
+param sharepointSiteId string
+param sharepointDraftsDriveId string
+param sharepointControlledDriveId string
+param sharepointColumns string
+
+@description('How often the SharePoint job publishes waiting versions and syncs both libraries (cron, UTC).')
+param sharePointSyncCron string = '*/15 * * * *'
 
 @description('How often the audit anchor job writes the chain head to the records container (cron, UTC). Every 15 minutes by default, as Step 1 proposes; the interval is open decision R4.')
 param auditAnchorCron string = '*/15 * * * *'
@@ -77,6 +86,14 @@ var apiEnv = [
   { name: 'SCIM_TOKEN', secretRef: 'scim-token' }
   { name: 'GRAPH_MAIL_FROM', value: graphMailFrom }
   { name: 'APP_BASE_URL', value: appBaseUrl }
+  { name: 'SHAREPOINT_MODE', value: sharepointMode }
+  { name: 'SHAREPOINT_SITE_ID', value: sharepointSiteId }
+  { name: 'SHAREPOINT_DRAFTS_DRIVE_ID', value: sharepointDraftsDriveId }
+  { name: 'SHAREPOINT_CONTROLLED_DRIVE_ID', value: sharepointControlledDriveId }
+  // Changes by this app ID are VeQMS's own. Verify that Graph reports the managed identity's client ID in
+  // lastModifiedBy.application.id (docs/10-sharepoint.md).
+  { name: 'SHAREPOINT_APP_ID', value: appIdentityClientId }
+  { name: 'SHAREPOINT_COLUMNS', value: sharepointColumns }
 ]
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = {
@@ -270,6 +287,41 @@ resource anchorJob 'Microsoft.App/jobs@2024-03-01' = {
           name: 'anchor'
           image: apiImage
           command: [ 'node', '/app/with-pg-token.mjs', 'node', 'apps/api/dist/jobs/anchor.js' ]
+          resources: { cpu: json('0.25'), memory: '0.5Gi' }
+          env: apiEnv
+        }
+      ]
+    }
+  }
+}
+
+// SharePoint: publish Effective versions still waiting, then the delta sync of the Drafts and controlled libraries
+// (sharePointSyncCron, every 15 minutes by default). Changes made outside VeQMS raise integrity alerts.
+resource sharePointJob 'Microsoft.App/jobs@2024-03-01' = {
+  name: 'veqms-sharepoint'
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${appIdentityId}': {} }
+  }
+  properties: {
+    environmentId: environmentId
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Schedule'
+      replicaTimeout: 600
+      replicaRetryLimit: 1
+      scheduleTriggerConfig: { cronExpression: sharePointSyncCron, parallelism: 1, replicaCompletionCount: 1 }
+      registries: [ { server: registryServer, identity: appIdentityId } ]
+      secrets: apiSecrets
+    }
+    template: {
+      containers: [
+        {
+          name: 'sharepoint'
+          image: apiImage
+          command: [ 'node', '/app/with-pg-token.mjs', 'node', 'apps/api/dist/jobs/sharepoint.js' ]
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: apiEnv
         }

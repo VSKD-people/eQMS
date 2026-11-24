@@ -5,9 +5,9 @@ infrastructure to run them in UK South. The clickable prototype in `../veqms/` s
 and flows; the specs are in `../specs/`.
 
 > **Status.** Built with the real packages (lockfile committed). Type-check, build, the domain tests, the database
-> invariants and the API flow test pass. `docker compose up --build` runs the whole stack, and the nine UAT scenarios
-> pass in a browser (Playwright, `e2e/`). Not yet run: Microsoft Entra sign-in, live Adobe Sign, Microsoft Graph email,
-> Azure Blob storage, the Bicep and the deploy workflow. Next steps are in "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
+> invariants and the API flow test pass. `docker compose up --build` runs the whole stack, and the ten UAT scenarios
+> pass in a browser (Playwright, `e2e/`). The Bicep compiles. Not yet run: Microsoft Entra sign-in, live Adobe Sign,
+> live SharePoint, Microsoft Graph email, Azure Blob storage, anything in Azure and the deploy workflow. Next steps are in "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
 > Details: [07 · Testing and validation](docs/07-testing-and-validation.md).
 
 ## What Phase 1 does
@@ -23,6 +23,9 @@ and flows; the specs are in `../specs/`.
   training; change requests and the other sign-offs follow in later phases.
 - Read-and-understood training in the app: audiences per document, allocation, confirmation with optional quiz,
   locked records, corrections as new records, matrix, reminders.
+- SharePoint as the file store: authors write in Word in a Drafts library; each Effective version's locked PDF is
+  published to a controlled library only VeQMS writes to; a delta sync raises integrity alerts for changes made
+  outside VeQMS, and a nightly check re-hashes every published file. Mock mode for development.
 - Approvals register and transactions log, audit trail with a hash-chain check, Excel and PDF reports, settings.
 
 ## Folders
@@ -111,3 +114,4 @@ They change data too: to run them again, start from a fresh database (`docker co
 | [07 · Testing and validation](docs/07-testing-and-validation.md) | Test suites, what has run, UAT scenarios, validation |
 | [08 · Migration](docs/08-migration.md) | Bringing records across from KSTARRS and SharePoint |
 | [09 · Runbook](docs/09-runbook.md) | Day-to-day operations, incidents, leavers, restore |
+| [10 · SharePoint](docs/10-sharepoint.md) | Word drafts, publishing, the delta sync, integrity alerts, the import, and what to verify |

@@ -29,6 +29,7 @@ VeQMS tenant), `agreement_directory` (Adobe Sign agreement ID → tenant, for we
 | `005_rls_and_grants` | row-level security on every tenant table; grants |
 | `006_webhook_inbox` | `webhook_inbox`: Adobe Sign notifications queued for the worker, unique per notification ID. No tenant (like `agreement_directory`); the API can't delete from it |
 | `007_audit_anchors` | `audit_anchors`: each anchor written to the `records` container (tenant, entry number, hash, time, blob key); insert-only |
+| `008_sharepoint` | `documents.draft_item_id`, `draft_web_url`, `draft_edited_at` (the Word file); `document_versions.pdf_source_tag`, `published_item_id`, `published_web_url`, `published_at`, `publish_status`, `publish_attempts`, `publish_error`; `sync_runs` (one row per delta sync, with the token to resume from); `integrity_alerts` (outside changes, missing files, hash mismatches, failed publishing). See [10 · SharePoint](10-sharepoint.md) |
 
 ## Rules enforced in the database
 
@@ -42,6 +43,7 @@ VeQMS tenant), `agreement_directory` (Adobe Sign agreement ID → tenant, for we
 | Adobe Sign agreements | Must carry the four verification ticks (check constraint); one open agreement per record (partial unique index); subject, PDF hash, verification, sender and record fixed once sent; completed, declined and cancelled are final; completed needs the signed PDF and audit report hashes; declined and cancelled need a reason |
 | Adobe Sign transactions | `signing_transactions` numbers each transaction within its allowance year under an advisory lock and refuses a transaction beyond the allowance (SQLSTATE P0002). Insert-only |
 | Document versions | Content, locked PDF (`pdf_blob`) and the author's four checks (`verification`) fixed once out of draft; the retraining decision (`retrain`, with `retrain_reason` required when false) fixed once signing starts; approved versions only move to Superseded or Obsolete; the change request behind a version (`change_request_id`) can't change |
+| SharePoint | A version's published file and publish time are set once; its PDF source tag is fixed with the PDF; a finished sync run can't change; an integrity alert can only be resolved, once, with a note; neither is ever deleted |
 | Training that still counts | `app.training_versions(document)`: the effective version plus earlier versions back to the last one that needed retraining. Training on any of them counts, so a no-retraining version allocates nobody new |
 | Record numbers | `app.next_number(prefix)` from `counters`, gap-free per tenant |
 | Import mode | `app.import_mode()` is true only for `veqms_owner` with `app.import_mode = 'on'`. It allows historical dates on migrated records (training, transactions). The API role can never use it |

@@ -29,13 +29,13 @@ Rules:
 
 | Part | State |
 |---|---|
-| Database (`packages/db`) | 43 tables for every module; row-level security; append-only hash-chained audit log; insert-only signatures; locked training records; Adobe Sign agreement and allowance rules; demo seed; invariant tests. **Run and passing** on PostgreSQL 16 |
-| Domain rules (`packages/domain`) | Permissions, signing plan, allowance years, training status, Adobe Sign webhook checks, Excel writer. **15 unit tests passing** |
-| API (`apps/api`) | Fastify 5. Sign-in (Entra ID, development personas), documents, the Adobe Sign route (send, status sync, completion, cancel, decline, mock signing), CAPA and deviation closure, training (allocation, confirmation, quiz, corrections, matrix, reminders), approvals register and transactions log, reports (Excel, PDF), users and roles, settings, audit trail, SCIM, daily job. **Built with the real packages; API flow test passing (69 checks)** |
-| Web (`apps/web`) | Next.js 16. Sign-in, Today, documents (list, new, edit, submit, send with verification), approvals, agreement view with mock signing, quality (CAPA and event lists, closures), training (mine, confirm, matrix, records), administration (audit, settings, users and roles). **Built; the nine UAT scenarios pass in a browser** (`e2e/`, Playwright) |
+| Database (`packages/db`) | 48 tables for every module; row-level security; append-only hash-chained audit log; insert-only signatures; locked training records; Adobe Sign agreement and allowance rules; demo seed; invariant tests. **Run and passing** on PostgreSQL 16 |
+| Domain rules (`packages/domain`) | Permissions, signing plan, allowance years, training status, Adobe Sign webhook checks, Excel and Word writers. **16 unit tests passing** |
+| API (`apps/api`) | Fastify 5. Sign-in (Entra ID, development personas), documents, the Adobe Sign route (send, status sync, completion, cancel, decline, mock signing), CAPA and deviation closure, training (allocation, confirmation, quiz, corrections, matrix, reminders), approvals register and transactions log, reports (Excel, PDF), users and roles, settings, audit trail, SCIM, daily job, audit anchors, SharePoint (Word drafts, publishing, delta sync, integrity alerts, hash check, import). **Built with the real packages; API flow test passing (128 checks)** |
+| Web (`apps/web`) | Next.js 16. Sign-in, Today, documents (list, new, edit or open in Word, submit with the locked PDF and its checks, review, approve with the retraining decision), approvals, agreement view with mock signing, quality (CAPA and event lists, closures), training (mine, confirm, matrix, records), administration (audit, SharePoint, settings, users and roles). **Built; the ten UAT scenarios pass in a browser** (`e2e/`, Playwright) |
 | Azure (`infra`, workflows) | Bicep for UK South, Dockerfiles, CI and deploy workflows, deployment guide, runbook. **Dockerfiles and `docker compose` run locally; Bicep and the deploy workflow never run** |
 
-Not run yet: Microsoft Entra sign-in, live Adobe Sign, Microsoft Graph email, Azure Blob storage, anything in Azure.
+Not run yet: Microsoft Entra sign-in, live Adobe Sign, live SharePoint, Microsoft Graph email, Azure Blob storage, anything in Azure.
 
 ## 3. Rules to keep (don't break these)
 
@@ -92,10 +92,10 @@ after Phase 1 and its security testing, because real quality records go in from 
 
 | Live build | Scope | From the spec |
 |---|---|---|
-| **Phase 1** (built) | Foundation, documents with the Adobe Sign route, read-and-understood training, approvals register, audit, reports, users and roles, SCIM | Phases 1, 3; parts of 2 and 6 |
+| **Phase 1** (built) | Foundation, documents with the Adobe Sign route, read-and-understood training, approvals register, audit, reports, users and roles, SCIM; SharePoint as the file store (Word drafts, publishing, delta sync, integrity alerts, import; moved here from Phase 4 by PJ Walters' decisions of 24 November 2026) | Phases 1, 3; parts of 2, 6 and §7.3 |
 | **Phase 2** | Change control and periodic reviews | Phase 4 |
 | **Phase 3** | Observations, quality events and full CAPA screens (root cause, actions, evidence) | Phase 5 |
-| **Phase 4** | Templates management; Microsoft Teams notifications; SharePoint publishing and import | Phase 2 remainder, §7.3, §7.4 |
+| **Phase 4** | Templates management; Microsoft Teams notifications | Phase 2 remainder, §7.4 |
 | **Phase 5** | Analytics and dashboards | Phase 6 remainder |
 | **Phase 6** | Mobile app (React Native with Expo) | Phase 7 |
 | **Phase 7** | Hardening and full go-live (Gate 3) | Phase 8 |
@@ -119,11 +119,11 @@ Acceptance: closing a quality event without a CAPA needs a signed justification 
 CAPA actions lock when execution starts; the effectiveness check is due on the set date and escalates when late;
 evidence files are scanned before anyone can open them (**[DECIDE]** the scanning service; Step 3 T15).
 
-### Phase 4: templates, Teams, SharePoint
-Acceptance (spec §15): when a document becomes effective, its read-only PDF appears in the designated SharePoint
-library and the superseded one is archived; reviewers get a Teams message as well as email and in-app; if an
-integration is down, the core keeps working, failed items queue for retry (`dead_letters`) and admins are alerted.
-Use least-privilege permissions (`Sites.Selected`, mailbox-scoped `Mail.Send`). **Verify** every Graph endpoint.
+### Phase 4: templates and Teams
+SharePoint publishing and import moved to Phase 1 (see [10 · SharePoint](docs/10-sharepoint.md); its live Graph calls
+still need the checks listed there). Acceptance (spec §15): reviewers get a Teams message as well as email and
+in-app; if an integration is down, the core keeps working, failed items queue for retry (`dead_letters`) and admins
+are alerted. Use least-privilege permissions (mailbox-scoped `Mail.Send`). **Verify** every Graph endpoint.
 
 ### Phase 5: analytics
 Dashboards from the prototype (`../veqms/js/views/analytics.js`): training compliance, overdue items, document ages,

@@ -4,11 +4,11 @@
 
 | Suite | What it proves | Run |
 |---|---|---|
-| Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer: 15 tests | `npm test --workspace @veqms/domain` |
-| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, IP and device kept apart and purged, training-record locks, import mode refused for the API, agreement rules, allowance, version locks (content, locked PDF, checks, retraining decision, change request), insert-only signatures, gap-free numbers: 10 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor: 109 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer, Word writer: 16 tests | `npm test --workspace @veqms/domain` |
+| Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, IP and device kept apart and purged, training-record locks, import mode refused for the API, agreement rules, allowance, version locks (content, locked PDF, checks, retraining decision, change request), insert-only signatures, gap-free numbers, SharePoint (published file, sync runs, integrity alerts): 11 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor; SharePoint in mock mode (publishing, superseded files, the sync, integrity alerts, the hash check, failed publishing) and the live Word path with Graph faked (Word file, conversion with the signature page, change checks): 128 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
 | Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, queueing with de-duplication, and that the queue worker only reads the status from Adobe Sign: 12 checks | as the API flow test |
-| UAT in the browser (`e2e/tests/uat.spec.ts`) | The nine UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign in mock mode: 9 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
+| UAT in the browser (`e2e/tests/uat.spec.ts`) | The ten UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign and SharePoint in mock mode: 10 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
 CI (`.github/workflows/platform-ci.yml`) runs all of them on every push: the first three with a PostgreSQL 16 service,
 the browser tests in a second job against `docker compose`. Both the API flow test and the browser tests change data,
@@ -20,14 +20,14 @@ Phase 1 was first written in a sandbox without npm access. It has since been ins
 packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), and `package-lock.json` is committed.
 
 - **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
-  the domain tests (15 of 15); the database invariants on PostgreSQL 16 (all 10 groups); migrate twice (the second run
-  is a no-op) and seed; the API flow test (109 of 109) and the webhook route test (12 of 12). These are the steps CI runs.
+  the domain tests (16 of 16); the database invariants on PostgreSQL 16 (all 11 groups); migrate twice (the second run
+  is a no-op) and seed; the API flow test (128 of 128) and the webhook route test (12 of 12). These are the steps CI runs.
 - **CI on GitHub:** both jobs (checks, and the browser tests against `docker compose`) passed on the pull request.
 - **Bicep:** `infra/main.bicep` compiles and lints with no errors or warnings (Bicep CLI 0.49.2). It has not been
   deployed.
 - **Docker:** both images build, and `docker compose up --build` starts the database, runs the migrations and seed,
   and serves the API and web app.
-- **In a browser:** the nine UAT scenarios pass against that stack (Playwright, Chromium), and the audit chain
+- **In a browser:** the ten UAT scenarios pass against that stack (Playwright, Chromium), and the audit chain
   verifies afterwards. A crawl of every page and every linked record as each of the 12 personas (1,086 page loads)
   found no server errors after the fixes below. One crawl run logged a 400 on a sub-resource for one persona on two
   pages, and one React hydration warning; neither came back on a rerun, and the cause isn't known.
@@ -67,9 +67,14 @@ after the switch. The live Adobe Sign client has not run against Adobe Sign: see
 Then changed the document flow to PJ Walters' amendment flow of 24 November 2026: a change request first; at submit
 the PDF is made, hashed and locked, and the author checks it; review, then approval in VeQMS with the retraining
 decision; the agreement goes to Adobe Sign on the last approval; anyone on it can return the draft before signing. The
-send page is gone. The invariants, the API flow test (109 checks) and the nine browser scenarios (1 to 3 rewritten for
-the new flow) pass. If Adobe Sign can't be reached when the last approver approves, the approval rolls back and they
+send page is gone. The invariants, the API flow test (109 checks at that point) and the nine browser scenarios (1 to 3
+rewritten for the new flow) passed. If Adobe Sign can't be reached when the last approver approves, the approval rolls back and they
 approve again later; the browser shows the error.
+
+Then made SharePoint the file store ([10 · SharePoint](10-sharepoint.md)): Word drafts, publishing to the controlled
+library, the delta sync with integrity alerts, the nightly hash check and the import job. Mock mode runs in the tests
+and UAT (scenario 10 added). The live Graph calls have not run against SharePoint; the Word file VeQMS creates was
+opened in LibreOffice, not Word. The Bicep (new `veqms-sharepoint` job and settings) compiles and lints.
 
 ## Before go-live
 
@@ -108,6 +113,9 @@ Use the demo seed (`npm run db:seed`, never in production). Personas sign in wit
    herself Approver.
 8. Fraser (auditor) opens the audit trail and verifies the chain; any change he tries is refused.
 9. Export each report as Excel and PDF; each shows when and by whom it was generated, and the export is logged.
+10. Victoria syncs SharePoint: VP-001 v1.0 is published to the controlled library. She simulates an outside edit of
+    its file (mock only) and syncs again: an integrity alert appears. She resolves it with a note; the alert and its
+    resolution are in the audit trail.
 
 ## Validation (computerised system)
 

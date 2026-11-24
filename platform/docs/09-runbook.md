@@ -198,6 +198,21 @@ remaining number falls to the warning level.
   **PJ Walters**. Only change the allowance in Settings after the Adobe Sign contract changes; the change is logged
   with old and new values.
 
+## SharePoint integrity alerts
+
+Administration → SharePoint lists open alerts first. Every Quality Manager is notified when one is raised.
+
+| Alert | Means | Do |
+|---|---|---|
+| Changed outside VeQMS | Someone other than VeQMS changed or added a file in the controlled library | Find who and why (SharePoint version history). Restore the file from the version's locked PDF (document page → PDF) or remove the stray file. Remind them the library is read-only and check its permissions |
+| File missing | A published file (or a draft's Word file) was deleted | Restore it from the SharePoint recycle bin, or publish again |
+| Hash mismatch | The nightly check found a published file that no longer matches its locked PDF | As for an outside change. Treat repeated mismatches as a data-integrity incident |
+| Publish failed | A version couldn't be published after 5 attempts (it is Effective in VeQMS) | Check the sync status and the error, fix the cause (permissions, the site, a column name), then **Publish again** |
+
+Resolve each alert with a note of what was found and done; the note is in the audit trail and can't be changed.
+If the sync shows **Failed** for a library, the next run resumes from the last good point; if it keeps failing,
+check the Graph permission and the drive IDs.
+
 ## Audit chain verification
 
 Every change writes a hash-chained entry to the audit log. The check recomputes the chain and reports the first
