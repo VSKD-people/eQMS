@@ -105,7 +105,7 @@
   }
   function overview(d) {
     var wk = weekly(d);
-    var avg = [['Draft', 6.2], ['In review', 4.1], ['Review closed (verify and send)', 0.8], ['In approval (Adobe Sign)', 3.4]];
+    var avg = [['Draft', 6.2], ['In review', 4.1], ['In approval (in VeQMS)', 1.6], ['Signing (Adobe Sign)', 3.4]];
     var rAvg = rpt('Average days in each workflow state', [['State', 'Average days', 'Transitions measured']].concat(avg.map(function (a, i) { return [a[0], a[1], [14, 12, 11, 4][i]]; })));
     var rWk = rpt('Training due vs overdue by week', [['Week starting', 'Due', 'Overdue']].concat(wk.weeks.map(function (w) { return [w.label, w.due, w.od]; })));
     var openEv = d.evs.filter(function (e) { return e.state === 'Open' || e.state === 'Assessment'; });
@@ -125,8 +125,8 @@
   function documents(d) {
     var types = {}; d.docs.forEach(function (x) { types[x.docType] = (types[x.docType] || 0) + 1; });
     var states = {}; d.docs.forEach(function (x) { states[x.state] = (states[x.state] || 0) + 1; });
-    var inWf = d.docs.filter(function (x) { return ['In review', 'Review closed', 'In approval'].indexOf(x.state) >= 0; });
-    var odAppr = d.docs.filter(function (x) { return x.state === 'In approval' && Q.daysFromToday(x.approvalDue) < 0; });
+    var inWf = d.docs.filter(function (x) { return ['In review', 'In approval', 'Signing'].indexOf(x.state) >= 0; });
+    var odAppr = d.docs.filter(function (x) { return (x.state === 'In approval' || x.state === 'Signing') && Q.daysFromToday(x.approvalDue) < 0; });
     var rAll = rpt('Documents register', [['Document', 'Title', 'Type', 'State', 'Version', 'Owner']].concat(d.docs.map(function (x) { return [x.id, x.title, x.docType, x.state, Q.curVer(x).v, Q.fullName(x.owner)]; })));
     var rWf = rpt('Documents in a workflow', [['Document', 'Title', 'State', 'Owner']].concat(inWf.map(function (x) { return [x.id, x.title, x.state, Q.fullName(x.owner)]; })));
     return h`<div class="grid-4 mb-16"><div class="card kpi"><div class="kpi-label">Controlled documents</div><div class="kpi-value">${d.docs.length}</div><div class="kpi-sub">${states.Effective || 0} effective</div></div>

@@ -102,7 +102,8 @@
       var si = states.indexOf(d.state);
       var revDone = d.reviewers.filter(function (x) { return x.status === 'Reviewed'; }).length;
       var env = Q.esign.active(d.id);
-      var plan = t.kind === 'send-approval' && d.state === 'Review closed' ? Q.esign.plan(d.id) : null;
+      var approved = d.approvers.filter(function (x) { return x.status === 'Approved' || x.status === 'Signed'; }).length;
+      var cr = v.cr && Q.S.crs[v.cr];
       inner = h`
         <h2>${d.id} ${d.title} v${v.v}</h2>
         ${t.note ? h`<div class="small muted" style="margin-top:2px">${t.note}</div>` : ''}
@@ -111,11 +112,12 @@
         <hr>
         <div style="font-weight:600;margin-bottom:4px" class="small">Change summary</div>
         <p class="small">${v.summary}</p>
-        <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(d.owner)}</dd></div><div><dt>Reviewers</dt><dd>${revDone} of ${d.reviewers.length} done</dd></div>
+        <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(d.owner)}</dd></div><div><dt>Change request</dt><dd>${cr ? cr.id + ' · ' + cr.state : '—'}</dd></div>
+          <div><dt>Reviewers</dt><dd>${revDone} of ${d.reviewers.length} done</dd></div><div><dt>QA approvers</dt><dd>${approved} of ${d.approvers.length} approved</dd></div>
           <div><dt>Training audience</dt><dd>${Q.audienceText(Q.audienceOf(d))}</dd></div><div><dt>Classification</dt><dd>${d.classification}</dd></div>
           ${env ? h`<div style="grid-column:1/-1"><dt>Adobe Sign</dt><dd>${Q.esign.signedCount(env)} of ${env.signers.length} signed · ${Q.esign.myTurn(env) ? 'your turn' : 'waiting on ' + env.signers.filter(function (x) { return x.status === 'Sent'; }).map(function (x) { return Q.fullName(x.u); }).join(', ')}</dd></div>` : ''}</dl>
-        ${plan && plan.problems.length ? h`<div class="callout warn mt-16"><strong>Fix before sending</strong><p class="small" style="margin:4px 0 0">${plan.problems[0]}</p></div>` : ''}
-        ${t.kind === 'send-approval' ? h`<p class="small muted mt-16">Sending uses 1 of ${Q.esign.remaining()} Adobe Sign transactions left this year.</p>` : ''}`;
+        ${t.kind === 'approve-doc' ? h`<p class="small muted mt-16">Approve here and decide whether people need retraining. ${d.approvers.filter(function (x) { return x.status !== 'Approved'; }).length === 1 ? 'You are the last QA approver: when you approve, the agreement goes to Adobe Sign at once (1 of ' + Q.esign.remaining() + ' transactions left this year).' : 'The agreement goes to Adobe Sign when the last QA approver approves.'}</p>` : ''}
+        ${t.kind === 'author' || t.kind === 'resubmit' ? h`<p class="small muted mt-16">Edit the Word file (${d.draft ? d.draft.name : d.id}) in the SharePoint Drafts library, then submit: make the PDF, check it and submit.</p>` : ''}`;
     } else if (k === 'review') {
       var doc = Q.S.docs[r.doc];
       inner = h`<h2>Periodic review · ${doc.id}</h2><p class="small muted" style="margin-top:2px">${doc.title} v${(Q.effVer(doc) || Q.curVer(doc)).v}</p>

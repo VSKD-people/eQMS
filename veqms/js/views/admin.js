@@ -5,6 +5,7 @@
   var SECTIONS = [
     { id: 'users', label: 'Users and roles', icon: 'users', perm: 'admin.users' },
     { id: 'audit', label: 'Audit trail', icon: 'log', perm: 'admin.audit' },
+    { id: 'sharepoint', label: 'SharePoint', icon: 'doc', perm: 'admin.sharepoint' },
     { id: 'automations', label: 'Automations', icon: 'zap', perm: 'admin.automations' },
     { id: 'integrations', label: 'Integrations', icon: 'plug', perm: 'admin.integrations' },
     { id: 'templates', label: 'Templates', icon: 'template', perm: 'admin.templates' },
@@ -17,7 +18,7 @@
     if (!allowed.length) return Q.views.denied('Administration');
     var sec = allowed.find(function (s) { return s.id === p.section; }) || allowed[0];
     if (p.section && sec.id !== p.section) return Q.views.denied(p.section);
-    var body = { users: users, audit: audit, automations: automations, integrations: integrations, templates: templates, workflows: workflows, settings: settings }[sec.id](q);
+    var body = { users: users, audit: audit, sharepoint: sharepoint, automations: automations, integrations: integrations, templates: templates, workflows: workflows, settings: settings }[sec.id](q);
     return h`<div class="page-head"><div><h1>Administration</h1><div class="sub">Web only. ${Q.hasRole('admin') ? 'System Administrators can’t approve quality records (segregation of duties).' : 'Changes to controlled processes need approval before they go live.'}</div></div></div>
       <div class="tabs" role="tablist" aria-label="Administration sections">${allowed.map(function (s) { return h`<a class="tab ${s.id === sec.id ? 'active' : ''}" href="#/admin/${s.id}" role="tab" aria-selected="${s.id === sec.id}">${Q.icon(s.icon, 'ico-sm')}<span style="margin-left:6px">${s.label}</span></a>`; })}</div>
       ${body}`;
@@ -163,6 +164,81 @@
     Q.exportCsv('audit-trail.csv', rows, 'audit trail');
   };
 
+  // ---------- SharePoint (simulated) ----------
+  // Last sync of each library, publishing of Effective versions to the controlled library, integrity alerts (resolved
+  // by a Quality Manager with a note, then final), "Sync now", the hash check, and an outside edit for demonstrations.
+  function sharepoint() {
+    var sp = Q.sp, st = sp.state(), canSync = Q.can('admin.settings') && !Q.readOnly(), canRes = sp.canResolve();
+    var open = sp.openAlerts();
+    var LIB = { drafts: 'Drafts (Word files)', controlled: 'Controlled (published PDFs)' };
+    var pubRows = [];
+    Object.keys(Q.S.docs).sort().forEach(function (k) {
+      var d = Q.S.docs[k];
+      d.versions.forEach(function (v) { if (v.publish && Q.canSee(d)) pubRows.push({ doc: d.id, ver: v.v, key: d.id + ' v' + v.v, state: v.state, p: v.publish, sortAt: v.publish.at || v.created }); });
+    });
+    var PUB = function (r) {
+      var p = r.p;
+      if (p.status === 'published') return p.deleted ? Q.chip('File missing', 'chip-overdue') : p.fileHash !== p.hash ? Q.chip('Changed outside VeQMS', 'chip-overdue') : Q.chip('Published', 'chip-done');
+      if (p.status === 'superseded') return Q.chip('Marked ' + (p.fileStatus || 'Superseded'), 'chip-outline');
+      if (p.status === 'pending') return Q.chip('Waiting to publish', 'chip-due');
+      return Q.chip('Failed', 'chip-overdue');
+    };
+    var published = Object.keys(Q.S.docs).map(function (k) { return Q.S.docs[k]; }).filter(function (d) { var e = Q.effVer(d); return e && e.publish && e.publish.status === 'published' && !e.publish.deleted && Q.canSee(d); });
+    return h`<p class="muted">SharePoint holds the files; VeQMS holds the record and is the only thing that writes to the controlled library. Authors edit Word files in the Drafts library; each Effective version’s locked PDF is published to the Controlled library, and superseded files stay there, marked Superseded. <b>Simulated in the prototype.</b></p>
+      ${!sp.on() ? h`<div class="callout warn mb-16"><strong>The SharePoint connector is switched off.</strong> Publishing and the sync fail until a System Administrator switches it on in Integrations. Documents still become Effective in VeQMS.</div>` : ''}
+      <div class="card card-pad mb-16"><div class="spread mb-8" style="flex-wrap:wrap"><h2>Libraries</h2>${canSync ? h`<div class="btn-row"><button class="btn" data-act="sp-hash">${Q.icon('check', 'ico-sm')} Check hashes now</button><button class="btn btn-primary" data-act="sp-sync">${Q.icon('refresh', 'ico-sm')} Sync now</button></div>` : ''}</div>
+        <div class="table-wrap"><table class="t"><caption class="sr-only">Last sync of each library</caption><thead><tr><th scope="col">Library</th><th scope="col">Last sync (UTC)</th><th scope="col">Outcome</th><th scope="col">Changes</th><th scope="col">Alerts</th></tr></thead><tbody>
+          ${['drafts', 'controlled'].map(function (lib) { var r = st.runs[lib]; return h`<tr><td>${LIB[lib]}</td><td class="nowrap">${r ? Q.fmtUtc(r.at) : 'Not yet'}</td><td>${r ? Q.chip(r.outcome, r.outcome === 'OK' ? 'chip-done' : 'chip-overdue') : '—'}${r && r.error ? h`<div class="small muted">${r.error}</div>` : ''}</td><td>${r ? r.changes : '—'}</td><td>${r ? r.alerts : '—'}</td></tr>`; })}</tbody></table></div>
+        <p class="small muted mt-8" style="margin-bottom:0">The sync runs every 15 minutes. Only VeQMS writes to the controlled library; any other change raises an integrity alert. Every night each published file is hashed again and compared with its locked PDF.${st.hashCheck ? ' Last hash check ' + Q.fmtUtc(st.hashCheck.at) + ': ' + Q.plural(st.hashCheck.checked, 'file') + ' checked, ' + st.hashCheck.mismatches + ' mismatched, ' + st.hashCheck.missing + ' missing.' : ''}</p></div>
+      <div class="card card-pad mb-16"><div class="spread mb-8"><h2>Integrity alerts</h2>${open.length ? Q.chip(open.length + ' open', 'chip-overdue') : Q.chip('None open', 'chip-done')}</div>
+        ${st.alerts.length ? st.alerts.map(function (a) {
+          return h`<div class="callout ${a.resolvedAt ? 'plain' : 'warn'} mb-8" ${Q.raw(a.resolvedAt ? '' : 'role="alert"')} data-alert="${a.id}"><div class="spread" style="flex-wrap:wrap"><strong>${a.id} · ${sp.KIND[a.kind]}${a.doc ? ' · ' + a.doc + (a.ver ? ' v' + a.ver : '') : ''}</strong><span class="small muted">${Q.fmtUtc(a.raisedAt)} · ${a.library === 'drafts' ? 'Drafts' : 'Controlled'} library</span></div>
+            <p class="small" style="margin:4px 0 0">${a.detail}</p>
+            ${a.resolvedAt ? h`<p class="small muted" style="margin:4px 0 0">Resolved by ${Q.fullName(a.resolvedBy)} (${Q.fmtUtc(a.resolvedAt)}): ${a.resolution}</p>` : canRes ? h`<div class="mt-8"><button class="btn btn-sm" data-act="sp-resolve" data-id="${a.id}">Resolve</button></div>` : h`<p class="small muted" style="margin:4px 0 0">Open. A Quality Manager resolves it.</p>`}</div>`;
+        }) : Q.empty('No integrity alerts', '')}
+        <p class="small muted mt-8" style="margin-bottom:0">Every Quality Manager is told of each alert, and it is written to the audit trail. A resolved alert is final: it can’t be edited, reopened or deleted.</p></div>
+      <div class="card card-pad mb-16"><h2 class="mb-8">Publishing to the controlled library</h2>
+        ${Q.table({ id: 'sp-pub', rows: pubRows, defaultSort: 'sortAt', defaultDir: -1, empty: 'Nothing published yet.',
+          cols: [{ key: 'key', label: 'Version', render: function (r) { return h`<a href="#/documents/${r.doc}">${r.doc}</a> v${r.ver}`; } }, { key: 'state', label: 'In VeQMS', render: function (r) { return Q.stateChip(r.state); } },
+            { key: 'status', label: 'In SharePoint', sort: false, render: function (r) { return h`${PUB(r)}${r.p.error ? h`<div class="small muted">${r.p.attempts} attempts: ${r.p.error}</div>` : ''}${r.p.status === 'failed' && canRes ? h`<div class="mt-8"><button class="btn btn-sm" data-act="sp-republish" data-id="${r.doc}" data-v="${r.ver}">Publish again</button></div>` : ''}`; } },
+            { key: 'sortAt', label: 'Published (UTC)', render: function (r) { return r.p.at ? Q.fmtUtc(r.p.at) : '—'; } },
+            { key: 'file', label: 'File', sort: false, render: function (r) { return h`<span class="small">${r.p.name}</span><div class="small muted mono" title="${r.p.hash}">SHA-256 ${String(r.p.hash).slice(0, 12)}…</div>`; } }] })}</div>
+      ${canSync ? h`<form class="card card-pad" data-submit="sp-simulate"><h2 class="mb-8">Simulate an outside edit</h2><p class="small muted">For demonstrations only. Someone changes or deletes a published file in SharePoint, not through VeQMS. Nothing happens until the next sync reads the change and raises an integrity alert; the hash check then flags a changed file too.</p>
+        <div class="form-grid"><div class="field"><label for="spd">Published file</label><select class="select" id="spd" name="doc">${published.map(function (d) { return h`<option value="${d.id}">${d.id} v${Q.effVer(d).v} · ${d.title}</option>`; })}</select></div>
+          <fieldset><legend>What happens to it</legend><label class="check"><input type="radio" name="how" value="edit" checked> Someone edits the file</label><label class="check"><input type="radio" name="how" value="delete"> Someone deletes the file</label></fieldset></div>
+        <button class="btn mt-16" type="submit" ${published.length ? '' : 'disabled'}>Simulate the outside edit</button></form>` : ''}`;
+  }
+  Q.act['sp-sync'] = function () {
+    var r = Q.sp.sync();
+    Q.toast(r.outcome === 'OK' ? 'Synced · ' + Q.plural(r.published, 'version') + ' published · ' + Q.plural(r.alerts, 'integrity alert') + ' raised' : 'Sync failed: the SharePoint connector is switched off', r.outcome === 'OK' && !r.alerts ? '' : 'warn');
+    Q.refresh();
+  };
+  Q.act['sp-hash'] = function () { var r = Q.sp.hashCheck(); Q.toast('Hash check: ' + Q.plural(r.checked, 'file') + ' checked, ' + r.mismatches + ' mismatched, ' + r.missing + ' missing', r.mismatches || r.missing ? 'warn' : ''); Q.refresh(); };
+  Q.on['sp-simulate'] = function (form) {
+    var f = Q.formData(form);
+    try { Q.sp.simulateOutsideEdit(f.doc, f.how); } catch (e) { Q.toast(e.message, 'warn'); return; }
+    Q.toast('Simulated: the published file of ' + f.doc + ' was ' + (f.how === 'delete' ? 'deleted' : 'edited') + ' outside VeQMS. Sync now to pick it up.'); Q.refresh();
+  };
+  Q.act['sp-republish'] = function (el) {
+    try { var ok = Q.sp.restore(el.getAttribute('data-id'), el.getAttribute('data-v')); Q.save(); Q.toast(ok ? 'Published again' : 'Still failing: the SharePoint connector is switched off', ok ? '' : 'warn'); } catch (e) { Q.toast(e.message, 'warn'); }
+    Q.refresh();
+  };
+  Q.act['sp-resolve'] = function (el) {
+    var a = Q.sp.state().alerts.find(function (x) { return x.id === el.getAttribute('data-id'); });
+    if (!a) return;
+    var restore = Q.sp.needsRestore(a);
+    Q.drawer.open({ kicker: 'Integrity alert · ' + a.id, title: 'Resolve: ' + Q.sp.KIND[a.kind] + (a.doc ? ' · ' + a.doc + ' v' + a.ver : ''), submitLabel: 'Mark resolved',
+      body: h`<div class="statement mb-16"><div class="small muted">Raised ${Q.fmtUtc(a.raisedAt)}</div><div>${a.detail}</div></div>
+        <div class="field mb-16"><label for="spn">What was found and done (required)</label><textarea class="textarea" id="spn" name="note" placeholder="e.g. A site owner edited the file by mistake. Compared with the locked PDF and restored it."></textarea></div>
+        ${restore ? h`<label class="check mb-16"><input type="checkbox" name="restore" checked> Publish the locked PDF again, replacing the file in the controlled library</label>` : ''}
+        <div class="callout warn"><strong>A resolved alert is final.</strong><p class="small" style="margin:4px 0 0">It can’t be edited, reopened or deleted. Your note is kept with it and in the audit trail.</p></div>`,
+      submit: function (f, form) {
+        if (!f.note || f.note.length < 10) return Q.fieldError(form, 'note', 'Say what was found and done (at least a short sentence).');
+        try { Q.sp.resolve(a.id, f.note, !!f.restore); } catch (e) { Q.toast(e.message, 'warn'); return; }
+        Q.drawer.close(); Q.toast(a.id + ' resolved' + (f.restore ? ' · locked PDF published again' : '')); Q.refresh();
+      } });
+  };
+
   // ---------- Automations ----------
   function automations(q) {
     var tab = q.tab || 'rules';
@@ -300,7 +376,7 @@
       <form class="card card-pad" data-submit="set-statement"><h2 class="mb-8">Electronic signatures</h2>
         <div class="field"><label for="ss">Signature statement</label><textarea class="textarea" id="ss" name="statement" ${isQm ? '' : 'disabled'}>${st.statement}</textarea><div class="help">Printed on every Adobe Sign agreement PDF. Use {meaning} where the reason for signing goes. Agreed by the Quality Manager.</div></div>
         ${isQm ? h`<button class="btn mt-8" type="submit">Save statement</button>` : ''}
-        ${row('Every signature goes through Adobe Sign', sw('x', true, true), 'Document approvals, change requests (plan, actions, completion), CAPAs (plan, actions, completed actions, closure), quality event closures, periodic reviews, making a document obsolete, access reviews, rule and workflow approvals. One agreement per sign-off, signers in order. Read-and-understood training is not a signature and stays in the app.')}
+        ${row('Every signature goes through Adobe Sign', sw('x', true, true), 'Document approvals (sent automatically when the last QA approver approves in VeQMS), change requests (plan, completion, and actions marked as needing a signature), CAPAs (plan, actions marked as needing a signature, completed actions, closure), quality event closures, periodic reviews, making a document obsolete, access reviews, rule and workflow approvals. One agreement per sign-off, signers in order. Read-and-understood training is not a signature and stays in the app.')}
         ${row('Identity check and reason for signing (Bio-Pharma settings)', sw('x2', true, true), 'Set on the Adobe Sign account: every signer confirms their identity when they sign and records a reason for signing, which supports Part 11. Check the settings against the account before go-live.')}
         ${row('Biometrics as part of a signature', sw('x3', false, true), 'Off by decision: face or fingerprint only unlocks the mobile app.')}</form>
       <form class="card card-pad" data-submit="set-esign"><h2 class="mb-8">Adobe Sign allowance</h2>
@@ -311,6 +387,8 @@
         ${isQm ? h`<button class="btn mt-8" type="submit">Save allowance</button>` : ''}</form>
       <div class="card card-pad"><h2 class="mb-8">Read and understood</h2>
         ${row('Statement people confirm', h`<span class="small">${st.ackStatement.replace('{doc}', 'WI-003').replace('{version}', '4.0')}</span>`, 'Not a Part 11 signature. Signed in through Microsoft 365; date and time set by the system; locked once made.')}
+        ${row('Open the PDF before confirming', sw('x6', true, true), 'A trainee must have opened the PDF of that version since it was allocated (VeQMS logs every open with the version) before they can confirm.')}
+        ${row('Retraining on a new version', h`<span class="small">QA approvers decide</span>`, 'Each QA approver decides at approval whether the change needs retraining: yes by default, and “no” needs a reason. With no retraining, training on the previous version still counts.')}
         ${row('Completed records can be edited or deleted', sw('x5', false, true), 'Never, by anyone, administrators included. A correction is a new record with a reason; the original stays.')}</div>
       <div class="card card-pad"><h2 class="mb-8">Segregation of duties</h2>
         ${row('Authors cannot approve their own documents', sw('sod.authorCannotApprove', st.sod.authorCannotApprove, !isAdmin), 'Overrides need a named admin, a reason and a signature, and are logged.')}

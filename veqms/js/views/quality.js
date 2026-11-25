@@ -185,8 +185,8 @@
       <div class="list-rows">${c.actions.length ? c.actions.map(function (a) {
         var out = Q.esign.active(c.id, 'capa-action', a.id);
         var mine = a.assignee === me && c.state === 'Execution' && a.status !== 'Done' && !Q.readOnly() && !out;
-        return h`<div class="list-row"><div class="lr-main"><b>${a.type}</b> · ${a.title}${a.doc ? h` · ${Q.recLink(a.doc, { short: true })}` : ''}<div class="small muted">${Q.name(a.assignee)} · ${a.sig ? 'signed off in Adobe Sign' : 'no signature'}</div>${a.returned && a.status !== 'Done' && !out ? h`<div class="small" style="color:var(--overdue)">${a.returned.how} in Adobe Sign: ${a.returned.reason}</div>` : ''}</div>
-          ${out && Q.esign.myTurn(out) ? h`<button class="btn btn-sm btn-primary" data-act="es-open-sign" data-id="${out.id}">Sign in Adobe Sign</button>` : out ? Q.chip('Out for signature', 'chip-turn') : mine ? h`<button class="btn btn-sm btn-primary" data-act="capa-done" data-id="${c.id}" data-a="${a.id}">${a.sig ? 'Complete and send to Adobe Sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : c.state === 'Planning' ? Q.chip('Planned', 'chip-outline') : a.status === 'In progress' ? Q.dueChip(a.due) : a.status === 'Not started' && Q.daysFromToday(a.due) > 7 ? Q.chip('Not started', 'chip-outline') : Q.dueChip(a.due)}
+        return h`<div class="list-row"><div class="lr-main"><b>${a.type}</b> · ${a.title}${a.doc ? h` · ${Q.recLink(a.doc, { short: true })}` : ''}<div class="small muted">${Q.name(a.assignee)} · ${a.needsSignature ? 'signed off in Adobe Sign' : 'no signature'}</div>${a.returned && a.status !== 'Done' && !out ? h`<div class="small" style="color:var(--overdue)">${a.returned.how} in Adobe Sign: ${a.returned.reason}</div>` : ''}</div>
+          ${out && Q.esign.myTurn(out) ? h`<button class="btn btn-sm btn-primary" data-act="es-open-sign" data-id="${out.id}">Sign in Adobe Sign</button>` : out ? Q.chip('Out for signature', 'chip-turn') : mine ? h`<button class="btn btn-sm btn-primary" data-act="capa-done" data-id="${c.id}" data-a="${a.id}">${a.needsSignature ? 'Complete and send to Adobe Sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : c.state === 'Planning' ? Q.chip('Planned', 'chip-outline') : a.status === 'In progress' ? Q.dueChip(a.due) : a.status === 'Not started' && Q.daysFromToday(a.due) > 7 ? Q.chip('Not started', 'chip-outline') : Q.dueChip(a.due)}
           ${editable ? h`<button class="icon-btn plain" data-act="capa-rmaction" data-id="${c.id}" data-a="${a.id}" aria-label="Remove action ${a.title}">${Q.icon('x', 'ico-sm')}</button>` : ''}</div>`;
       }) : h`<div class="empty" style="padding:20px">No actions yet. Add at least one corrective or preventive action.</div>`}</div>
       ${editable ? h`<button class="btn mt-16" data-act="capa-addaction" data-id="${c.id}">${Q.icon('plus', 'ico-sm')} Add action</button>` : ''}`;
@@ -278,8 +278,8 @@
         <div class="field"><label for="caa">Assignee</label><select class="select" id="caa" name="assignee">${users.map(function (u) { return h`<option value="${u.id}">${u.name}</option>`; })}</select></div>
         <div class="field"><label for="cad">Due</label><input class="input" type="date" id="cad" name="due" value="${Q.dayIso(14).slice(0, 10)}"></div>
         <div class="field"><label for="cadoc">Linked document</label><select class="select" id="cadoc" name="doc"><option value="">None</option>${Object.keys(Q.S.docs).map(function (d) { return h`<option value="${d}">${d} ${Q.S.docs[d].title}</option>`; })}</select></div>
-        <label class="check" style="align-self:end"><input type="checkbox" name="sig" checked> Signed off in Adobe Sign</label></div>`,
-      submit: function (f, form) { if (!f.title) return Q.fieldError(form, 'title', 'Give the action a title.'); Q.wf.capa.addAction(c, { type: f.type, title: f.title, assignee: f.assignee, due: new Date(f.due + 'T17:00:00').toISOString(), doc: f.doc || null, sig: f.sig }); if (f.doc) Q.link(c.id, f.doc); Q.drawer.close(); Q.toast('Action added'); Q.refresh(); } });
+        <div class="full"><label class="check"><input type="checkbox" name="needsSignature"> Needs a signature: signed off in Adobe Sign by the person who does it</label><div class="help">Leave it unticked and the action is marked done here, with no signature and no Adobe Sign transaction.</div></div></div>`,
+      submit: function (f, form) { if (!f.title) return Q.fieldError(form, 'title', 'Give the action a title.'); Q.wf.capa.addAction(c, { type: f.type, title: f.title, assignee: f.assignee, due: new Date(f.due + 'T17:00:00').toISOString(), doc: f.doc || null, needsSignature: f.needsSignature }); if (f.doc) Q.link(c.id, f.doc); Q.drawer.close(); Q.toast('Action added'); Q.refresh(); } });
   };
   Q.act['capa-rmaction'] = function (el) { var c = CA(el); Q.wf.capa.removeAction(c, el.getAttribute('data-a')); Q.refresh(); };
   // The action plan is approved in Adobe Sign: owner then a Quality Manager (high severity), or the owner alone (low).
@@ -288,10 +288,11 @@
     if (!c.actions.length) { Q.toast('Add at least one action first.', 'warn'); return; }
     Q.esign.openSend(c.id, 'capa-plan');
   };
-  // An action that needs a signature is signed off in Adobe Sign by the person who did it.
+  // An action marked as needing a signature is signed off in Adobe Sign by the person who did it; any other action is
+  // marked done here, with no signature.
   Q.act['capa-done'] = function (el) {
     var c = CA(el), a = c.actions.find(function (x) { return x.id === el.getAttribute('data-a'); });
-    if (!a.sig) { Q.wf.capa.completeAction(c, a, null); Q.toast('Action done'); Q.refresh(); return; }
+    if (!a.needsSignature) { Q.wf.capa.completeAction(c, a, null); Q.toast('Action done · no signature needed'); Q.refresh(); return; }
     Q.esign.openSend(c.id, 'capa-action', a.id);
   };
   // Completed actions are approved in Adobe Sign (a Quality Manager who did none of them, for high severity).

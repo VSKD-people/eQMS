@@ -147,13 +147,13 @@
   Q.act['es-decline'] = function (el) {
     var ag = es.byId(el.getAttribute('data-id'));
     Q.drawer.open({ kicker: 'Adobe Sign', title: 'Decline to sign', submitLabel: 'Decline',
-      body: h`<p>${ag.subject}</p><div class="field"><label for="esdr">Reason (required)</label><textarea class="textarea" id="esdr" name="reason" placeholder="What needs to change before you can sign?"></textarea><div class="help">The agreement stops. ${ag.kind === 'doc' && ag.stage === 'doc-approval' ? 'The document returns to draft' : 'The sign-off returns to whoever sent it'} with your reason recorded, and a corrected agreement is a new transaction.</div></div>`,
+      body: h`<p>${ag.subject}</p><div class="field"><label for="esdr">Reason (required)</label><textarea class="textarea" id="esdr" name="reason" placeholder="What needs to change before you can sign?"></textarea><div class="help">The agreement stops. ${ag.kind === 'doc' && ag.stage === 'doc-approval' ? 'The document returns to draft with your reason recorded; its approvals are undone and it goes through review and approval again' : 'The sign-off returns to whoever sent it with your reason recorded'}. A corrected agreement is a new transaction.</div></div>`,
       submit: function (f, form) { if (!f.reason) return Q.fieldError(form, 'reason', 'Give a reason.'); try { es.decline(ag, f.reason); } catch (e) { Q.toast(e.message, 'warn'); return; } Q.drawer.close(); Q.toast('Declined. ' + ag.record + ' returned with your reason.'); Q.refresh(); } });
   };
   Q.act['es-cancel'] = function (el) {
     var ag = es.byId(el.getAttribute('data-id'));
     Q.drawer.open({ kicker: 'Adobe Sign', title: 'Cancel this agreement', submitLabel: 'Cancel agreement',
-      body: h`<div class="callout warn mb-16"><strong>Cancelling stops the agreement for every signer.</strong><p class="small" style="margin:4px 0 0">${ag.kind === 'doc' && ag.stage === 'doc-approval' ? 'The document returns to draft' : 'The sign-off returns to whoever sent it'} with your reason recorded. Sending a corrected agreement uses another transaction (${es.remaining()} left this year).</p></div>
+      body: h`<div class="callout warn mb-16"><strong>Cancelling stops the agreement for every signer.</strong><p class="small" style="margin:4px 0 0">${ag.kind === 'doc' && ag.stage === 'doc-approval' ? 'The document returns to draft with your reason recorded. Its approvals and the retraining decision are undone, and it goes through review and approval again' : 'The sign-off returns to whoever sent it with your reason recorded'}. A corrected agreement uses another transaction (${es.remaining()} left this year).</p></div>
         <div class="field"><label for="escr">Reason (required)</label><textarea class="textarea" id="escr" name="reason" placeholder="e.g. Footer shows the wrong version"></textarea></div>`,
       submit: function (f, form) { if (!f.reason) return Q.fieldError(form, 'reason', 'Give a reason.'); try { es.cancel(ag, f.reason); } catch (e) { Q.toast(e.message, 'warn'); return; } Q.drawer.close(); Q.toast('Agreement cancelled'); Q.refresh(); } });
   };
@@ -169,7 +169,7 @@
           <dl class="dl mb-16"><div style="grid-column:1/-1"><dt>Agreement ID</dt><dd class="mono">${ag.id}</dd></div><div style="grid-column:1/-1"><dt>Name</dt><dd>${ag.subject}</dd></div>
             <div><dt>Record</dt><dd>${recordLink(ag)}</dd></div><div><dt>Version</dt><dd>${ag.version ? 'v' + ag.version : '—'}</dd></div>
             <div><dt>Sent by</dt><dd>${Q.fullName(ag.sentBy)}</dd></div><div><dt>Sent (UTC)</dt><dd>${Q.fmtUtc(ag.sentAt)}</dd></div>
-            <div><dt>Completed (UTC)</dt><dd>${Q.fmtUtc(ag.completedAt)}</dd></div><div><dt>Verification check</dt><dd>${ag.verification ? 'Passed · ' + Q.fullName(ag.verification.by) + ', ' + Q.fmtShort(ag.verification.at) : '—'}</dd></div>
+            <div><dt>Completed (UTC)</dt><dd>${Q.fmtUtc(ag.completedAt)}</dd></div><div><dt>Verification check</dt><dd>${ag.verification ? 'Passed · ' + Q.fullName(ag.verification.by) + ', ' + Q.fmtShort(ag.verification.at) + (ag.stage === 'doc-approval' ? ' (at submit, on the locked PDF)' : '') : '—'}</dd></div>
             ${ag.declineReason ? h`<div style="grid-column:1/-1"><dt>Declined by ${Q.fullName(ag.declinedBy)}</dt><dd>${ag.declineReason}</dd></div>` : ''}
             ${ag.cancelReason ? h`<div style="grid-column:1/-1"><dt>Cancelled by ${Q.fullName(ag.cancelledBy)}</dt><dd>${ag.cancelReason}</dd></div>` : ''}
             ${ag.correctionOf ? h`<div style="grid-column:1/-1"><dt>Replaces</dt><dd class="mono">${ag.correctionOf}</dd></div>` : ''}</dl>
