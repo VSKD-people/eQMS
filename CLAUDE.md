@@ -51,10 +51,11 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 | `js/core.js` | `Q.h` safe HTML templating, date helpers, `Q.sha256`, `Q.canon`, CSV, icons |
 | `js/seed.js` | `Q.seed()`: all sample data. Dates are relative to today |
 | `js/store.js` | Load/save, users and roles, `Q.can` permissions, classification (`Q.canSee`, `Q.canDownload`), hash-chained `Q.audit`, notifications, tasks |
-| `js/engine.js` | Workflow engine `Q.wf.*` (doc, cr, obs, qe, capa, review, user), automation rules `Q.fire`, signatures, segregation of duties `Q.sodBlock`, training: audiences, allocation, `Q.completeTraining`, `Q.correctTraining`, `Q.trStatus` |
+| `js/engine.js` | Workflow engine `Q.wf.*` (doc, cr, obs, qe, capa, review, user), automation rules `Q.fire`, signatures, segregation of duties `Q.sodBlock`. Documents: `saveDraft`, `makePdf`, `submit`, `review`, `approve`, `sendBack`, `signing`, `returnedFromSigning`, `makeEffective`; change requests opened with each version (`Q.wf.cr.openForVersion`, `closeForVersion`). Training: audiences, allocation, `Q.trainVersions` (versions whose training counts), `Q.logPdfOpen` / `Q.pdfOpenedAt`, `Q.completeTraining`, `Q.correctTraining`, `Q.trStatus` |
 | `js/esign.js` | Signatures through Adobe Sign `Q.esign.*`: `STAGES` (one per kind of sign-off: who signs, PDF lines, what completing or returning does), `plan` (signers, order, problems), `cantSend`, `send` (verification check, one agreement = one transaction), `sign`, `decline`, `cancel`, completion (signed PDF, audit report, agreement ID), allowance `used`/`remaining` |
+| `js/sharepoint.js` | SharePoint, simulated `Q.sp.*`: publishing Effective versions to the controlled library (`publish`, `publishPending`, `restore`), `sync` (delta sync of the Drafts and Controlled libraries), `hashCheck`, integrity alerts (`raise`, `resolve`), `simulateOutsideEdit` for demonstrations |
 | `js/ui.js` | Router, shell, drawers, menus, Ctrl/Cmd+K palette, shared components, tour |
-| `js/views/*.js` | One file per module: today, documents, training, changes, reviews, quality, analytics, admin, misc, approvals (send drawer, simulated Adobe Sign signing page, agreement details, register, agreement card on records) |
+| `js/views/*.js` | One file per module: today, documents (submit in two steps, approve with the retraining choice, return to the author, the Word stand-in editor), training, changes, reviews, quality, analytics, admin (incl. the SharePoint tab), misc, approvals (send drawer, simulated Adobe Sign signing page, agreement details, register, agreement card on records) |
 | `js/app.js` | Route table and boot. Loads last |
 
 ## Rules to keep
@@ -73,13 +74,16 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
   by hand; the agreement completing does it (each stage's `onComplete`), and declining or cancelling returns it
   (`onReturn`). A new kind of sign-off is a new entry in `Q.esign.STAGES`. Signing plans check approvers with
   `Q.sodBlock(record, kind, userId)`. There is no in-app e-signature drawer. Signatures are insert-only.
+  Documents have no manual send: `Q.wf.doc.approve` sends the `doc-approval` agreement itself when the last QA
+  approver approves (`Q.esign.send(..., { auto: true })`, with the checks made on the locked PDF at submit). Change
+  request and CAPA actions go to Adobe Sign only when `needsSignature` is set; the rest are done in the app.
 - **Training records are locked once completed.** Only the trainee confirms (`Q.completeTraining`); dates come from
   the system; corrections are new records (`Q.correctTraining`). Change audiences with `Q.setAudience` so the change
   is logged with old and new values.
 - **Permissions.** Gate actions with `Q.can(perm)` (roles map in `store.js`), and records with `Q.canSee` and
   `Q.canDownload`. The System Administrator can't approve; the auditor is read-only.
 - **Sample data version.** After changing the shape of the data in `seed.js`, bump `version` in `seed.js` and
-  the matching check in `Q.load` in `store.js` (both are `11`). Old browsers then reseed instead of breaking.
+  the matching check in `Q.load` in `store.js` (both are `12`). Old browsers then reseed instead of breaking.
 - **New script files** need a `<script>` tag in `index.html`, before `js/app.js`.
 - **Design tokens** live at the top of `css/app.css` (light, dark, and `[data-theme]`). The Katalyze Data brand
   is applied: pink `#E2186F` fills (`--accent-fill`), purple `#940080` text accents (`--accent`), navy `#002B49` ink,
@@ -90,11 +94,15 @@ Scripts load in this order (see `veqms/index.html`); everything hangs off one gl
 
 1. Syntax: open the page and check the browser console for errors.
 2. Smoke test: paste `tools/smoke-test.js` into the browser console (or run it with a browser tool).
-   It renders every page, tab and record as every active persona, then checks the audit chain.
-   The last run on this build (fresh data): 13 personas, 3,848 renders, 0 errors, chain valid.
-3. End-to-end test (optional, needs Node and Playwright): `node tools/e2e-test.js` with the app served on port 4173.
-   It drives the Adobe Sign route (documents, closures, change requests, action sign-offs, CAPA plans, periodic
-   reviews) and the training records through the UI as each persona: 72 checks.
+   It renders every page, tab and record as every active persona, opens the document-flow, training and
+   integrity-alert drawers wherever that persona may use them, then checks the audit chain.
+   The last run on this build (fresh data): 13 personas, 4,433 renders, 23 drawers, 0 errors, chain valid (319 entries).
+3. End-to-end test (needs Node and Playwright): `node tools/e2e-test.js` with the app served on port 4173.
+   It drives the document amendment flow (return from approval, editing clears the PDF, segregation of duties refused
+   at "Make the PDF", the four checks, submit, review, approval with and without retraining, automatic send, decline,
+   cancel, signing in order, Effective, change request closed, publishing), the other Adobe Sign sign-offs, actions
+   done without a signature, open-before-confirm training, and SharePoint alerts and their resolution, through the UI
+   as each persona: 110 of 110 checks pass, then the smoke test on the changed state (14 personas, 0 errors).
 4. Walk the scenarios in `veqms/README.md` ("Try these in order"). Each one was tested end to end.
 5. Reset the demo data afterwards (account menu → Reset demo data).
 
@@ -109,8 +117,10 @@ Lucy Parkin (System Administrator), Fraser Scott (auditor). Full table in `veqms
 ## What's simulated
 
 Microsoft sign-in, Adobe Sign (agreements, the signing page with its identity check (any 6 digits work) and reason
-for signing, webhook status, signed PDFs and audit reports), Teams, SharePoint, email, malware scanning,
-Office-to-PDF conversion and server-side PDFs. Other integrations are switches and logs only.
+for signing, webhook status, signed PDFs and audit reports), SharePoint (the Word file in the Drafts library is a
+name and a last-edited time, and the stand-in editor plays Word; publishing, the delta sync, integrity alerts and the
+hash check run in the browser), Teams, email, malware scanning, Office-to-PDF conversion and server-side PDFs. Other
+integrations are switches and logs only.
 
 ## Signatures and training (added after the first build)
 
@@ -124,6 +134,35 @@ open questions 5 and 29 in the spec; the user switched from DocuSign to Adobe Si
   confirms it) per allowance year (`yearStartMonth`).
 - Each document has an `audience` (groups, roles, users, days, quiz). Training rules no longer exist.
 - Approvals before `settings.esign.goLive` are marked as migrated from KSTARRS.
+
+## Amendment flow and SharePoint (aligned with the platform, data version 12)
+
+PJ Walters' decisions of 24 November 2026, as the platform builds them (`platform/apps/api/src/services/documents.ts`,
+`agreements.ts`, `sharepoint.ts`; `platform/docs/06` and `10`):
+- Document states: Draft → In review → In approval → Signing → Effective (plus Superseded and Obsolete). "Review
+  closed" is gone.
+- Every amendment starts as a change request: creating a document or starting a new version opens one in execution
+  (`forVersion: { doc, ver }`, linked both ways); it closes when that version is Effective. Full change control
+  screens are Phase 2; these minimal ones have their own small view in `changes.js`.
+- Authors edit the Word file in the SharePoint Drafts library. *Open in Word* opens the stand-in editor; saving
+  clears a locked PDF (`v.pdf`, `v.verification`). There is no check-out any more.
+- Submit in two steps: choose reviewers and QA approvers, then *Make the PDF* (hashed and locked, with a signature
+  field per signer; segregation-of-duties problems are refused here and logged as `sod.block`); then open the PDF,
+  tick the four checks and submit.
+- Reviewers mark it reviewed; QA approvers approve in VeQMS and decide on retraining (yes by default; "no" needs a
+  reason; retraining unless every approver said no, stored as `v.retrain`). Anyone on it, the owner, author or a
+  Quality Manager can return it to the author while In review or In approval. The last approval sends the agreement;
+  if it can't go (connector off, allowance used up) the approval isn't recorded. A decline or cancel returns it to
+  Draft and undoes the approvals and the retraining decision.
+- With no retraining, `Q.trainVersions(d)` keeps the replaced version's training counting: open allocations stay
+  open and only people with no training on a counting version are allocated.
+- A trainee must have opened the PDF of the record's version since allocation (`Q.logPdfOpen`, audited with the
+  version) before `Q.completeTraining` accepts the confirmation.
+- Document types include user access reviews (UAR) and risk assessments (RA), signed like vendor approvals.
+- Administration → SharePoint: last sync of both libraries, publishing of each Effective version's locked PDF
+  (superseded files stay, marked Superseded), integrity alerts (changed outside VeQMS, file missing, hash mismatch,
+  publish failed) that notify Quality Managers and are audited, resolved by a Quality Manager with a note (final),
+  *Sync now*, *Check hashes now* and *Simulate an outside edit*.
 
 ## Sensible next steps
 
