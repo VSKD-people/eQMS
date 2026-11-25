@@ -8,7 +8,7 @@
   Q.load = function () {
     var s = null;
     try { var raw = localStorage.getItem(KEY); if (raw) s = JSON.parse(raw); } catch (e) { s = null; }
-    if (!s || s.version !== 11) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
+    if (!s || s.version !== 12) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
   };
   Q.save = function () { try { localStorage.setItem(KEY, JSON.stringify(Q.S)); } catch (e) { /* storage blocked: demo still runs in memory */ } };
   Q.reset = function () { Q.S = Q.seed(); Q.seedAudit(); Q.save(); };
@@ -46,6 +46,8 @@
     'admin.integrations': ['admin'],
     'admin.templates': ['admin', 'qm'],
     'admin.workflows': ['admin', 'qm'],
+    'admin.sharepoint': ['admin', 'qm', 'auditor'],
+    'integrity.resolve': ['qm'],
     'admin.any': ['admin', 'qm', 'auditor']
   };
   Q.can = function (perm, u) {
@@ -234,8 +236,9 @@
   Q.TASK_META = {
     'esign-sign': { label: 'Sign in Adobe Sign', action: 'Open in Adobe Sign' },
     'review-doc': { label: 'Review · Document', action: 'Start review' },
+    'approve-doc': { label: 'Approve · Document', action: 'Approve' },
     'author': { label: 'Draft · Document', action: 'Continue draft' },
-    'resubmit': { label: 'Sent back · Document', action: 'Revise draft' },
+    'resubmit': { label: 'Returned · Document', action: 'Revise draft' },
     'send-approval': { label: 'Verify and send · Adobe Sign', action: 'Verify and send' },
     'training': { label: 'Read and understood', action: 'Start training' },
     'periodic': { label: 'Periodic review', action: 'Start review' },
@@ -260,6 +263,7 @@
     }
     if (t.kind === 'fyi') {
       var r = Q.rec(t.record);
+      if (r && Q.kindOf(t.record) === 'doc' && r.state === 'In review') return { label: 'FYI · You approve after review', action: 'View' };
       return { label: 'FYI · You sign in Adobe Sign ' + (r && (r.state === 'In approval' || Q.esign.active(t.record)) ? 'after the current signer' : 'later'), action: 'View' };
     }
     return m;

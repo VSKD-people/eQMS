@@ -73,39 +73,39 @@
 
   var ST = es.STAGES = {};
 
-  // Controlled documents (vendor approvals and validation plans and reports included): author, reviewers, QA approvers.
+  // Controlled documents (vendor approvals, user access reviews, risk assessments, validation plans and reports included):
+  // author, reviewers, then QA approvers, in one agreement. There is no manual send: the engine sends it when the last QA
+  // approver approves in VeQMS (Q.wf.doc.approve). What is signed is the PDF locked and checked at submit.
   ST['doc-approval'] = {
     kind: 'doc', purpose: function () { return 'Document approval'; }, approvers: function () { return 2; },
     subject: function (r) { return r.id + ' v' + Q.curVer(r).v + ' · ' + r.title + ' · Approval'; },
     version: function (r) { return Q.curVer(r).v; },
-    pdf: function (r) { var v = Q.curVer(r); return { name: r.id + '_v' + v.v + '.pdf', hash: v.hash }; },
-    defaultApprovers: function (r) { var a = r.approvers.map(function (x) { return x.u; }).slice(0, 2); return a.length ? a : [(es.qaApprovers([r.author])[0] || {}).id].filter(Boolean); },
+    pdf: function (r) { var v = Q.curVer(r); return v.pdf ? { name: v.pdf.name, hash: v.pdf.hash } : { name: r.id + '_v' + v.v + '.pdf', hash: v.hash }; },
+    defaultApprovers: function (r) { return r.approvers.map(function (x) { return x.u; }).slice(0, 2); },
+    // p.reviewers: the reviewers being chosen at submit (otherwise the document's own).
     plan: function (r, ap, p) {
+      var rv = p.reviewers || r.reviewers.map(function (x) { return x.u; });
       p.signers.push(S(r.author, 'Author', 'Authored', 1));
-      r.reviewers.forEach(function (x) { p.signers.push(S(x.u, 'Reviewer', 'Reviewed', 2)); });
-      var base = r.reviewers.length ? 3 : 2;
+      rv.forEach(function (u) { p.signers.push(S(u, 'Reviewer', 'Reviewed', 2)); });
+      var base = rv.length ? 3 : 2;
       ap.forEach(function (u, i) { p.signers.push(S(u, ap.length > 1 ? 'QA approver ' + (i + 1) : 'QA approver', 'Approved', base + i)); });
-      ap.forEach(function (u) { if (r.reviewers.some(function (x) { return x.u === u; })) p.problems.push(Q.fullName(u) + ' is a reviewer, so they can’t also be the QA approver.'); });
+      ap.forEach(function (u) { if (rv.indexOf(u) >= 0) p.problems.push(Q.fullName(u) + ' is a reviewer, so they can’t also be the QA approver (segregation of duties).'); });
       checkApprovers(p, r, 'doc', ap);
     },
     cantSend: function (r, u) {
-      if (r.state !== 'Review closed') return 'Only a document in Review closed can be sent for approval.';
-      if (!(r.owner === u.id || r.author === u.id || Q.hasRole('qm'))) return 'Only the owner, the author or a Quality Manager can send this agreement.';
+      if (r.state !== 'In approval') return 'Only a document whose approval is complete goes to Adobe Sign.';
+      var v = Q.curVer(r);
+      if (!v.pdf || !v.verification) return 'v' + v.v + ' has no checked, locked PDF. Return it to the author to submit it again.';
+      if (r.approvers.some(function (a) { return a.status !== 'Approved' && a.u !== u.id; })) return 'Every QA approver approves in VeQMS first; the agreement goes when the last one approves.';
       return null;
     },
+    // The four checks the author makes on the locked PDF at submit.
     labels: function (r) {
       var ver = Q.curVer(r).v;
-      return { footer: 'The footer shows ' + r.id + ', version ' + ver + ' and “Page X of Y” on every page', version: 'The version on the cover and in the agreement name is v' + ver, docId: 'The document ID ' + r.id + ' is correct throughout, including the title block', dates: 'Dates are correct: issue date, review date and any dates in the text' };
+      return { footer: 'The footer shows ' + r.id + ', version ' + ver + ' and “Page X of Y” on every page', version: 'The version on the cover is v' + ver, docId: 'The document ID ' + r.id + ' is correct throughout, including the title block', dates: 'Dates are correct: issue date, review date and any dates in the text' };
     },
-    onSent: function (r, ag, o) {
-      r.approvers = (o.approvers || r.approvers.map(function (a) { return a.u; })).map(function (u) { return { u: u, status: 'Waiting' }; });
-      r.route = 'sequential'; r.approvalDue = due(5);
-      Q.wf.doc.setState(r, 'In approval', 'Sent v' + ag.version + ' to Adobe Sign for approval (agreement ' + ag.id + ')');
-      Q.curVer(r).agreement = ag.id;
-      Q.closeTasks(function (t) { return t.record === r.id && t.kind === 'send-approval'; });
-    },
-    onTurn: function (r, ag, s) { var a = r.approvers.find(function (x) { return x.u === s.u; }); if (a && s.meaning === 'Approved') a.status = 'Your turn'; },
-    onSigned: function (r, ag, s) { var a = r.approvers.find(function (x) { return x.u === s.u; }); if (a && s.meaning === 'Approved') { a.status = 'Signed'; a.at = s.at; } },
+    onSent: function (r, ag) { Q.wf.doc.signing(r, ag); },
+    onSigned: function (r, ag, s) { var a = r.approvers.find(function (x) { return x.u === s.u; }); if (a && s.meaning === 'Approved') { a.status = 'Signed'; a.signedAt = s.at; } },
     onComplete: function (r, ag, rows) {
       var v = r.versions.find(function (x) { return x.v === ag.version; }) || Q.curVer(r);
       v.agreement = ag.id; v.signedPdf = ag.signedPdf; v.auditReport = ag.auditReport; v.approvedAt = ag.completedAt;
@@ -114,13 +114,7 @@
       Q.wf.doc.makeEffective(r);
       return n;
     },
-    onReturn: function (r, ag, back) {
-      r.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
-      r.reviewers.forEach(function (x) { x.status = 'Not started'; delete x.at; });
-      Q.wf.doc.setState(r, 'Draft', 'Returned to draft: ' + back.why);
-      Q.wf.assign({ kind: 'resubmit', record: r.id, assignee: r.author, due: due(5), note: back.why });
-      Q.fire('sent.back', { record: r.id, to: ag.signers.map(function (s) { return s.u; }).filter(function (u, i, a) { return u !== me() && a.indexOf(u) === i; }), reason: back.why });
-    }
+    onReturn: function (r, ag, back) { Q.wf.doc.returnedFromSigning(r, ag, back); }
   };
 
   // Making a document obsolete: the Quality Manager who asks for it signs.
@@ -181,7 +175,7 @@
       if (!a) return 'Action not found.';
       if (r.state !== 'In execution') return 'Actions are signed off while the change is in execution.';
       if (a.status === 'Done') return 'This action is already done.';
-      if (!a.sig) return 'This action doesn’t need a signature.';
+      if (!a.needsSignature) return 'This action doesn’t need a signature. Mark it done in VeQMS.';
       if (a.assignee !== u.id) return 'Only ' + Q.fullName(a.assignee) + ' can sign off this action.';
       return null;
     },
@@ -233,7 +227,7 @@
       if (!(r.owner === u.id || Q.hasRole('qm'))) return 'Only the CAPA owner or a Quality Manager can send the plan.';
       return null;
     },
-    lines: function (r) { return [['Problem', r.problem], ['Route', r.route], ['Actions', r.actions.map(function (a) { return a.type + ': ' + a.title + ' · ' + Q.fullName(a.assignee) + ' · due ' + Q.fmtDate(a.due) + (a.sig ? ' · signature' : ''); }).join('; ') || '—'], ['Effect', 'The actions lock and their owners are told.']]; },
+    lines: function (r) { return [['Problem', r.problem], ['Route', r.route], ['Actions', r.actions.map(function (a) { return a.type + ': ' + a.title + ' · ' + Q.fullName(a.assignee) + ' · due ' + Q.fmtDate(a.due) + (a.needsSignature ? ' · signature' : ''); }).join('; ') || '—'], ['Effect', 'The actions lock and their owners are told.']]; },
     onSent: function (r, ag) { r.planAgreement = ag.id; r.planReturned = null; Q.closeTasks(function (t) { return t.record === r.id && t.kind === 'capa-plan'; }); },
     onComplete: function (r, ag) { Q.wf.capa.approvePlan(r, ag); },
     onReturn: function (r, ag, back) { r.planAgreement = null; r.planReturned = back; giveTask('capa-plan', r.id, r.owner, back.why); }
@@ -247,7 +241,7 @@
       if (!a) return 'Action not found.';
       if (r.state !== 'Execution') return 'Actions are signed off during Execution.';
       if (a.status === 'Done') return 'This action is already done.';
-      if (!a.sig) return 'This action doesn’t need a signature.';
+      if (!a.needsSignature) return 'This action doesn’t need a signature. Mark it done in VeQMS.';
       if (a.assignee !== u.id) return 'Only ' + Q.fullName(a.assignee) + ' can sign off this action.';
       return null;
     },
@@ -426,6 +420,7 @@
     var nApprovers = st.approvers(r);
     var approvers = nApprovers ? (opts.approvers || (st.defaultApprovers ? st.defaultApprovers(r) : [])).filter(Boolean).slice(0, nApprovers) : [];
     p.approvers = approvers;
+    p.reviewers = opts.reviewers || null;
     st.plan(r, approvers, p, p.ref, opts.sender || me());
     p.pdf = st.pdf ? st.pdf(r, p.ref) : { name: (rid + (p.ref ? '_' + p.ref : '') + '_' + stage + '.pdf'), hash: Q.sha256(Q.canon({ record: rid, stage: stage, ref: p.ref, lines: es.lines(rid, stage, p.ref) })) };
     p.signers.forEach(function (s) { if (Q.user(s.u).status !== 'Active') p.problems.push(Q.fullName(s.u) + ' (' + s.role.toLowerCase() + ') is no longer active.'); });
@@ -449,6 +444,7 @@
   };
 
   // ---------- Send (one agreement = one transaction) ----------
+  // o.auto: sent by the engine (a document's last approval in VeQMS); its verification is the one made at submit.
   es.send = function (rid, o) {
     o = o || {};
     var stage = o.stage || es.defaultStage(rid), st = ST[stage];
@@ -464,13 +460,13 @@
       status: 'sent', sentBy: me(), sentAt: now(), completedAt: null,
       signers: p.signers.map(function (s) { return { u: s.u, role: s.role, meaning: s.meaning, order: s.order, status: 'Waiting' }; }),
       pdf: p.pdf, signedPdf: null, auditReport: null,
-      verification: { footer: true, version: true, docId: true, dates: true, by: me(), at: now(), note: ver.note || '' },
+      verification: { footer: true, version: true, docId: true, dates: true, by: ver.by || me(), at: ver.at || now(), note: ver.note || '' },
       events: [], correctionOf: prev ? prev.id : null
     };
     Q.S.agreements.push(ag);
-    ag.events.push({ at: ag.sentAt, type: 'sent', u: me(), detail: 'Agreement sent to ' + Q.plural(ag.signers.length, 'signer') + (prev ? ' (correction of ' + prev.id.slice(0, 8) + '…)' : '') });
+    ag.events.push({ at: ag.sentAt, type: 'sent', u: me(), detail: 'Agreement sent to ' + Q.plural(ag.signers.length, 'signer') + (o.auto ? ' when the last QA approver approved in VeQMS' : '') + (prev ? ' (correction of ' + prev.id.slice(0, 8) + '…)' : '') });
     var n = es.txNo(ag);
-    Q.audit('esign.verify', label, rid, 'Verification check passed for ' + ag.subject.split(' · ').slice(0, 2).join(' · ') + ': footer, version, ID and dates', null, { footer: true, version: true, docId: true, dates: true, note: ver.note || '' });
+    if (!o.auto) Q.audit('esign.verify', label, rid, 'Verification check passed for ' + ag.subject.split(' · ').slice(0, 2).join(' · ') + ': footer, version, ID and dates', null, { footer: true, version: true, docId: true, dates: true, note: ver.note || '' });
     Q.audit('esign.send', label, rid, 'Sent Adobe Sign agreement ' + ag.id + ' (' + ag.purpose.toLowerCase() + '; transaction ' + n + ' of ' + es.cfg().allowance + ' this year' + (prev ? '; correction after a ' + prev.status + ' agreement' : '') + ')', null, { agreement: ag.id, stage: stage, subject: ag.subject, signers: ag.signers.map(function (s) { return Q.fullName(s.u) + ' · ' + s.meaning; }), transactionsUsed: es.used(), transactionsRemaining: es.remaining() });
     if (st.onSent) st.onSent(r, ag, o);
     advance(ag);
