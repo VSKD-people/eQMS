@@ -5,6 +5,10 @@ const bool = z.enum(['0', '1', 'true', 'false']).optional().transform((v) => v =
 
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
+  // Which deployment this is. Azure runs NODE_ENV=production everywhere; VEQMS_STAGE=staging marks a test
+  // environment, where Adobe Sign and SharePoint may stay in mock mode until their accounts are set up. Unset or
+  // anything else under NODE_ENV=production counts as production, which requires both live.
+  VEQMS_STAGE: z.enum(['staging', 'production']).optional(),
   PORT: z.coerce.number().int().positive().default(8080),
   DATABASE_URL: z.string().min(1),
   DATABASE_ENTRA_AUTH: bool,
@@ -49,15 +53,19 @@ const schema = z.object({
   APP_BASE_URL: z.string().default('http://localhost:3000')
 });
 
-export type Config = z.infer<typeof schema> & { webhookClientId: string; devAuthAllowed: boolean };
+export type Stage = 'development' | 'staging' | 'production';
+export type Config = z.infer<typeof schema> & { webhookClientId: string; devAuthAllowed: boolean; stage: Stage };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const c = schema.parse(env);
   const production = c.NODE_ENV === 'production';
-  if (production && c.DEV_AUTH) throw new Error('DEV_AUTH must not be set in production');
-  if (production && c.ADOBE_SIGN_MODE !== 'live') throw new Error('ADOBE_SIGN_MODE must be live in production');
-  if (production && (!c.ENTRA_TENANT_ID || !c.ENTRA_API_AUDIENCE)) throw new Error('ENTRA_TENANT_ID and ENTRA_API_AUDIENCE are required in production');
-  if (production && c.SHAREPOINT_MODE !== 'live') throw new Error('SHAREPOINT_MODE must be live in production');
+  const stage: Stage = !production ? 'development' : c.VEQMS_STAGE === 'staging' ? 'staging' : 'production';
+  // Staging and production alike: real Entra sign-in, never the development sign-in.
+  if (production && c.DEV_AUTH) throw new Error('DEV_AUTH must not be set in production or staging');
+  if (production && (!c.ENTRA_TENANT_ID || !c.ENTRA_API_AUDIENCE)) throw new Error('ENTRA_TENANT_ID and ENTRA_API_AUDIENCE are required in production and staging');
+  // Production only: signatures and controlled files must be real. Staging may simulate them (placeholders).
+  if (stage === 'production' && c.ADOBE_SIGN_MODE !== 'live') throw new Error('ADOBE_SIGN_MODE must be live in production (set VEQMS_STAGE=staging for a test environment)');
+  if (stage === 'production' && c.SHAREPOINT_MODE !== 'live') throw new Error('SHAREPOINT_MODE must be live in production (set VEQMS_STAGE=staging for a test environment)');
   if (c.SHAREPOINT_MODE === 'live' && (!c.SHAREPOINT_SITE_ID || !c.SHAREPOINT_DRAFTS_DRIVE_ID || !c.SHAREPOINT_CONTROLLED_DRIVE_ID || !c.SHAREPOINT_APP_ID)) {
     throw new Error('SharePoint live mode needs SHAREPOINT_SITE_ID, SHAREPOINT_DRAFTS_DRIVE_ID, SHAREPOINT_CONTROLLED_DRIVE_ID and SHAREPOINT_APP_ID');
   }
@@ -71,5 +79,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
     if (c.ADOBE_SIGN_WEBHOOK_TOKEN.length < 32) throw new Error('Adobe Sign live mode needs ADOBE_SIGN_WEBHOOK_TOKEN of at least 32 random characters');
   }
-  return { ...c, webhookClientId: c.ADOBE_SIGN_WEBHOOK_CLIENT_ID || c.ADOBE_SIGN_CLIENT_ID, devAuthAllowed: c.DEV_AUTH && !production };
+  return { ...c, webhookClientId: c.ADOBE_SIGN_WEBHOOK_CLIENT_ID || c.ADOBE_SIGN_CLIENT_ID, devAuthAllowed: c.DEV_AUTH && !production, stage };
 }

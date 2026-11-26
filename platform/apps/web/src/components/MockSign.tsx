@@ -1,7 +1,7 @@
 import type { AgreementSummary, Me } from '@/lib/types';
 import { mockDecline, mockSign } from '@/app/(app)/approvals/actions';
 
-// Shown only when the API runs Adobe Sign in mock mode (development). It stands in for the Adobe Sign email and
+// Shown only when the API runs Adobe Sign in mock mode (development and staging). It stands in for the Adobe Sign email and
 // signing page. In live mode signers sign in Adobe Sign itself and the app shows status only.
 export function MockSignPanel({ e, me, back }: { e: AgreementSummary; me: Me; back: string }) {
   if (me.esignMode !== 'mock' || e.status !== 'sent') return null;
@@ -10,7 +10,7 @@ export function MockSignPanel({ e, me, back }: { e: AgreementSummary; me: Me; ba
   return (
     <section className="card card-pad mb-16" aria-labelledby={`mock-${e.id}`} style={{ borderStyle: 'dashed' }}>
       <h2 id={`mock-${e.id}`} className="label mb-8">Sign in Adobe Sign (mock)</h2>
-      <p className="small muted">Development only. Adobe Sign is in mock mode, so this panel stands in for the Adobe Sign email. In live mode you sign in Adobe Sign and this panel does not appear.</p>
+      <p className="small muted">Development and staging only. Adobe Sign is simulated, so this panel stands in for the Adobe Sign email. With Adobe Sign live you sign in Adobe Sign and this panel does not appear.</p>
       <p className="small">You sign as <b>{mine.name}</b> · {mine.roleLabel} · signature meaning: <b>{mine.meaning}</b></p>
       <div className="btn-row">
         <form action={mockSign.bind(null, e.id, back)}><button className="btn btn-primary" type="submit">Sign ({mine.meaning})</button></form>

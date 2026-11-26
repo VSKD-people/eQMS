@@ -9,6 +9,7 @@ export type Me = {
   tenant: { id: string; name: string };
   esignMode?: 'live' | 'mock';   // 'mock' only in development (ADOBE_SIGN_MODE=mock)
   sharepointMode?: 'live' | 'mock';   // 'mock': a local folder stands in for SharePoint, and drafts are written in VeQMS
+  stage?: 'development' | 'staging' | 'production';
 };
 
 // GET /sharepoint (Administration): last sync of each library, publishing, integrity alerts.

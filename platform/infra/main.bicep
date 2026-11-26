@@ -108,9 +108,13 @@ param sharepointColumns string = '{"number":"DocumentNumber","version":"Document
 @description('How often the SharePoint job publishes and syncs (cron, UTC).')
 param sharePointSyncCron string = '*/15 * * * *'
 
+@allowed(['staging', 'production'])
+@description('staging: a test environment. Adobe Sign and SharePoint may stay in mock mode (placeholders) and the web app shows a staging banner. production: both must be live or the API refuses to start.')
+param deploymentStage string = 'production'
+
 param tags object = {
   system: 'VeQMS'
-  environment: 'production'
+  environment: deploymentStage
   dataResidency: 'UK'
 }
 
@@ -386,6 +390,7 @@ module apps 'modules/apps.bicep' = if (deployApps) {
     adobeSignClientId: adobeSignClientId
     auditAnchorCron: auditAnchorCron
     graphMailFrom: graphMailFrom
+    deploymentStage: deploymentStage
     sharepointMode: sharepointMode
     sharepointSiteId: sharepointSiteId
     sharepointDraftsDriveId: sharepointDraftsDriveId

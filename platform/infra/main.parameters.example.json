@@ -5,6 +5,7 @@
     "location": { "value": "uksouth" },
     "namePrefix": { "value": "veqms" },
     "deployApps": { "value": false },
+    "deploymentStage": { "value": "production" },
     "entraApiAudience": { "value": "api://<api-client-id>" },
     "entraWebClientId": { "value": "<web-client-id>" },
     "entraApiScope": { "value": "api://<api-client-id>/access_as_user" },

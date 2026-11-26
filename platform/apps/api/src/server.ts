@@ -39,8 +39,9 @@ async function main(): Promise<void> {
   publisher.start();
   publisher.kick();
   if (cfg.devAuthAllowed) app.log.warn('Development sign-in (X-Dev-User) is ON. Never use this setting in production.');
+  if (cfg.stage === 'staging') app.log.warn('STAGING: a test environment. Do not put real quality records here.');
   if (cfg.ADOBE_SIGN_MODE === 'mock') app.log.warn('Adobe Sign is in MOCK mode: nothing is sent to Adobe Sign and signatures are simulated.');
-  if (cfg.SHAREPOINT_MODE === 'mock') app.log.warn('SharePoint is in MOCK mode: both libraries are a local folder.');
+  if (cfg.SHAREPOINT_MODE === 'mock') app.log.warn('SharePoint is in MOCK mode: both libraries are a local folder, lost when the container restarts.');
   const stop = async () => { inbox.stop(); publisher.stop(); await app.close(); await pool.end(); process.exit(0); };
   process.on('SIGTERM', () => void stop());
   process.on('SIGINT', () => void stop());

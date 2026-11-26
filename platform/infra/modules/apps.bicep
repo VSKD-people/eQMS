@@ -30,6 +30,7 @@ param adobeSignAuth string
 param adobeSignApiAccessPoint string
 param adobeSignClientId string
 param graphMailFrom string
+param deploymentStage string
 param sharepointMode string
 param sharepointSiteId string
 param sharepointDraftsDriveId string
@@ -65,6 +66,10 @@ var webSecrets = [
 
 var apiEnv = [
   { name: 'NODE_ENV', value: 'production' }
+  // staging allows Adobe Sign and SharePoint in mock mode; production requires both live (apps/api/src/config.ts).
+  { name: 'VEQMS_STAGE', value: deploymentStage }
+  // Mock SharePoint keeps its files here, inside the container (the image creates this folder for the node user).
+  { name: 'LOCAL_STORAGE_DIR', value: '/data/storage' }
   { name: 'PORT', value: '8080' }
   { name: 'DATABASE_URL', value: appDatabaseUrl }
   { name: 'DATABASE_ENTRA_AUTH', value: '1' }
