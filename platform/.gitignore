@@ -7,6 +7,3 @@ dist/
 !.env.example
 coverage/
 storage-local/
-# Filled-in deployment parameters (tenant, app and group IDs) stay out of Git; the examples are committed.
-infra/main.parameters*.json
-!infra/main.parameters*.example.json

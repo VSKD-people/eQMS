@@ -7,7 +7,6 @@
 | Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer, Word writer: 16 tests | `npm test --workspace @veqms/domain` |
 | Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, IP and device kept apart and purged, training-record locks, import mode refused for the API, agreement rules, allowance, version locks (content, locked PDF, checks, retraining decision, change request), insert-only signatures, gap-free numbers, SharePoint (published file, sync runs, integrity alerts): 11 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
 | API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor; SharePoint in mock mode (publishing, superseded files, the sync, integrity alerts, the hash check, failed publishing) and the live Word path with Graph faked (Word file, conversion with the signature page, change checks), and a restart when a change token expires: 129 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
-| Config (`apps/api/test/config.test.ts`) | The rules for each stage: development may simulate everything; staging may keep Adobe Sign and SharePoint as placeholders but needs Entra; production needs both live: 10 checks | `npm test --workspace @veqms/api` (no database needed) |
 | Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, queueing with de-duplication, and that the queue worker only reads the status from Adobe Sign: 12 checks | as the API flow test |
 | UAT in the browser (`e2e/tests/uat.spec.ts`) | The ten UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign and SharePoint in mock mode: 10 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
@@ -71,11 +70,6 @@ decision; the agreement goes to Adobe Sign on the last approval; anyone on it ca
 send page is gone. The invariants, the API flow test (109 checks at that point) and the nine browser scenarios (1 to 3
 rewritten for the new flow) passed. If Adobe Sign can't be reached when the last approver approves, the approval rolls back and they
 approve again later; the browser shows the error.
-
-Then added a staging stage (`VEQMS_STAGE=staging`, Bicep `deploymentStage`): the built API started with
-`NODE_ENV=production` and the placeholders, answered `/ready`, and the three jobs exited cleanly; with the same
-settings as production it refused to start. The staging banner hasn't been seen in a browser (staging needs real
-Entra sign-in).
 
 Then made SharePoint the file store ([10 · SharePoint](10-sharepoint.md)): Word drafts, publishing to the controlled
 library, the delta sync with integrity alerts, the nightly hash check and the import job. Mock mode runs in the tests

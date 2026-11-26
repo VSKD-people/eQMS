@@ -12,13 +12,6 @@ async function main(): Promise<void> {
   const cfg = loadConfig();
   const pool = await poolFor(cfg);
   const deps = { sharepoint: createSharePoint(cfg), storage: createStorage(cfg) };
-  if (deps.sharepoint.mode === 'mock') {
-    // Mock SharePoint is a folder inside the API's own container, which this job can't see. The API publishes to it
-    // itself; there is nothing for the job to sync (staging and development).
-    console.log(JSON.stringify({ job: 'sharepoint', skipped: 'SharePoint is in mock mode' }));
-    await pool.end();
-    process.exit(0);
-  }
   let failed = 0;
   try {
     for (const t of await sharePointTenants(pool, cfg.ENTRA_TENANT_ID)) {

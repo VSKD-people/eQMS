@@ -36,12 +36,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="small muted" style={{ textAlign: 'right' }}>{me.user.name}<br />{me.tenant.name}</span>
           <span className="avatar" aria-hidden="true">{me.user.initials}</span>
         </header>
-        {me.stage === 'staging' ? (
-          <div className="callout warn" role="note" style={{ margin: 0, borderRadius: 0 }}>
-            <strong>Staging.</strong> A test environment: don’t put real quality records here.
-            {me.esignMode === 'mock' ? ' Adobe Sign is simulated (sign on the record page).' : ''}
-            {me.sharepointMode === 'mock' ? ' SharePoint is simulated (drafts are written in VeQMS; published files are lost on restart).' : ''}
-          </div>) : null}
         <main id="main" className="content" tabIndex={-1}>{children}</main>
       </div>
       <nav className="tabbar" aria-label="Mobile">

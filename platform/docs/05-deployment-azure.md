@@ -1,8 +1,7 @@
 # 05 · Deploying VeQMS to Azure UK South
 
 This takes an empty Azure subscription to a live VeQMS with Microsoft Entra ID sign-in, PostgreSQL, Adobe Sign
-approvals, SharePoint and the scheduled jobs. Do it twice: first **staging** (its own resource group, Adobe Sign and
-SharePoint as placeholders), then **production**.
+approvals and daily training reminders.
 
 > **Status: not tested in Azure.** Both Dockerfiles build and run locally (`docker compose up --build`, with the UAT
 > browser tests passing against it). The infrastructure code (`infra/`) and the deploy workflow were written without
@@ -17,31 +16,13 @@ SharePoint as placeholders), then **production**.
 | Web app (Next.js) | Container app `veqms-web`, public HTTPS | Signs people in with Entra ID; calls the API server to server |
 | API (Node) | Container app `veqms-api` | Only component that touches the database. Public HTTPS address if `apiExternal = true` (needed for Adobe Sign webhooks and SCIM, see step 9) |
 | Migrations | Container Apps job `veqms-migrate` (manual) | Run by every deployment before the apps update |
-| Daily job | Container Apps job `veqms-reminders` | 06:00 UTC: training reminders, Adobe Sign status check, SharePoint hash check, email, IP and device retention |
-| Audit anchors | Container Apps job `veqms-anchor` | Every 15 minutes: the audit chain head to the immutable records container |
-| SharePoint | Container Apps job `veqms-sharepoint` | Every 15 minutes: publishing and the delta sync (skips itself while SharePoint is a placeholder) |
+| Training reminders | Container Apps job `veqms-reminders` | Daily at 06:00 UTC |
 | Database | Azure Database for PostgreSQL Flexible Server 16, database `veqms` | Private network only, Entra authentication only, 35-day backups copied to UK West |
 | Files | Storage account, container `records` | Original PDFs, signed PDFs, audit reports; time-based retention policy |
 | Secrets | Key Vault (RBAC) | Names only in code; values added by hand |
 | Images | Azure Container Registry | Tagged with the Git commit |
 | Logs | Log Analytics | Container logs and job runs |
 | Identities | `id-veqms-app`, `id-veqms-web`, `id-veqms-migrate` | One managed identity per job, least privilege |
-
-## Staging and production
-
-| | Staging | Production |
-|---|---|---|
-| Resource group | `rg-veqms-staging` | `rg-veqms-prod` |
-| Parameters | `infra/main.parameters.staging.json` from `main.parameters.staging.example.json` (`deploymentStage: staging`) | `infra/main.parameters.json` from `main.parameters.example.json` (`deploymentStage: production`) |
-| Adobe Sign | Placeholder (`esignMode: mock`): signers sign on the record page | Must be live, or the API refuses to start |
-| SharePoint | Placeholder (`sharepointMode: mock`): drafts written in VeQMS; published files kept inside the API container and lost when it restarts | Must be live, or the API refuses to start |
-| Sign-in | Real Microsoft Entra ID (no development sign-in) | Real Microsoft Entra ID |
-| Banner | "Staging" on every page | None |
-| GitHub environment | `staging` | `production`, with required reviewers |
-
-The filled-in parameter files hold tenant, app and group IDs, so Git ignores them (`.gitignore`); only the examples are
-committed. Staging can use its own Entra app registrations (redirect URIs point at the staging web address), or the
-same ones with both redirect URIs added. Put no real quality records in staging.
 
 ## 1. Before you start
 
@@ -107,22 +88,12 @@ administer PostgreSQL for restores and investigations. Note its object ID and na
 
 ## 4. Deploy the infrastructure (phase 1)
 
-For staging:
-
-```bash
-cp infra/main.parameters.staging.example.json infra/main.parameters.staging.json
-```
-
-For production:
-
 ```bash
 cp infra/main.parameters.example.json infra/main.parameters.json
 ```
 
-Edit the copy: Entra IDs from step 3, `deployApps: false`, and `apiExternal: true` unless the web app proxies
-`/webhooks/adobe-sign/<token>` and `/scim/v2` (it doesn't in Phase 1). For production, Adobe Sign and SharePoint must be
-live before step 6 (step 9 says how); in staging they stay placeholders. Use the staging file and resource group in
-every command below when you deploy staging.
+Edit `infra/main.parameters.json`: Entra IDs from step 3, `deployApps: false`, `esignMode: "mock"` for now, and
+`apiExternal: true` unless the web app proxies `/webhooks/adobe-sign/<token>` and `/scim/v2` (it doesn't in Phase 1).
 
 Validate first. These commands were not run while writing this guide:
 
@@ -212,7 +183,8 @@ az acr build --registry "$ACR" --image veqms-api:initial --file apps/api/Dockerf
 az acr build --registry "$ACR" --image veqms-web:initial --file apps/web/Dockerfile .
 ```
 
-The lockfile is committed, so the builds use exactly the tested package versions (`npm ci`).
+The first build installs packages without a lockfile. After it works, run `npm install` locally, commit
+`package-lock.json`, and builds become reproducible.
 
 Then deploy again with the apps switched on and the real images:
 
@@ -252,18 +224,16 @@ change-control procedure.
 
 ## 8. GitHub: automatic deployments
 
-1. On the `VeQMS deploy` app registration (step 3d), add a federated credential per GitHub environment: issuer
-   `https://token.actions.githubusercontent.com`, subject `repo:<owner>/<repo>:environment:staging` (and another
-   ending `environment:production`), audience `api://AzureADTokenExchange`.
-2. Give it **AcrPush** on each registry and **Contributor** on each resource group. Nothing more.
-3. In GitHub → Settings → Environments, create `staging` and `production`; give `production` required reviewers and
-   restrict it to `main`.
-4. On each environment, add these variables (not secrets; OIDC means there's no Azure password to store):
+1. On the `VeQMS deploy` app registration (step 3d), add a federated credential: issuer
+   `https://token.actions.githubusercontent.com`, subject `repo:<owner>/<repo>:environment:production`, audience
+   `api://AzureADTokenExchange`.
+2. Give it **AcrPush** on the registry and **Contributor** on the resource group. Nothing more.
+3. In GitHub → Settings → Environments, create `production`, add the required reviewers, and restrict it to `main`.
+4. Add these as environment variables (not secrets; OIDC means there's no Azure password to store):
    `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `ACR_NAME`.
 
-From then on, run `.github/workflows/platform-deploy.yml` by hand (Actions > Platform deploy > Run workflow, then pick
-staging or production): build, push, migrate (it waits for success), then roll out the API, the web app and the three
-scheduled jobs, and a smoke check. It is
+From then on, run `.github/workflows/platform-deploy.yml` by hand (Actions > Platform deploy > Run workflow): build,
+push, migrate (it waits for success), then roll out the API, web app and reminders job, and a smoke check. It is
 manual only until Azure is set up; once it is, decide whether merges to `main` should deploy automatically, and if
 so make the deploy wait for CI. CI (`platform-ci.yml`) runs on every pull request. *Check:* the status values the migrate loop waits for
 (`Succeeded`, `Failed`) against `az containerapp job execution show`.

@@ -14,8 +14,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx): void {
     tenant: { id: auth.tenantId, name: auth.tenantName },
     via: auth.via,
     esignMode: ctx.esign.mode,
-    sharepointMode: ctx.sharepoint.mode,
-    stage: ctx.cfg.stage
+    sharepointMode: ctx.sharepoint.mode
   })));
 
   api.get('/tasks', (req) => ctx.run(req, async (db, me) => {
