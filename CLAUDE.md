@@ -175,7 +175,7 @@ PJ Walters' decisions of 24 November 2026, as the platform builds them (`platfor
 
 The live build: PostgreSQL 16, a Fastify API, a Next.js web app and Azure UK South infrastructure, Phase 1 scope.
 Start with `platform/README.md` and `platform/BUILD_PROMPT.md` (rules, first tasks, later phases, open decisions);
-the documentation set is `platform/docs/01` to `09`. The prototype stays the reference for screens and flows.
+the documentation set is `platform/docs/01` to `12`. The prototype stays the reference for screens and flows.
 
 - The database enforces the compliance rules (row-level security, append-only audit chain, insert-only signatures,
   locked training records, signatures only from Adobe Sign or KSTARRS, the Adobe Sign transaction allowance). Don't
@@ -188,6 +188,10 @@ the documentation set is `platform/docs/01` to `09`. The prototype stays the ref
   submit and the author checks it; review and approval in VeQMS (with the retraining decision); the last approval sends
   the Adobe Sign agreement. SharePoint is the file store: Word drafts, the locked PDF published to a controlled library,
   a delta sync raising integrity alerts (`platform/docs/10-sharepoint.md`, with its own "Verify before go-live" list).
+- Pilot mode (`VEQMS_MODE=pilot`): runs on any container host before Microsoft 365, Adobe Sign and SharePoint are
+  connected, with email and password sign-in, simulated signatures recorded as not Part 11, SharePoint off and files in
+  PostgreSQL. Test and pilot data only. `docker-compose.pilot.yml`, `platform/docs/11-configuration.md` (every switch)
+  and `platform/docs/12-pilot-hosting.md`. Production still requires every integration live.
 - Status: built with the real packages (Next.js 16, zod 4, lockfile committed); every check and the ten UAT browser
   scenarios pass; the Bicep compiles. Not yet run: anything in Azure, Entra sign-in, live Adobe Sign, live SharePoint,
   Graph email.

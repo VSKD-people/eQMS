@@ -8,6 +8,9 @@ and flows; the specs are in `../specs/`.
 > invariants and the API flow test pass. `docker compose up --build` runs the whole stack, and the ten UAT scenarios
 > pass in a browser (Playwright, `e2e/`). The Bicep compiles. Not yet run: Microsoft Entra sign-in, live Adobe Sign,
 > live SharePoint, Microsoft Graph email, Azure Blob storage, anything in Azure and the deploy workflow. Next steps are in "First tasks" in [BUILD_PROMPT.md](BUILD_PROMPT.md).
+> **Pilot.** Before Microsoft 365, Adobe Sign and SharePoint are connected, VeQMS can run as a pilot on any container host
+> with PostgreSQL: email and password sign-in, simulated signatures (not Part 11), SharePoint off. Test and pilot data
+> only. See [12 · Pilot hosting](docs/12-pilot-hosting.md) and [11 · Configuration](docs/11-configuration.md).
 > Details: [07 · Testing and validation](docs/07-testing-and-validation.md).
 
 ## What Phase 1 does
@@ -115,3 +118,5 @@ They change data too: to run them again, start from a fresh database (`docker co
 | [08 · Migration](docs/08-migration.md) | Bringing records across from KSTARRS and SharePoint |
 | [09 · Runbook](docs/09-runbook.md) | Day-to-day operations, incidents, leavers, restore |
 | [10 · SharePoint](docs/10-sharepoint.md) | Word drafts, publishing, the delta sync, integrity alerts, the import, and what to verify |
+| [11 · Configuration](docs/11-configuration.md) | Every setting, the pilot and production modes, and how to connect each integration later |
+| [12 · Pilot hosting](docs/12-pilot-hosting.md) | Running the pilot on a container host before Microsoft 365, Adobe Sign and SharePoint are connected |

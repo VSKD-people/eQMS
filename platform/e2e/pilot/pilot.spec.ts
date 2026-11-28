@@ -28,6 +28,7 @@ async function changeTemporary(page: Page, temp: string, next: string): Promise<
   await page.getByLabel('New password again').fill(next);
   await page.getByRole('button', { name: 'Change password' }).click();
   await expect(page.locator('.callout.ok[role=status]')).toContainText('Password changed');
+  await expect(page).not.toHaveURL(/\/account\/password/);
 }
 const ok = (page: Page, text: string | RegExp) => expect(page.locator('.callout.ok[role=status]', { hasText: text })).toBeVisible();
 const docState = async (page: Page, n: string, state: string) => { await page.goto(`/documents/${n}`); await expect(page.locator('.record-meta .chip-outline')).toContainText(`· ${state}`); };
@@ -48,12 +49,13 @@ test('pilot: sign-in, people, a document to Effective with simulated signatures,
   // The administrator adds an author with a temporary password.
   await ada.goto('/admin?tab=users');
   await ada.getByText('Add a person').click();
-  await ada.getByLabel('Full name').fill(author.name);
-  await ada.getByLabel('Email address').fill(author.email);
-  await ada.getByLabel('Author', { exact: true }).check();
-  await ada.getByLabel('All staff').check();
-  await ada.getByLabel('Temporary password').fill(author.temp);
-  await ada.getByRole('button', { name: 'Add person' }).click();
+  const add = ada.locator('details', { hasText: 'Add a person' });
+  await add.getByLabel('Full name').fill(author.name);
+  await add.getByLabel('Email address').fill(author.email);
+  await add.getByLabel('Author', { exact: true }).check();
+  await add.getByLabel('All staff').check();
+  await add.getByLabel('Temporary password').fill(author.temp);
+  await add.getByRole('button', { name: 'Add person' }).click();
   await ok(ada, `${author.name} added`);
 
   const quinn = await signIn(browser, qm.email, qm.temp);

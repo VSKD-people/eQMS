@@ -6,7 +6,11 @@
 |---|---|---|
 | Domain unit tests (`packages/domain/test`) | Signing plan and segregation of duties, allowance years, training status, Adobe Sign webhook checks, Excel writer, Word writer: 16 tests | `npm test --workspace @veqms/domain` |
 | Database invariants (`packages/db/test/001_invariants.sql`) | Row-level security, no deletes, audit chain and tamper detection, IP and device kept apart and purged, training-record locks, import mode refused for the API, agreement rules, allowance, version locks (content, locked PDF, checks, retraining decision, change request), insert-only signatures, gap-free numbers, SharePoint (published file, sync runs, integrity alerts): 11 groups | `npm run db:test` (needs `psql` and PostgreSQL 16) |
-| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor; SharePoint in mock mode (publishing, superseded files, the sync, integrity alerts, the hash check, failed publishing) and the live Word path with Graph faked (Word file, conversion with the signature page, change checks), and a restart when a change token expires: 129 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| API flow (`apps/api/test/flow.test.ts`) | The services against a freshly seeded database as `veqms_app`: the amendment flow (change request, locked PDF and its four checks at submit, review, approval in VeQMS with the retraining decision, returns to the author, the agreement sent on the last approval), signing in order, complete, cancel, decline, correction transactions, no-retraining versions, closures, status sync as from Adobe Sign (including a rejection reported as cancelled), open-before-confirm, quiz, locks, corrections, leavers, email queue, allowance refusal, audit chain and anchor; SharePoint in mock mode (publishing, superseded files, the sync, integrity alerts, the hash check, failed publishing) and the live Word path with Graph faked (Word file, conversion with the signature page, change checks), a restart when a change token expires, and signatures recorded as simulated under mock Adobe Sign and as Adobe Sign when live: 130 checks | `DATABASE_URL=… npm test --workspace @veqms/api` after migrate and seed |
+| Config (`apps/api/test/config.test.ts`) | Development, pilot and production rules: which placeholders each allows: 13 checks | `npm test --workspace @veqms/api` (no database needed) |
+| Email and password sign-in (`apps/api/test/local-auth.test.ts`) | Through the API in its own organisation: one refusal message for every cause, temporary passwords changed first, the password rule, lockout, resets, sessions ending, leavers refused, audit entries, tampered tokens: 25 checks | as the API flow test |
+| Pilot placeholders (`apps/api/test/pilot.test.ts`) | Files in the database (write-once) and SharePoint off: 9 checks | as the API flow test |
+| Pilot in the browser (`e2e/pilot/pilot.spec.ts`) | Against `docker-compose.pilot.yml` after the bootstrap script: sign-in, forced password changes, adding a person, a document to Effective with simulated signatures labelled not Part 11, SharePoint not connected, a reset ending a session, the audit trail | see the top of the spec |
 | Webhook route (`apps/api/test/webhook.test.ts`) | The Adobe Sign webhook through Fastify in live mode with a faked Adobe client: secret URL, client ID check, the echo Adobe requires, queueing with de-duplication, and that the queue worker only reads the status from Adobe Sign: 12 checks | as the API flow test |
 | UAT in the browser (`e2e/tests/uat.spec.ts`) | The ten UAT scenarios below, through the web app as each persona, against the Docker stack with Adobe Sign and SharePoint in mock mode: 10 tests | `docker compose up --build`, then `cd e2e && npm ci && npx playwright install chromium && npx playwright test` |
 
@@ -21,7 +25,7 @@ packages (Node 22, TypeScript 5.9, Next.js 16.4, Fastify 5.12, zod 4.6, pg 8), a
 
 - **Passing with the real packages, on a clean copy from the lockfile:** type-check; build (including `next build`);
   the domain tests (16 of 16); the database invariants on PostgreSQL 16 (all 11 groups); migrate twice (the second run
-  is a no-op) and seed; the API flow test (129 of 129) and the webhook route test (12 of 12). These are the steps CI runs.
+  is a no-op) and seed; the API flow test (130 of 130) and the webhook route test (12 of 12). These are the steps CI runs.
 - **CI on GitHub:** both jobs (checks, and the browser tests against `docker compose`) passed on the pull request.
 - **Bicep:** `infra/main.bicep` compiles and lints with no errors or warnings (Bicep CLI 0.49.2). It has not been
   deployed.
@@ -75,6 +79,12 @@ Then made SharePoint the file store ([10 · SharePoint](10-sharepoint.md)): Word
 library, the delta sync with integrity alerts, the nightly hash check and the import job. Mock mode runs in the tests
 and UAT (scenario 10 added). The live Graph calls have not run against SharePoint; the Word file VeQMS creates was
 opened in LibreOffice, not Word. The Bicep (new `veqms-sharepoint` job and settings) compiles and lints.
+
+Then added the pilot mode ([11 · Configuration](11-configuration.md), [12 · Pilot hosting](12-pilot-hosting.md)):
+email and password sign-in, simulated signatures recorded as not Part 11, SharePoint off and files in the database.
+Passing: the config (13), sign-in (25), pilot (9), flow (130) and webhook (12) tests, all 12 invariant groups, the
+ten UAT scenarios on the development stack, and the pilot browser test on `docker-compose.pilot.yml` after the
+bootstrap script. Not yet run on any container host.
 
 ## Before go-live
 

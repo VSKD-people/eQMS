@@ -63,7 +63,9 @@ type AuditEntry = { seq: number; at: string; actor: string; action: string; obje
 |---|---|---|---|
 | GET | `/health` (no auth, no prefix) | anyone | `{ ok: true }` |
 | GET | `/ready` (no auth, no prefix) | anyone | `{ ok: true }` once the database answers |
-| GET | `/me` | signed in | `Me` |
+| GET | `/me` | signed in | `Me` (also `mode`: development, pilot or production; `authMode`: entra or local; `mustChange`) |
+| POST | `/auth/local/login` (no auth, no prefix; `AUTH_MODE=local` only, else 404) | anyone | `{ email, password }` → `{ token, expiresAt, mustChange, name, email }`, or 401 with one message for every cause. Every attempt is audited; five wrong passwords lock the account for 15 minutes |
+| POST | `/auth/password` | signed in, `AUTH_MODE=local` | `{ current, next }` → `{ token, expiresAt }`. Ends every other session. With a temporary password, this and `/me` are the only calls allowed |
 | GET | `/tasks` | signed in | `Task[]` (open, assigned to me) |
 | GET | `/notifications` | signed in | `{ id, kind, title, body, href, createdAt, readAt }[]` |
 | POST | `/notifications/:id/read` | signed in | `204` |
@@ -77,7 +79,8 @@ Manager (segregation of duties). Every change is audited with old and new values
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | `/users` | `{ email, name, jobTitle?, roles: Role[], groups: string[], managerId?, clearance? }` | `{ id, training: { added, closed } }` (for tenants without SCIM) |
+| POST | `/users` | `{ email, name, jobTitle?, roles: Role[], groups: string[], managerId?, clearance?, temporaryPassword? }` | `{ id, training: { added, closed } }` (for tenants without SCIM). `temporaryPassword` is required with `AUTH_MODE=local` |
+| POST | `/users/:id/password` | `{ temporaryPassword, reason }` | `{ ok: true }`. `AUTH_MODE=local` only: resets a password (and any lock); ends the person's sessions; must be changed at the next sign-in. Not for your own account |
 | PUT | `/users/:id/roles` | `{ roles: Role[], reason }` | `{ roles, training }` (the person is notified) |
 | PUT | `/users/:id/groups` | `{ groups: string[] }` (group names) | `{ groups, training }` |
 | PUT | `/users/:id/status` | `{ status: 'active'|'revoked'|'left', reason }` | `{ status, training }`. Revoked or left also ends every session at once |
