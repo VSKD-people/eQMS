@@ -1,0 +1,84 @@
+# Pilot stack: the same images and settings a container host runs for the pilot (docs/12-pilot-hosting.md), with
+# Microsoft 365, Adobe Sign and SharePoint not connected yet:
+#   sign-in      email and password held in VeQMS (AUTH_MODE=local)
+#   signatures   simulated and recorded as not Part 11 (ADOBE_SIGN_MODE=mock)
+#   SharePoint   off: documents written in VeQMS; Effective versions wait to be published (SHAREPOINT_MODE=off)
+#   files        in PostgreSQL (STORAGE_MODE=database), so no disk is needed
+# Test and pilot data only. Each integration is one setting to switch later (docs/11-configuration.md).
+#
+#   cp pilot.env.example pilot.env        # then fill in the secrets
+#   docker compose -f docker-compose.pilot.yml --env-file pilot.env up --build -d
+#   docker compose -f docker-compose.pilot.yml --env-file pilot.env run --rm setup node apps/api/dist/jobs/bootstrap.js \
+#     --org "Organisation name" --admin-email ... --admin-name "..." --qm-email ... --qm-name "..."
+# Then open http://localhost:3001 and sign in with a printed temporary password.
+name: veqms-pilot
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: veqms
+      POSTGRES_USER: veqms_admin
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?set DB_OWNER_PASSWORD in pilot.env}
+    volumes:
+      - pilot-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veqms_admin -d veqms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: the migrations, then the API's database login (a member of veqms_app: row-level security, no deletes).
+  # On a container host this is the release (pre-deploy) command, run with the owner's connection.
+  setup:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["sh", "-c", "node packages/db/dist/migrate.js && node packages/db/dist/provision.js"]
+    environment:
+      DATABASE_URL: postgres://veqms_admin:${DB_OWNER_PASSWORD}@db:5432/veqms
+      APP_DB_USER: veqms_api
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in pilot.env}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      VEQMS_MODE: pilot
+      PORT: "8080"
+      DATABASE_URL: postgres://veqms_api:${APP_DB_PASSWORD}@db:5432/veqms
+      AUTH_MODE: local
+      LOCAL_AUTH_SECRET: ${LOCAL_AUTH_SECRET:?set LOCAL_AUTH_SECRET in pilot.env}
+      ADOBE_SIGN_MODE: mock
+      SHAREPOINT_MODE: "off"
+      STORAGE_MODE: database
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3001}
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8080
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3001}
+      AUTH_MODE: local
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in pilot.env}
+      # Plain http on this machine only: lets the session cookie work without HTTPS. Leave it out on a real host,
+      # which serves HTTPS.
+      VEQMS_LOCAL: ${VEQMS_LOCAL:-1}
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+
+volumes:
+  pilot-db:

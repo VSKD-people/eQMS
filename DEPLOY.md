@@ -36,7 +36,7 @@ They sign in with their normal Microsoft 365 account.
 
 **What this does and doesn't do.** Entra ID only guards the door. Once someone is in, the prototype
 works as it does locally: sample data lives in each person's browser, nobody sees anyone else's
-changes, and the sign-in, step-up and integrations inside the app are still simulated. Switch
+changes, and the sign-in, Adobe Sign and the other integrations inside the app are still simulated. Switch
 personas from the account menu → **Demo · view as**.
 
 ## Why Azure Static Web Apps

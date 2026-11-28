@@ -8,7 +8,7 @@
   Q.load = function () {
     var s = null;
     try { var raw = localStorage.getItem(KEY); if (raw) s = JSON.parse(raw); } catch (e) { s = null; }
-    if (!s || s.version !== 10) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
+    if (!s || s.version !== 12) { s = Q.seed(); Q.S = s; Q.seedAudit(); Q.save(); } else { Q.S = s; }
   };
   Q.save = function () { try { localStorage.setItem(KEY, JSON.stringify(Q.S)); } catch (e) { /* storage blocked: demo still runs in memory */ } };
   Q.reset = function () { Q.S = Q.seed(); Q.seedAudit(); Q.save(); };
@@ -46,6 +46,8 @@
     'admin.integrations': ['admin'],
     'admin.templates': ['admin', 'qm'],
     'admin.workflows': ['admin', 'qm'],
+    'admin.sharepoint': ['admin', 'qm', 'auditor'],
+    'integrity.resolve': ['qm'],
     'admin.any': ['admin', 'qm', 'auditor']
   };
   Q.can = function (perm, u) {
@@ -232,23 +234,23 @@
 
   // ---------- Tasks ----------
   Q.TASK_META = {
-    'ds-sign': { label: 'Sign in DocuSign', action: 'Open in DocuSign' },
+    'esign-sign': { label: 'Sign in Adobe Sign', action: 'Open in Adobe Sign' },
     'review-doc': { label: 'Review · Document', action: 'Start review' },
+    'approve-doc': { label: 'Approve · Document', action: 'Approve' },
     'author': { label: 'Draft · Document', action: 'Continue draft' },
-    'resubmit': { label: 'Sent back · Document', action: 'Revise draft' },
-    'send-approval': { label: 'Verify and send · DocuSign', action: 'Verify and send' },
+    'resubmit': { label: 'Returned · Document', action: 'Revise draft' },
+    'send-approval': { label: 'Verify and send · Adobe Sign', action: 'Verify and send' },
     'training': { label: 'Read and understood', action: 'Start training' },
     'periodic': { label: 'Periodic review', action: 'Start review' },
     'cr-review': { label: 'Review · Change request', action: 'Review' },
-    'cr-approve': { label: 'Approve · Change request', action: 'Review and sign' },
     'cr-action': { label: 'Change action', action: 'Update action' },
     'cr-plan': { label: 'Plan · Change request', action: 'Continue planning' },
     'cr-effectiveness': { label: 'Effectiveness check · Change request', action: 'Record result' },
     'capa-action': { label: 'Corrective action', action: 'Update action' },
     'capa-plan': { label: 'Plan · CAPA', action: 'Plan actions' },
-    'capa-approve': { label: 'Approve · CAPA', action: 'Review and sign' },
+    'capa-submit': { label: 'Send completed actions · CAPA', action: 'Open' },
     'effectiveness': { label: 'Effectiveness check', action: 'Open' },
-    'fyi': { label: 'FYI · You sign in DocuSign later', action: 'View' },
+    'fyi': { label: 'FYI · You sign in Adobe Sign later', action: 'View' },
     'obs-review': { label: 'Initial review · Observation', action: 'Review' },
     'qe-assess': { label: 'Assess · Quality event', action: 'Assess' },
     'todo': { label: 'To-do', action: 'Open' }
@@ -261,7 +263,8 @@
     }
     if (t.kind === 'fyi') {
       var r = Q.rec(t.record);
-      return { label: 'FYI · You sign in DocuSign ' + (r && r.state === 'In approval' ? 'after the current signer' : 'later'), action: 'View' };
+      if (r && Q.kindOf(t.record) === 'doc' && r.state === 'In review') return { label: 'FYI · You approve after review', action: 'View' };
+      return { label: 'FYI · You sign in Adobe Sign ' + (r && (r.state === 'In approval' || Q.esign.active(t.record)) ? 'after the current signer' : 'later'), action: 'View' };
     }
     return m;
   };
@@ -271,17 +274,18 @@
     if (t.kind === 'capa-action') { var c = Q.S.capas[t.record], ca = c && c.actions.find(function (x) { return x.id === t.ref; }); return t.record + ' · ' + (ca ? ca.title : Q.recTitle(t.record)); }
     if (t.kind === 'periodic') { var r = Q.S.reviews[t.record]; return r ? r.doc + ' ' + Q.S.docs[r.doc].title : t.record; }
     if (t.kind === 'training') { var d = Q.S.docs[t.record]; return t.record + ' ' + d.title + ' v' + (Q.effVer(d) || Q.curVer(d)).v; }
-    if (t.kind === 'ds-sign') { var env = Q.ds && (Q.ds.byId(t.ref) || Q.ds.active(t.record)); return env ? env.subject : Q.recLabel(t.record); }
+    if (t.kind === 'esign-sign') { var ag = Q.esign && (Q.esign.byId(t.ref) || Q.esign.active(t.record)); return ag ? ag.subject : Q.recLabel(t.record); }
     return Q.recLabel(t.record);
   };
   Q.taskHref = function (t) {
     if (t.href) return t.href;
+    if (t.kind === 'esign-sign') { var ag = Q.esign && (Q.esign.byId(t.ref) || Q.esign.active(t.record)); if (ag) return Q.esign.href(ag); }
     if (t.kind === 'training') return '#/training?doc=' + t.record;
     return Q.recHref(t.record);
   };
   Q.openTasks = function (uid) { uid = uid || Q.S.session.userId; return Q.S.tasks.filter(function (t) { return t.assignee === uid && t.status === 'open'; }); };
   Q.addTask = function (o) {
-    var t = { id: Q.uid('T'), kind: o.kind, record: o.record, assignee: o.assignee, due: o.due || null, created: new Date().toISOString(), status: 'open', ref: o.ref || null, fyi: !!o.fyi, note: o.note || null, title: o.title || null, href: o.href || null, onBehalfOf: o.onBehalfOf || null };
+    var t = { id: Q.uid('T'), kind: o.kind, record: o.record, assignee: o.assignee, due: o.due || null, created: new Date().toISOString(), status: 'open', ref: o.ref || null, stage: o.stage || null, fyi: !!o.fyi, note: o.note || null, title: o.title || null, href: o.href || null, onBehalfOf: o.onBehalfOf || null };
     Q.S.tasks.push(t);
     return t;
   };

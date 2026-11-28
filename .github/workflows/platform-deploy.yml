@@ -1,0 +1,89 @@
+# VeQMS platform deployment to Azure UK South.
+# Builds both images, pushes them to Azure Container Registry, runs the database migrations as a Container Apps
+# job and waits for it, then rolls out the API, the web app and the reminders job.
+#
+# Needs (repository or environment variables, not secrets: OIDC means no stored Azure password):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  - app registration with a federated credential for this repo
+#   AZURE_RESOURCE_GROUP                                      - e.g. rg-veqms-prod
+#   ACR_NAME                                                  - registry name (Bicep output registryName)
+# The "production" environment must have required reviewers set in the repository settings.
+name: Platform deploy
+
+# Manual only (Actions > Platform deploy > Run workflow) until the Azure subscription, the variables below and the
+# production environment's reviewers are set up. Then decide whether to deploy on every push to main again, and if
+# so, only after Platform CI has passed.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC token for azure/login
+  contents: read
+
+concurrency:
+  group: platform-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR: ${{ vars.ACR_NAME }}
+      TAG: ${{ github.sha }}
+    defaults:
+      run:
+        working-directory: platform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure sign-in (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Build and push images
+        run: |
+          az acr login --name "$ACR"
+          REG="$ACR.azurecr.io"
+          docker build -f apps/api/Dockerfile -t "$REG/veqms-api:$TAG" .
+          docker build -f apps/web/Dockerfile -t "$REG/veqms-web:$TAG" .
+          docker push "$REG/veqms-api:$TAG"
+          docker push "$REG/veqms-web:$TAG"
+
+      - name: Run database migrations and wait
+        run: |
+          REG="$ACR.azurecr.io"
+          az containerapp job update --name veqms-migrate --resource-group "$RG" --image "$REG/veqms-api:$TAG" --only-show-errors
+          EXEC=$(az containerapp job start --name veqms-migrate --resource-group "$RG" --query name -o tsv)
+          echo "Migration execution: $EXEC"
+          # Check the status values with `az containerapp job execution show --help` if this loop needs adjusting.
+          for i in $(seq 1 90); do
+            STATUS=$(az containerapp job execution show --name veqms-migrate --resource-group "$RG" --job-execution-name "$EXEC" --query properties.status -o tsv)
+            echo "status: $STATUS"
+            case "$STATUS" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) echo "::error::Migration $STATUS. See the job logs in Log Analytics."; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Migration did not finish in 15 minutes"; exit 1
+
+      - name: Roll out the API, web app and reminders job
+        run: |
+          REG="$ACR.azurecr.io"
+          az containerapp update --name veqms-api --resource-group "$RG" --image "$REG/veqms-api:$TAG" --only-show-errors
+          az containerapp update --name veqms-web --resource-group "$RG" --image "$REG/veqms-web:$TAG" --only-show-errors
+          az containerapp job update --name veqms-reminders --resource-group "$RG" --image "$REG/veqms-api:$TAG" --only-show-errors
+
+      - name: Smoke check
+        run: |
+          WEB=$(az containerapp show --name veqms-web --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          curl --fail --silent --show-error --max-time 30 -o /dev/null "https://$WEB/" && echo "web answers at https://$WEB/"

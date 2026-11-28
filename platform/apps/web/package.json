@@ -1,0 +1,27 @@
+{
+  "name": "@veqms/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "VeQMS web app (Next.js App Router). Talks only to the VeQMS API, from the server.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@veqms/domain": "*",
+    "jose": "^5.9.6",
+    "next": "^16.4.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.8.2"
+  }
+}

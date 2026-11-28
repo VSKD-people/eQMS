@@ -40,10 +40,10 @@
 
   // Shared rows for every training export (PDF and Excel).
   Q.trainingRows = function (list) {
-    var rows = [['Person', 'Account status', 'Document', 'Title', 'Version', 'Allocated by', 'Reason', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Record status', 'Statement', 'Knowledge check', 'Envelope ID', 'Correction of', 'Correction reason', 'Record ID']];
+    var rows = [['Person', 'Account status', 'Document', 'Title', 'Version', 'Allocated by', 'Reason', 'Assigned (UTC)', 'Due (UTC)', 'Completed (UTC)', 'Record status', 'Statement', 'Knowledge check', 'Agreement ID', 'Correction of', 'Correction reason', 'Record ID']];
     list.slice().sort(Q.by(function (a) { return Q.fullName(a.user) + a.doc + a.assigned; })).forEach(function (a) {
       var u = Q.user(a.user);
-      rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.title, a.ver, by(a), a.allocReason || '', Q.fmtUtc(a.assigned), a.due ? Q.fmtUtc(a.due) : '', a.completed ? Q.fmtUtc(a.completed) : '', Q.trStatus(a), a.statement || '', a.quiz || '', a.envelope || '', a.correctionOf || '', a.correctionReason || '', a.id]);
+      rows.push([u.name, a.leaver ? 'Left' : u.status, a.doc, a.title, a.ver, by(a), a.allocReason || '', Q.fmtUtc(a.assigned), a.due ? Q.fmtUtc(a.due) : '', a.completed ? Q.fmtUtc(a.completed) : '', Q.trStatus(a), a.statement || '', a.quiz || '', a.agreement || '', a.correctionOf || '', a.correctionReason || '', a.id]);
     });
     return rows;
   };
@@ -68,15 +68,15 @@
     var open = list.filter(Q.trOpen).sort(Q.by('due'));
     var done = list.filter(function (a) { return !Q.trOpen(a); }).sort(Q.by(function (a) { return a.completed || a.assigned; }, -1));
     Q.reports['my-record'] = { title: 'Training record: ' + Q.me().name, file: 'training-record-' + Q.S.session.userId, rows: function () { return Q.trainingRows(mine()); } };
-    return h`${Q.tip('training', h`<b>My training.</b> Read the document, answer the short knowledge check if there is one, then confirm you have read and understood that version. You’re signed in through Microsoft 365, so the record is yours alone; the app sets the date and time.`)}
+    return h`${Q.tip('training', h`<b>My training.</b> Open the PDF of the version and read it, answer the short knowledge check if there is one, then confirm you have read and understood that version. VeQMS records that you opened the PDF; you can’t confirm until you have. You’re signed in through Microsoft 365, so the record is yours alone; the app sets the date and time.`)}
       <div class="label mb-8">To do · ${open.length}</div>
       ${open.length ? open.map(function (a) {
         var d = Q.S.docs[a.doc], aud = Q.audienceOf(d);
-        var opened = (Q.ui.opened || {})[a.id];
+        var opened = Q.pdfOpenedAt(a);
         return h`<div class="card card-pad mb-8"><div class="spread" style="align-items:flex-start;flex-wrap:wrap">
           <div><div class="tc-kicker row-wrap small muted">Read and understood · ${a.allocReason} · allocated by ${by(a)} ${Q.dueChip(a.due)}</div>
             <div style="font-weight:600;margin-top:4px">${a.doc} ${a.title} v${a.ver}</div>
-            <div class="row-wrap mt-8 small"><span class="chip ${opened ? 'chip-done' : 'chip-outline'}">1 Read${opened ? ' · opened ' + Q.fmtShort(opened) : ''}</span>${aud.quiz ? h`<span class="chip chip-outline">2 Knowledge check · ${quizFor(a.doc).length} questions</span>` : ''}<span class="chip chip-outline">${aud.quiz ? '3' : '2'} Confirm</span></div></div>
+            <div class="row-wrap mt-8 small"><span class="chip ${opened ? 'chip-done' : 'chip-outline'}">1 Open the PDF and read${opened ? ' · opened ' + Q.fmtShort(opened) : ''}</span>${aud.quiz ? h`<span class="chip chip-outline">2 Knowledge check · ${quizFor(a.doc).length} questions</span>` : ''}<span class="chip chip-outline">${aud.quiz ? '3' : '2'} Confirm</span></div></div>
           ${Q.readOnly() ? '' : h`<button class="btn ${opened ? 'btn-primary' : ''}" data-act="train-start" data-id="${a.id}">${opened ? 'Continue' : 'Start'}</button>`}</div></div>`;
       }) : Q.empty('No training due', 'When a document you must train on changes, the new version shows up here.')}
       <div class="spread mt-24 mb-8"><div class="label" style="margin:0">My training record · ${done.length}</div>${done.length ? Q.reportButtons('my-record') : ''}</div>
@@ -84,6 +84,14 @@
         cols: [{ key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} ${a.title} v${a.ver}`; } }, { key: 'allocReason', label: 'Why' }, { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return Q.chip(a.st); } }] })}`;
   }
   Q.act['train-start'] = function (el) { var a = Q.S.assignments.find(function (x) { return x.id === el.getAttribute('data-id'); }); if (a) openTraining(a); };
+  // Opens the PDF of the record's version and logs it with the version (the open a trainee needs before confirming).
+  Q.act['train-pdf'] = function (el) {
+    var a = Q.S.assignments.find(function (x) { return x.id === el.getAttribute('data-id'); }); if (!a) return;
+    var d = Q.S.docs[a.doc], v = d.versions.find(function (x) { return x.v === a.ver; }) || Q.effVer(d) || Q.curVer(d);
+    Q.logPdfOpen(d, v, 'training');
+    Q.printHtml(d.id + ' v' + v.v, Q.docHtml(d, v), d.id + ' v' + v.v + ' PDF for training (watermarked for ' + Q.fullName(Q.S.session.userId) + ')');
+    if (Q.drawer.isOpen()) Q.drawer.paint(); else Q.refresh();
+  };
 
   function openTraining(a) {
     var d = Q.S.docs[a.doc];
@@ -91,16 +99,18 @@
     var quiz = Q.audienceOf(d).quiz ? quizFor(a.doc) : null;
     var st = { step: 1, answers: {}, wrong: [] };
     var statement = Q.ackStatement(d.id, v.v);
-    Q.ui.opened = Q.ui.opened || {}; if (!Q.ui.opened[a.id]) { Q.ui.opened[a.id] = new Date().toISOString(); Q.audit('read', 'Document', a.doc, 'Opened ' + a.doc + ' v' + a.ver + ' for training'); Q.save(); }
+    function pdfButton(primary) { return h`<button type="button" class="btn btn-sm ${primary ? 'btn-primary' : ''}" data-act="train-pdf" data-id="${a.id}">${Q.icon('doc', 'ico-sm')} Open the PDF of v${v.v}</button>`; }
     function body() {
+      var opened = Q.pdfOpenedAt(a);
       var steps = h`<div class="sign-steps" style="grid-template-columns:repeat(${quiz ? 3 : 2},1fr)"><div class="${st.step === 1 ? 'on' : 'ok'}">1 Read</div>${quiz ? h`<div class="${st.step === 2 ? 'on' : st.step > 2 ? 'ok' : ''}">2 Knowledge check</div>` : ''}<div class="${st.step === 3 ? 'on' : ''}">${quiz ? '3' : '2'} Confirm</div></div>`;
-      if (st.step === 1) return h`${steps}<div class="viewer" style="max-height:52vh"><div class="page" style="min-height:0">${h`<h2>${d.id} ${d.title}</h2><div class="doc-meta"><span>Version ${v.v}</span><span>${d.classification.toUpperCase()}</span></div>`}${v.content.map(function (b) { return b.t === 'h' ? h`<h3>${b.x}</h3>` : h`<p>${b.x}</p>`; })}</div></div>
+      if (st.step === 1) return h`${steps}<div class="spread mb-8" style="flex-wrap:wrap"><span class="small ${opened ? '' : 'muted'}">${opened ? 'You opened the PDF of v' + v.v + ' on ' + Q.fmtDateTime(opened) + '.' : 'Open the PDF of v' + v.v + ' and read it in full. VeQMS records that you opened it.'}</span>${pdfButton(!opened)}</div>
+        <div class="viewer" style="max-height:52vh"><div class="page" style="min-height:0">${h`<h2>${d.id} ${d.title}</h2><div class="doc-meta"><span>Version ${v.v}</span><span>${d.classification.toUpperCase()}</span></div>`}${v.content.map(function (b) { return b.t === 'h' ? h`<h3>${b.x}</h3>` : h`<p>${b.x}</p>`; })}</div></div>
         <label class="check mt-16"><input type="checkbox" name="read" ${st.read ? 'checked' : ''}> I have read all of ${d.id} v${v.v}</label>`;
       if (st.step === 2) return h`${steps}<p class="small muted">Answer all ${quiz.length} questions. You can try again if one is wrong.</p>${quiz.map(function (x, i) {
         return h`<fieldset class="quiz-q ${st.wrong.indexOf(i) >= 0 ? 'wrong' : ''}"><legend style="font-size:15px">${i + 1}. ${x.q}</legend>${x.o.map(function (o, j) { return h`<label class="check"><input type="radio" name="q${i}" value="${j}" ${st.answers[i] === j ? 'checked' : ''}> ${o}</label>`; })}${st.wrong.indexOf(i) >= 0 ? h`<div class="err">Not quite. Check section ${i + 2} of the document.</div>` : ''}</fieldset>`;
       })}`;
       var me = Q.me();
-      return h`${steps}${quiz ? h`<div class="callout ok mb-16"><strong>Knowledge check passed</strong><p class="small" style="margin:4px 0 0">${quiz.length} of ${quiz.length} correct.</p></div>` : ''}
+      return h`${steps}${opened ? '' : h`<div class="callout warn mb-16" role="status"><strong>Open the PDF of v${v.v} first.</strong> <span class="small">VeQMS records when you open it, and you can confirm once you have.</span><div class="mt-8">${pdfButton(true)}</div></div>`}${quiz ? h`<div class="callout ok mb-16"><strong>Knowledge check passed</strong><p class="small" style="margin:4px 0 0">${quiz.length} of ${quiz.length} correct.</p></div>` : ''}
         <dl class="dl mb-16"><div><dt>Signed in as</dt><dd>${me.name}</dd></div><div><dt>Account</dt><dd>${me.email} · Microsoft 365 single sign-on</dd></div><div><dt>Document</dt><dd>${d.id} ${d.title}</dd></div><div><dt>Version</dt><dd>${v.v}</dd></div></dl>
         <label class="check statement" style="align-items:flex-start;padding:14px 16px"><input type="checkbox" name="confirm" style="margin-top:3px"> <span style="font-weight:600">${statement}</span></label>
         <p class="small muted mt-16">The app records the date and time when you confirm; nobody can type or change them. Once confirmed, the record is locked: it can’t be edited or deleted, by anyone. Only you can confirm your own record.</p>`;
@@ -125,9 +135,10 @@
   function matrixDocs() { return Object.keys(Q.S.docs).map(function (k) { return Q.S.docs[k]; }).filter(function (d) { return Q.effVer(d) && (Q.hasAudience(d) || Q.S.assignments.some(function (a) { return a.doc === d.id; })); }).sort(Q.by('id')); }
   Q.trCell = function (u, d) {
     var cur = Q.effVer(d), recs = Q.S.assignments.filter(function (a) { return a.user === u.id && a.doc === d.id && !a.noRetrain && !a.closed; }).sort(Q.by('assigned', -1));
-    var curRec = recs.find(function (a) { return a.ver === cur.v && Q.trStatus(a) !== 'Corrected'; });
+    var counts = Q.trainVersions(d);
+    var curRec = recs.find(function (a) { return counts.indexOf(a.ver) >= 0 && Q.trStatus(a) !== 'Corrected'; });
     if (curRec) return { status: Q.trStatus(curRec), rec: curRec, trained: curRec.completed ? curRec.ver : null, current: cur.v };
-    var older = recs.filter(function (a) { return a.completed && a.ver !== cur.v; }).sort(Q.by(function (a) { return a.completed; }, -1))[0];
+    var older = recs.filter(function (a) { return a.completed && counts.indexOf(a.ver) < 0; }).sort(Q.by(function (a) { return a.completed; }, -1))[0];
     if (Q.inAudience(d, u)) return { status: older ? 'Superseded' : 'Not allocated', rec: older || null, trained: older ? older.ver : null, current: cur.v };
     if (older) return { status: 'Not required', rec: older, trained: older.ver, current: cur.v };
     return null;
@@ -190,7 +201,7 @@
         href: function (a) { return '#/training?tab=records' + (q.u ? '&u=' + q.u : '') + (q.d ? '&d=' + q.d : '') + (q.all ? '&all=1' : '') + (q.st ? '&st=' + q.st : '') + '&rec=' + a.id; },
         cols: [{ key: 'name', label: 'Person' }, { key: 'doc', label: 'Document', render: function (a) { return h`${a.doc} v${a.ver}`; } }, { key: 'allocReason', label: 'Allocated', render: function (a) { return h`<span class="small">${a.allocReason} · ${by(a)}</span>`; } },
           { key: 'assigned', label: 'Assigned', render: function (a) { return Q.fmtShort(a.assigned); } }, { key: 'due', label: 'Due', render: function (a) { return a.due ? Q.fmtShort(a.due) : '—'; } },
-          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return h`${Q.chip(a.st)}${a.envelope ? h` <span class="small muted">· DocuSign</span>` : ''}`; } }] })}
+          { key: 'completed', label: 'Completed (UTC)', render: function (a) { return a.completed ? Q.fmtUtc(a.completed) : '—'; } }, { key: 'st', label: 'Status', render: function (a) { return h`${Q.chip(a.st)}${a.agreement ? h` <span class="small muted">· Adobe Sign</span>` : ''}`; } }] })}
       <p class="small muted mt-8">Completed records can’t be edited or deleted by anyone, administrators included. A correction is a new record with a reason; the original stays. Leavers’ records are kept.</p>`;
   }
   Q.on['tr-all'] = function (el) { Q.setQuery({ all: el.checked ? '1' : '' }); };
@@ -207,7 +218,7 @@
     Q.drawer.open({
       wide: true, kicker: 'Training record · ' + a.id, title: a.doc + ' v' + a.ver + ' · ' + Q.fullName(a.user),
       onClose: function () { if (Q.current.query.rec) Q.setQuery({ rec: '' }); },
-      body: h`<div class="row-wrap mb-16">${Q.chip(status)}${a.completed ? h`<span class="chip chip-outline">${Q.icon('lock', 'ico-sm')} Locked</span>` : ''}${a.envelope ? Q.chip('From DocuSign approval', 'chip-outline') : ''}</div>
+      body: h`<div class="row-wrap mb-16">${Q.chip(status)}${a.completed ? h`<span class="chip chip-outline">${Q.icon('lock', 'ico-sm')} Locked</span>` : ''}${a.agreement ? Q.chip('From Adobe Sign approval', 'chip-outline') : ''}</div>
         <dl class="dl mb-16"><div><dt>Person</dt><dd>${Q.fullName(a.user)}${a.leaver ? ' (left)' : ''}</dd></div><div><dt>Document</dt><dd>${Q.recLink(a.doc, { short: true })} · v${a.ver}</dd></div>
           <div style="grid-column:1/-1"><dt>Title</dt><dd>${a.title}</dd></div>
           <div><dt>Allocated by</dt><dd>${by(a)}</dd></div><div><dt>Reason</dt><dd>${a.allocReason}</dd></div>
@@ -215,7 +226,7 @@
           <div><dt>Completed (UTC)</dt><dd>${a.completed ? Q.fmtUtc(a.completed) : '—'}</dd></div><div><dt>Knowledge check</dt><dd>${a.quiz || '—'}</dd></div>
           ${a.statement ? h`<div style="grid-column:1/-1"><dt>Statement</dt><dd>${a.statement}</dd></div>` : ''}
           ${a.via ? h`<div><dt>Identity</dt><dd>${a.via}</dd></div>` : ''}
-          ${a.envelope ? h`<div style="grid-column:1/-1"><dt>DocuSign envelope</dt><dd><button type="button" class="btn-link mono" style="padding:0;min-height:0" data-act="ds-env" data-id="${a.envelope}">${a.envelope}</button></dd></div>` : ''}
+          ${a.agreement ? h`<div style="grid-column:1/-1"><dt>Adobe Sign agreement</dt><dd><button type="button" class="btn-link mono" style="padding:0;min-height:0" data-act="es-agreement" data-id="${a.agreement}">${a.agreement}</button></dd></div>` : ''}
           ${a.correctionOf ? h`<div style="grid-column:1/-1"><dt>Correction of</dt><dd><a href="#/training?tab=records&all=1&rec=${a.correctionOf}">${a.correctionOf}</a> · ${a.correctionReason}${a.noRetrain ? ' (recorded in error, no retraining)' : ''}</dd></div>` : ''}
           ${corr.length ? h`<div style="grid-column:1/-1"><dt>Corrected by</dt><dd>${corr.map(function (c) { return h`<a href="#/training?tab=records&all=1&rec=${c.id}">${c.id}</a> · ${c.correctionReason} `; })}</dd></div>` : ''}
           ${a.closed ? h`<div style="grid-column:1/-1"><dt>Closed</dt><dd>${Q.fmtUtc(a.closed.at)} · ${a.closed.reason}</dd></div>` : ''}</dl>

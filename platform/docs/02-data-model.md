@@ -1,65 +1,74 @@
-# Data model
+# 02 · Data model
 
-Source: Step 1 Architecture & Delivery Plan (data model and modelling rules). Migrations are in
-`packages/db/migrations`, applied in order by `scripts/migrate.sh`.
+PostgreSQL 16, schema `app`, 43 tables. Migrations are in `packages/db/migrations` and run in order; each runs once
+(`app.schema_migrations`). The demo seed is `packages/db/seed/001_demo.sql`; the invariant tests are
+`packages/db/test/001_invariants.sql`.
 
-## Request identity
+## Roles and tenancy
 
-The API runs every request in one transaction and sets, with `set_config(..., true)` (the same as `SET LOCAL`):
-
-- `app.tenant_id`: read by `app_tenant()`. Every row-level security policy compares `tenant_id` to it.
-- `app.user_id`: read by `app_user_id()`. Fills `created_by`, `updated_by`, the audit actor, and the trainee check.
-
-With no tenant set, no tenant rows are visible and audit inserts are refused.
-
-## Database roles
-
-| Role | Use | Notes |
+| Database role | Used by | Can |
 |---|---|---|
-| `veqms_owner` | Runs migrations, owns objects | Created by `scripts/roles.sql`. Tests currently run migrations as a superuser |
-| `veqms_app` | The API connects as this role | `nobypassrls`. No update or delete grant on insert-only tables; no delete on records |
+| `veqms_owner` | migrations, seed, imports | own the schema; switch on import mode |
+| `veqms_app` | the API (its managed identity is granted this role) | select, insert and update on tenant tables; delete only on configuration that is replaced as a whole (audiences, reviewer and approver lists, group members, role assignments). No delete on quality records, no update on insert-only tables, cannot bypass row-level security |
+| `veqms_readonly` | reporting, auditors' database access if ever needed | select |
 
-Rules are enforced twice where it matters: by missing grants, and by triggers that refuse the change even for a
-role that holds every grant. Both layers are tested.
+Every tenant table has a `tenant_id` and a row-level security policy `tenant_id = app.current_tenant()`, forced
+for the table owner too. `app.current_tenant()` and `app.current_actor()` read the transaction settings that
+`withTenant` sets. Three tables have no tenant data and no row-level security: `tenant_directory` (Entra tenant ID →
+VeQMS tenant), `agreement_directory` (Adobe Sign agreement ID → tenant, for webhooks) and `schema_migrations`.
 
-## Tables
+## Tables by migration
 
-| Table | Rule enforced in the database |
+| Migration | Tables |
 |---|---|
-| `tenant`, `site` | Tenant isolation |
-| `app_user` | Never deleted (signatures and training records stay attached). `status = 'Disabled'` exactly when `disabled_at` is set |
-| `user_role`, `app_group`, `group_member` | Roles: admin, qm, author, reviewer, approver, process, employee, auditor |
-| `audit_log_entry` | Insert-only (no grant, plus triggers on update, delete and truncate). `seq`, `prev_hash`, `hash`, time and tenant are set by the trigger |
-| `record` | Shared header for every module. Soft delete only, never under legal hold, no restore. A `Document` can become `Effective` only with an approval signature on an approved version, or a version marked `migrated_from_kstarrs` |
-| `document_version` | Change summary required. Once `approved_at` is set, content fields cannot change and status cannot go back to a draft state. Approved states need `approved_at` and `content_sha256` |
-| `signature` | Insert-only. `auth_time > intent_at` (a fresh sign-in after the signing started). Hash must equal the version's `content_sha256`. The version's author cannot sign `Approved` unless `sod_override_by` and a reason are recorded |
-| `training_assignment` | One per user per version. Never deleted |
-| `training_record` | Insert-only. Only the trainee can confirm their own training. `completed_at` and `created_by` are set by the database. A correction is a new row that references the original, with a reason |
-| `docusign_settings` | Allowance (default 500), allowance year start month, go-live date |
-| `docusign_envelope` | One live envelope (Created, Sent, Delivered) per version. `Completed` needs the completion time, signed PDF and certificate |
-| `docusign_signer` | Routing order per signer (author 1, reviewers 2, approvers 3 onwards) |
-| `docusign_send` | Insert-only, one row per envelope send. Allowance year set by the database |
-| `docusign_allowance_use` | View: sends used and remaining per allowance year (security invoker, so RLS applies) |
-| `outbox_event` | Written in the same transaction as the change. Never deleted |
+| `000_roles_and_helpers` | roles, schema `app`, helper functions (`current_tenant`, `current_actor`, `import_mode`, `forbid_change`, `touch_updated_at`), `schema_migrations` |
+| `001_core` | `tenants`, `tenant_directory`, `users`, `user_roles`, `role_requests`, `groups`, `group_members`, `settings`, `counters`, `audit_log`, `signatures`, `tasks`, `notifications`, `notification_log` |
+| `002_documents_signing` | `templates`, `documents`, `document_versions`, `document_reviewers`, `document_approvers`, `document_comments`, `audience_groups`, `audience_roles`, `audience_users`, `agreements`, `agreement_directory`, `agreement_signers`, `agreement_events`, `signing_transactions` |
+| `003_training` | `training_records`, `quiz_questions` |
+| `004_quality_reviews_automation` | `change_requests`, `cr_actions`, `observations`, `quality_events`, `capas`, `capa_actions`, `evidence`, `periodic_reviews`, `record_links`, `automation_rules`, `automation_runs`, `dead_letters` |
+| `005_rls_and_grants` | row-level security on every tenant table; grants |
+| `006_webhook_inbox` | `webhook_inbox`: Adobe Sign notifications queued for the worker, unique per notification ID. No tenant (like `agreement_directory`); the API can't delete from it |
+| `007_audit_anchors` | `audit_anchors`: each anchor written to the `records` container (tenant, entry number, hash, time, blob key); insert-only |
+| `008_sharepoint` | `documents.draft_item_id`, `draft_web_url`, `draft_edited_at` (the Word file); `document_versions.pdf_source_tag`, `published_item_id`, `published_web_url`, `published_at`, `publish_status`, `publish_attempts`, `publish_error`; `sync_runs` (one row per delta sync, with the token to resume from); `integrity_alerts` (outside changes, missing files, hash mismatches, failed publishing). See [10 · SharePoint](10-sharepoint.md) |
+| `009_pilot` | `local_credentials` (email and password sign-in: scrypt hash, must-change flag, failed count, lock, when the password was set); `file_store` (files kept in the database, write-once); `settings.allow_simulated_signatures`; `simulated` added to `agreements.provider` and `signatures.source`. See [11 · Configuration](11-configuration.md) |
 
-## Audit hash chain
+## Rules enforced in the database
 
-`hash = sha256(prev_hash || canonical(entry))`, chained per tenant, starting from 64 zeros. The insert trigger
-takes `pg_advisory_xact_lock` on the tenant before reading the previous entry, so concurrent saves queue and the
-chain cannot fork (tested with 8 sessions and 200 inserts).
+| Rule | How |
+|---|---|
+| IP address and device kept apart | `audit_log.client_info_id` (covered by the hash) links to `audit_client_info` (IP, user agent), which the API can't change or delete; `app.purge_client_info()` deletes rows after `settings.client_info_retention_days`, and the chain still verifies |
+| Audit log is append-only and tamper-evident | `audit_log` insert trigger takes a per-tenant advisory lock, numbers entries without gaps (`seq`), and stores `hash = sha256(previous hash + entry)`. Update and delete are refused. `app.verify_audit_chain()` recomputes the chain and returns the first broken entry |
+| Everything important is audited | Triggers on training records; the API calls `app.audit()` for every other change, inside the same transaction |
+| Signatures are insert-only and only from Adobe Sign | `signatures` refuses update and delete. `source` is `adobe`, or `kstarrs` for migrated approvals: nothing is signed inside VeQMS |
+| Training records | `training_guard`: system sets `assigned_at` and `completed_at`; only the trainee (`app.current_actor()`) can complete their own record (SQLSTATE P0003); a completed or closed record can't change; nothing is deleted. Corrections are new rows with `correction_of`. One live record per person, document and version (partial unique index) |
+| Adobe Sign agreements | Must carry the four verification ticks (check constraint); one open agreement per record (partial unique index); subject, PDF hash, verification, sender and record fixed once sent; completed, declined and cancelled are final; completed needs the signed PDF and audit report hashes; declined and cancelled need a reason |
+| Adobe Sign transactions | `signing_transactions` numbers each transaction within its allowance year under an advisory lock and refuses a transaction beyond the allowance (SQLSTATE P0002). Insert-only |
+| Document versions | Content, locked PDF (`pdf_blob`) and the author's four checks (`verification`) fixed once out of draft; the retraining decision (`retrain`, with `retrain_reason` required when false) fixed once signing starts; approved versions only move to Superseded or Obsolete; the change request behind a version (`change_request_id`) can't change |
+| Pilot placeholders | A password is stored only as a scrypt hash and a credentials row is never deleted; stored files are write-once; a simulated signature is refused unless the organisation's settings allow it (on for the pilot, off for production) |
+| SharePoint | A version's published file and publish time are set once; its PDF source tag is fixed with the PDF; a finished sync run can't change; an integrity alert can only be resolved, once, with a note; neither is ever deleted |
+| Training that still counts | `app.training_versions(document)`: the effective version plus earlier versions back to the last one that needed retraining. Training on any of them counts, so a no-retraining version allocates nobody new |
+| Record numbers | `app.next_number(prefix)` from `counters`, gap-free per tenant |
+| Import mode | `app.import_mode()` is true only for `veqms_owner` with `app.import_mode = 'on'`. It allows historical dates on migrated records (training, transactions). The API role can never use it |
 
-`verify_audit_chain(tenant)` recomputes the whole chain and returns `ok`, the number of entries, and the first
-broken `seq`.
+Errors from these rules come back to the API as SQLSTATE `P0001` (rule broken, HTTP 409), `P0002` (allowance used
+up, 409), `P0003` (not yours to confirm, 403) or `42501` (permission denied, 403).
 
-**Assumption to confirm.** The canonical form is PostgreSQL `jsonb` text output of a fixed set of fields, with
-timestamps as UTC to the microsecond. It is not RFC 8785 (JCS), which the Step 1 plan proposed and marked
-"verify". A verifier written outside PostgreSQL must reproduce `jsonb` key ordering (shorter keys first, then
-byte order). If RFC 8785 is required, `audit_canonical()` must change before any real entries are written.
+## Key relationships
 
-Not built yet: anchoring the chain head to immutable Blob storage every 15 minutes, the hourly and nightly
-verifier jobs, and the alert on mismatch.
+- `documents` 1 — n `document_versions`; the current version is the newest; at most one is Effective.
+- `documents` — `audience_groups` / `audience_roles` / `audience_users` decide who must read the effective version.
+  `training_days` and `training_quiz` on the document set the due period and whether the quiz applies.
+- `agreements` belong to one record (`record_type` + `record_id`): a document version, a CAPA or a quality event.
+  `agreement_signers` hold the signing order; `agreement_events` the history; `signing_transactions` the transaction number.
+  `correction_of` links a resend to the cancelled or declined agreement it replaces.
+- `training_records` belong to a person, a document and a version; `agreement_id` is set for records created from an
+  approval agreement (author and reviewers).
+- `capas.source_event_id` → `quality_events`; `capas.closure_agreement_id` and `quality_events.closure_agreement_id`
+  → the open closure agreement.
 
-## Differences from the prototype
+## Changing the schema
 
-- The allowance year is computed in UTC. The prototype used the browser's local time, so a send in the first
-  hours of the start month could fall in a different year.
+- Add a new numbered migration; never edit one that has run anywhere outside a developer's machine.
+- New tenant tables need a `tenant_id`, an entry in the row-level security loop in `005` (or a later migration that
+  does the same), and grants. Add an invariant test.
+- Run `npm run db:test` (needs `psql` and a PostgreSQL 16 server) before you push.

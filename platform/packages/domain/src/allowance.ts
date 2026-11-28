@@ -1,18 +1,20 @@
-// DocuSign send allowance, counted per allowance year. Matches allowance_year() in packages/db (UTC).
+// The yearly allowance of Adobe Sign transactions (500 a year by default, to be confirmed against the contract).
+// Adobe counts one transaction per agreement sent, whatever the number of signers; a correction after sending
+// (cancel, then send again) is a second transaction.
 
-/** First calendar year of the allowance year containing `at`. startMonth is 1 to 12. */
-export function allowanceYear(at: Date, startMonth: number): number {
-  if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) throw new RangeError('startMonth must be 1 to 12');
-  const m = at.getUTCMonth() + 1;
-  return m >= startMonth ? at.getUTCFullYear() : at.getUTCFullYear() - 1;
+export interface AllowanceYear { year: number; start: Date; end: Date }
+
+// The allowance year that contains `at`. startMonth is 1-12 (1 = January). Dates are UTC.
+export function allowanceYear(at: Date, startMonth = 1): AllowanceYear {
+  if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) throw new RangeError('startMonth must be 1-12');
+  const m = startMonth - 1;
+  const y = at.getUTCMonth() >= m ? at.getUTCFullYear() : at.getUTCFullYear() - 1;
+  return { year: y, start: new Date(Date.UTC(y, m, 1)), end: new Date(Date.UTC(y + 1, m, 1)) };
 }
 
-/** Start (inclusive) and end (exclusive) of the allowance year containing `at`, in UTC. */
-export function allowanceRange(at: Date, startMonth: number): { start: Date; end: Date } {
-  const y = allowanceYear(at, startMonth);
-  return { start: new Date(Date.UTC(y, startMonth - 1, 1)), end: new Date(Date.UTC(y + 1, startMonth - 1, 1)) };
-}
+export interface AllowanceState { allowance: number; used: number; remaining: number; low: boolean; exhausted: boolean }
 
-export function remaining(allowance: number, used: number): number {
-  return Math.max(0, allowance - used);
+export function allowanceState(allowance: number, used: number, warnAt: number): AllowanceState {
+  const remaining = Math.max(0, allowance - used);
+  return { allowance, used, remaining, low: remaining <= warnAt, exhausted: remaining <= 0 };
 }

@@ -1,0 +1,89 @@
+# Local development stack: PostgreSQL 16, a one-shot migrate + demo seed, the API and the web app.
+#   docker compose up --build
+# Then open http://localhost:3000 and pick a persona (development sign-in).
+# Sample data only. Adobe Sign runs in mock mode and files are stored on a local volume.
+name: veqms
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: veqms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_local_only
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./infra/local/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d veqms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Runs the migrations as the database owner, then loads the demo tenant. Exits when done.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["sh", "-c", "node packages/db/dist/migrate.js && node packages/db/dist/seed.js"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:postgres_local_only@db:5432/veqms
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: development              # DEV_AUTH is refused when NODE_ENV=production
+      PORT: "8080"
+      # The API connects as veqms_api, a member of veqms_app: row-level security applies, as in Azure.
+      DATABASE_URL: postgres://veqms_api:veqms_api_local_only@db:5432/veqms
+      DATABASE_ENTRA_AUTH: "0"
+      DEV_AUTH: "1"
+      ENTRA_TENANT_ID: dev-tenant
+      ENTRA_API_AUDIENCE: api://veqms-local
+      ADOBE_SIGN_MODE: mock
+      STORAGE_MODE: local
+      LOCAL_STORAGE_DIR: /data/storage
+      SCIM_TOKEN: local-scim-token
+      GRAPH_MAIL_FROM: ""
+      APP_BASE_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      # The standalone Next.js server always runs with NODE_ENV=production. VEQMS_LOCAL=1 tells the web app this is
+      # the local stack, so the persona picker works over plain http://localhost. Never set it in Azure.
+      API_BASE_URL: http://api:8080
+      VEQMS_LOCAL: "1"
+      DEV_AUTH: "1"
+      SESSION_SECRET: bG9jYWwtb25seS1zZXNzaW9uLXNlY3JldC0zMi1ieXRlcyE=
+      APP_BASE_URL: http://localhost:3000
+      ENTRA_TENANT_ID: dev-tenant
+      ENTRA_WEB_CLIENT_ID: ""
+      ENTRA_WEB_CLIENT_SECRET: ""
+      ENTRA_API_SCOPE: ""
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  db-data:
+  storage-data:

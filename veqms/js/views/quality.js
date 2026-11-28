@@ -88,14 +88,14 @@
   function qeView(e, q) {
     var g = guard(e); if (g) return g;
     var me = Q.S.session.userId;
-    var dev = Q.ds.isDeviation(e), env = Q.ds.active(e.id);
+    var env = Q.esign.active(e.id, 'qe-closure');
     var canAct = (e.owner === me || Q.hasRole('qm')) && !Q.readOnly() && (e.state === 'Open' || e.state === 'Assessment') && !env;
     return h`${crumbs(e.id, 'events')}
       <div class="page-head"><div><div class="record-meta"><span>Quality event · ${e.id} · ${e.type}</span>${Q.sev(e.severity)}${Q.cls(e.classification)}${e.legalHold ? Q.chip('Legal hold', 'chip-overdue') : ''}</div><h1>${e.title}</h1></div>
-        ${canAct ? h`<div class="btn-row"><button class="btn" data-act="qe-close" data-id="${e.id}">${dev ? 'Close through DocuSign' : 'Close without CAPA'}</button><button class="btn btn-primary" data-act="qe-capa" data-id="${e.id}">Raise CAPA</button></div>` : ''}
-        ${env && Q.ds.myTurn(env) ? h`<div class="btn-row"><button class="btn btn-primary" data-act="ds-open-sign" data-id="${env.id}">Sign in DocuSign</button></div>` : ''}</div>
-      ${env ? h`<div class="callout mb-16"><strong>Closure is out for DocuSign signature.</strong> ${Q.ds.signedCount(env)} of ${env.signers.length} signed. The deviation closes when the envelope completes.</div>` : ''}
-      ${e.closureReturned && e.state !== 'Closed' ? h`<div class="callout warn mb-16"><strong>Closure ${e.closureReturned.how} in DocuSign.</strong> ${Q.fullName(e.closureReturned.by)}: ${e.closureReturned.reason}</div>` : ''}
+        ${canAct ? h`<div class="btn-row"><button class="btn" data-act="qe-close" data-id="${e.id}">Close without CAPA</button><button class="btn btn-primary" data-act="qe-capa" data-id="${e.id}">Raise CAPA</button></div>` : ''}
+        ${env && Q.esign.myTurn(env) ? h`<div class="btn-row"><button class="btn btn-primary" data-act="es-open-sign" data-id="${env.id}">Sign in Adobe Sign</button></div>` : ''}</div>
+      ${env ? h`<div class="callout mb-16"><strong>Closure is out for Adobe Sign signature.</strong> ${Q.esign.signedCount(env)} of ${env.signers.length} signed. ${e.id} closes when the agreement completes.</div>` : ''}
+      ${e.closureReturned && e.state !== 'Closed' ? h`<div class="callout warn mb-16"><strong>Closure ${e.closureReturned.how} in Adobe Sign.</strong> ${Q.fullName(e.closureReturned.by)}: ${e.closureReturned.reason}</div>` : ''}
       <div class="card mb-16">${Q.stepper(QE_STATES, e.state, null, { allDone: e.state === 'Closed' })}</div>
       <div class="split"><div class="stack">
         <div class="card card-pad"><div class="label mb-8">Description</div><p style="margin:0">${e.desc}</p></div>
@@ -103,11 +103,11 @@
           <div class="form-grid"><div class="field full"><label for="qa">Impact and containment</label><textarea class="textarea" id="qa" name="assessment" placeholder="What was affected, how far, what has been done so far">${e.assessment}</textarea></div>
           <div class="field"><label for="qs">Severity</label><select class="select" id="qs" name="severity"><option ${e.severity === 'Low' ? 'selected' : ''}>Low</option><option ${e.severity === 'High' ? 'selected' : ''}>High</option></select><div class="help">Severity sets the CAPA route: High needs Quality Manager approval.</div></div></div>
           <button class="btn mt-16" type="submit">Save assessment</button></form>` : h`<div class="card card-pad"><div class="label mb-8">Assessment</div><p style="margin:0">${e.assessment || 'Not assessed yet.'}</p></div>`}
-        ${e.closure ? h`<div class="callout plain"><b style="color:var(--ink)">Closed without CAPA · ${e.closure.envelope ? 'DocuSign envelope ' + e.closure.envelope.slice(0, 8) + '…' : 'signed ' + e.closure.sigId}</b><p class="small" style="margin:4px 0 0">${e.closure.justification}</p><p class="small muted" style="margin:4px 0 0">${Q.fullName(e.closure.by)} · ${Q.fmtDateTime(e.closure.at)}</p></div>` : ''}
+        ${e.closure ? h`<div class="callout plain"><b style="color:var(--ink)">Closed without CAPA · ${e.closure.agreement ? 'Adobe Sign agreement ' + e.closure.agreement.slice(0, 8) + '…' : 'migrated record'}</b><p class="small" style="margin:4px 0 0">${e.closure.justification}</p><p class="small muted" style="margin:4px 0 0">${Q.fullName(e.closure.by)} · ${Q.fmtDateTime(e.closure.at)}</p></div>` : ''}
         ${e.capa ? h`<div class="callout"><strong>CAPA raised</strong><p class="small" style="margin:4px 0 0">${Q.recLink(e.capa)} · ${Q.S.capas[e.capa] ? Q.S.capas[e.capa].state : ''}. Linked both ways.</p></div>` : ''}
       </div><aside class="context">
         <div class="card ctx-card"><span class="label">Details</span><dl class="dl"><div><dt>Owner</dt><dd>${Q.name(e.owner)}</dd></div><div><dt>Quality process</dt><dd>${e.process}</dd></div><div><dt>Due</dt><dd>${Q.fmtDate(e.due)}</dd></div><div><dt>Raised</dt><dd>${Q.fmtDate(e.created)}</dd></div><div style="grid-column:1/-1"><dt>Tags</dt><dd>${(e.tags || []).join(', ') || '—'}</dd></div>${e.source ? h`<div style="grid-column:1/-1"><dt>Source</dt><dd>${Q.recLink(e.source)}</dd></div>` : ''}</dl></div>
-        ${Q.ds.recordCard(e.id)}${Q.linkedCard(e.id)}${Q.activityCard(e.id)}</aside></div>`;
+        ${Q.esign.recordCard(e.id)}${Q.linkedCard(e.id)}${Q.activityCard(e.id)}</aside></div>`;
   }
   Q.on['qe-assess'] = function (form) { var e = Q.S.events[form.getAttribute('data-id')], f = Q.formData(form); Q.wf.qe.assess(e, f.assessment, f.severity); Q.toast('Assessment saved'); Q.refresh(); };
   Q.act['qe-capa'] = function (el) {
@@ -115,26 +115,21 @@
     if (!e.assessment) { Q.toast('Save an assessment before you raise a CAPA.', 'warn'); return; }
     var c = Q.wf.qe.raiseCapa(e); Q.toast(c.id + ' created in Planning'); Q.go('#/quality/' + c.id + '?tab=actions');
   };
+  // Every quality event closes without a CAPA through Adobe Sign: write the justification, then one agreement goes
+  // to the owner and a QA approver. The event closes when the agreement completes.
   Q.act['qe-close'] = function (el) {
     var e = Q.S.events[el.getAttribute('data-id')];
-    if (Q.ds.isDeviation(e)) {
-      var block = Q.ds.cantSend(e.id); if (block) { Q.toast(block, 'warn'); return; }
-      Q.drawer.open({ kicker: e.id + ' · deviation', title: 'Close without a CAPA', submitLabel: 'Continue to DocuSign',
-        body: h`<div class="callout mb-16"><strong>Deviations close through DocuSign (Part 11)</strong><p class="small" style="margin:4px 0 0">You write the justification here. Then one envelope goes to ${Q.fullName(e.owner)} (owner) and the QA approver. The deviation closes when the envelope completes.</p></div>
-          <div class="field"><label for="dj">Justification (required)</label><textarea class="textarea" id="dj" name="justification" placeholder="Why no corrective or preventive action is needed">${(e.pendingClosure || {}).justification || ''}</textarea></div>`,
-        submit: function (f, form) {
-          if (!f.justification || f.justification.length < 15) return Q.fieldError(form, 'justification', 'Write a justification of at least a sentence.');
-          var b = e.pendingClosure ? { justification: e.pendingClosure.justification } : null;
-          e.pendingClosure = { justification: f.justification, by: Q.S.session.userId, at: new Date().toISOString() };
-          Q.audit('update', 'Quality event', e.id, 'Wrote closure justification for ' + e.id + ' (to be approved in DocuSign)', b, { justification: f.justification });
-          Q.save(); Q.drawer.close(); Q.ds.openSend(e.id);
-        } });
-      return;
-    }
-    Q.sign({ items: [{ id: e.id, hash: Q.sha256(Q.canon(e)) }], meaning: 'Closed without CAPA', meanings: ['Closed without CAPA'], title: 'Close ' + e.id + ' without a CAPA',
-      extra: function () { return h`<div class="callout warn mb-16"><strong>Closing without a CAPA</strong><p class="small" style="margin:4px 0 0">This is blocked until you write a justification and sign it.</p></div><div class="field mb-16"><label for="cj">Justification (required)</label><textarea class="textarea" id="cj" name="justification" placeholder="Why no corrective or preventive action is needed"></textarea></div>`; },
-      validate: function (f) { return f.justification && f.justification.length >= 15 ? null : { field: 'justification', msg: 'Write a justification of at least a sentence.' }; },
-      onSigned: function (s, f) { Q.wf.qe.closeNoCapa(e, f.justification, s[0]); Q.toast(e.id + ' closed without CAPA'); } });
+    var block = Q.esign.cantSend(e.id, 'qe-closure'); if (block) { Q.toast(block, 'warn'); return; }
+    Q.drawer.open({ kicker: e.id + ' · ' + e.type.toLowerCase(), title: 'Close without a CAPA', submitLabel: 'Continue to Adobe Sign',
+      body: h`<div class="callout mb-16"><strong>Closing without a CAPA is signed in Adobe Sign (Part 11)</strong><p class="small" style="margin:4px 0 0">You write the justification here. Then one agreement goes to ${Q.fullName(e.owner)} (owner) and the QA approver. ${e.id} closes when the agreement completes.</p></div>
+        <div class="field"><label for="dj">Justification (required)</label><textarea class="textarea" id="dj" name="justification" placeholder="Why no corrective or preventive action is needed">${(e.pendingClosure || {}).justification || ''}</textarea></div>`,
+      submit: function (f, form) {
+        if (!f.justification || f.justification.length < 15) return Q.fieldError(form, 'justification', 'Write a justification of at least a sentence.');
+        var b = e.pendingClosure ? { justification: e.pendingClosure.justification } : null;
+        e.pendingClosure = { justification: f.justification, by: Q.S.session.userId, at: new Date().toISOString() };
+        Q.audit('update', 'Quality event', e.id, 'Wrote closure justification for ' + e.id + ' (to be approved in Adobe Sign)', b, { justification: f.justification });
+        Q.save(); Q.drawer.close(); Q.esign.openSend(e.id, 'qe-closure');
+      } });
   };
 
   // ---------- CAPA ----------
@@ -144,18 +139,16 @@
     var tab = q.tab || 'overview';
     var done = c.actions.filter(function (a) { return a.status === 'Done'; }).length;
     var isOwner = c.owner === me || Q.hasRole('qm');
+    var planOut = Q.esign.active(c.id, 'capa-plan'), actionsOut = Q.esign.active(c.id, 'capa-actions'), cenv = Q.esign.active(c.id, 'capa-closure');
     var acts = [];
     if (!ro) {
-      if (c.state === 'Planning' && isOwner) acts.push(h`<button class="btn btn-primary" data-act="capa-plan" data-id="${c.id}">${c.severity === 'High' && !Q.hasRole('qm') ? 'Send plan to Quality Manager' : 'Approve actions and start'}</button>`);
-      if (c.state === 'Planning' && c.planPending && Q.hasRole('qm') && !isOwner) acts.push(h`<button class="btn btn-primary" data-act="capa-plan" data-id="${c.id}">Approve actions and sign</button>`);
+      if (c.state === 'Planning' && isOwner && !planOut) acts.push(h`<button class="btn btn-primary" data-act="capa-plan" data-id="${c.id}">${Q.icon('sign', 'ico-sm')} Send action plan to Adobe Sign</button>`);
       if (c.state === 'Execution') {
         acts.push(h`<button class="btn" data-act="tab" data-tab="evidence">Upload evidence</button>`);
-        if (c.awaitingApproval && c.approver === me) acts.push(h`<button class="btn btn-primary" data-act="capa-approve" data-id="${c.id}">Approve completed actions</button>`);
-        else if (isOwner && !c.awaitingApproval) acts.push(h`<button class="btn btn-primary" data-act="capa-submit" data-id="${c.id}" ${done === c.actions.length ? '' : 'aria-disabled="true"'}>Submit actions for approval</button>`);
+        if (isOwner && !actionsOut) acts.push(h`<button class="btn btn-primary" data-act="capa-submit" data-id="${c.id}" ${done === c.actions.length ? '' : 'aria-disabled="true"'}>Send completed actions to Adobe Sign</button>`);
       }
-      var cenv = Q.ds.active(c.id);
-      if (c.state === 'Effectiveness check' && !cenv && (isOwner || (c.effectiveness.assignee === me))) acts.push(c.pendingClosure ? h`<button class="btn btn-primary" data-act="ds-send" data-id="${c.id}">${Q.icon('sign', 'ico-sm')} Send closure to DocuSign</button>` : h`<button class="btn btn-primary" data-act="tab" data-tab="effectiveness">Record effectiveness</button>`);
-      if (cenv && Q.ds.myTurn(cenv)) acts.push(h`<button class="btn btn-primary" data-act="ds-open-sign" data-id="${cenv.id}">${Q.icon('sign', 'ico-sm')} Sign in DocuSign</button>`);
+      if (c.state === 'Effectiveness check' && !cenv && (isOwner || (c.effectiveness.assignee === me))) acts.push(c.pendingClosure ? h`<button class="btn btn-primary" data-act="es-send" data-id="${c.id}" data-stage="capa-closure">${Q.icon('sign', 'ico-sm')} Send closure to Adobe Sign</button>` : h`<button class="btn btn-primary" data-act="tab" data-tab="effectiveness">Record effectiveness</button>`);
+      acts.push(Q.esign.signButton(c.id));
     }
     var labels = { 'Planning': c.actionsLocked ? 'Planning · actions locked' : 'Planning', 'Execution': c.state === 'Execution' ? 'Execution · ' + done + ' of ' + c.actions.length + ' actions done' : 'Execution' };
     var tabs = [['overview', 'Overview'], ['actions', 'Actions · ' + c.actions.length], ['rootcause', 'Root cause'], ['risk', 'Risk assessment'], ['evidence', 'Evidence · ' + c.evidence.length], ['effectiveness', 'Effectiveness check']];
@@ -163,10 +156,10 @@
     var src = Q.S.events[c.source];
     return h`${crumbs(c.id, 'capa')}
       <div class="page-head"><div><div class="record-meta"><span>CAPA · ${c.id} · from</span>${src ? h`<a href="#/quality/${src.id}">${src.id} ${src.title.split(':')[0]}</a>` : ''}${Q.sev(c.severity)}${Q.cls(c.classification)}</div><h1>${c.title}</h1></div><div class="btn-row">${acts}</div></div>
-      ${c.awaitingApproval ? h`<div class="callout mb-16"><strong>Completed actions are with ${Q.fullName(c.approver)} for approval.</strong></div>` : ''}
-      ${c.planPending && c.state === 'Planning' ? h`<div class="callout mb-16"><strong>Plan sent to the Quality Manager for approval.</strong> High severity route.</div>` : ''}
-      ${Q.ds.active(c.id) ? h`<div class="callout mb-16"><strong>Closure is out for DocuSign signature.</strong> ${Q.ds.signedCount(Q.ds.active(c.id))} of ${Q.ds.active(c.id).signers.length} signed. ${c.id} closes when the envelope completes.</div>` : ''}
-      ${c.closureReturned && c.state !== 'Closed' ? h`<div class="callout warn mb-16"><strong>Closure ${c.closureReturned.how} in DocuSign.</strong> ${Q.fullName(c.closureReturned.by)}: ${c.closureReturned.reason}</div>` : ''}
+      ${planOut ? h`<div class="callout mb-16"><strong>The action plan is out for Adobe Sign signature.</strong> ${Q.esign.signedCount(planOut)} of ${planOut.signers.length} signed (${c.route.toLowerCase()}). The actions lock and execution starts when the agreement completes.</div>` : ''}
+      ${actionsOut ? h`<div class="callout mb-16"><strong>Completed actions are out for Adobe Sign signature.</strong> ${Q.esign.signedCount(actionsOut)} of ${actionsOut.signers.length} signed. The effectiveness check is scheduled when the agreement completes.</div>` : ''}
+      ${cenv ? h`<div class="callout mb-16"><strong>Closure is out for Adobe Sign signature.</strong> ${Q.esign.signedCount(cenv)} of ${cenv.signers.length} signed. ${c.id} closes when the agreement completes.</div>` : ''}
+      ${['planReturned', 'actionsReturned', 'closureReturned'].map(function (k, i) { var rb = c[k]; var open = [planOut, actionsOut, cenv][i]; return rb && c.state !== 'Closed' && !open ? h`<div class="callout warn mb-16"><strong>${['Action plan', 'Completed actions', 'Closure'][i]} ${rb.how} in Adobe Sign.</strong> ${Q.fullName(rb.by)}: ${rb.reason}</div>` : ''; })}
       <div class="card mb-16">${Q.stepper(CAPA_STATES, c.state, labels, { allDone: c.state === 'Closed' })}</div>
       <div class="split"><div style="min-width:0">
         <div class="tabs" role="tablist">${tabs.map(function (t) { return h`<button class="tab ${tab === t[0] ? 'active' : ''}" role="tab" aria-selected="${tab === t[0]}" data-act="tab" data-tab="${t[0]}">${t[1]}</button>`; })}</div>
@@ -174,7 +167,7 @@
       </div><aside class="context">
         <div class="card ctx-card"><span class="label">Details</span><dl class="dl"><div><dt>Process owner</dt><dd>${Q.name(c.owner)}</dd></div><div><dt>Quality process</dt><dd>${c.process}</dd></div><div><dt>Route</dt><dd>${c.route}</dd></div><div><dt>Effectiveness check</dt><dd>${c.effectiveness.due ? 'Due ' + Q.fmtDate(c.effectiveness.due) : c.effectivenessPlan}</dd></div></dl></div>
         <div class="card ctx-card"><span class="label">Evidence</span>${c.evidence.length ? c.evidence.map(function (ev) { return h`<div class="people-row"><span class="small">${ev.name}${ev.pdf ? ' → PDF' : ''}</span><span class="health ${ev.scan === 'clean' ? 'h-ok' : 'h-warn'}">${ev.scan === 'clean' ? 'Scanned clean' : 'Scanning…'}</span></div>`; }) : h`<p class="small muted" style="margin:0">None yet.</p>`}<p class="small muted mt-8" style="margin-bottom:0">Files can’t be opened until the malware scan finishes.</p></div>
-        ${Q.ds.recordCard(c.id)}${Q.linkedCard(c.id)}${Q.activityCard(c.id)}</aside></div>`;
+        ${Q.esign.recordCard(c.id)}${Q.linkedCard(c.id)}${Q.activityCard(c.id)}</aside></div>`;
   }
   function capaOverview(c) {
     var src = Q.S.events[c.source];
@@ -190,9 +183,10 @@
     return h`${!editable && c.state !== 'Planning' ? h`<p class="small muted">Actions are defined only during Planning and are now locked.</p>` : ''}
       <div class="label mb-8">Actions (set in Planning)</div>
       <div class="list-rows">${c.actions.length ? c.actions.map(function (a) {
-        var mine = a.assignee === me && c.state === 'Execution' && a.status !== 'Done' && !Q.readOnly();
-        return h`<div class="list-row"><div class="lr-main"><b>${a.type}</b> · ${a.title}${a.doc ? h` · ${Q.recLink(a.doc, { short: true })}` : ''}<div class="small muted">${Q.name(a.assignee)} · ${a.sig ? 'signature required' : 'no signature'}</div></div>
-          ${mine ? h`<button class="btn btn-sm btn-primary" data-act="capa-done" data-id="${c.id}" data-a="${a.id}">${a.sig ? 'Complete and sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : c.state === 'Planning' ? Q.chip('Planned', 'chip-outline') : a.status === 'In progress' ? Q.dueChip(a.due) : a.status === 'Not started' && Q.daysFromToday(a.due) > 7 ? Q.chip('Not started', 'chip-outline') : Q.dueChip(a.due)}
+        var out = Q.esign.active(c.id, 'capa-action', a.id);
+        var mine = a.assignee === me && c.state === 'Execution' && a.status !== 'Done' && !Q.readOnly() && !out;
+        return h`<div class="list-row"><div class="lr-main"><b>${a.type}</b> · ${a.title}${a.doc ? h` · ${Q.recLink(a.doc, { short: true })}` : ''}<div class="small muted">${Q.name(a.assignee)} · ${a.needsSignature ? 'signed off in Adobe Sign' : 'no signature'}</div>${a.returned && a.status !== 'Done' && !out ? h`<div class="small" style="color:var(--overdue)">${a.returned.how} in Adobe Sign: ${a.returned.reason}</div>` : ''}</div>
+          ${out && Q.esign.myTurn(out) ? h`<button class="btn btn-sm btn-primary" data-act="es-open-sign" data-id="${out.id}">Sign in Adobe Sign</button>` : out ? Q.chip('Out for signature', 'chip-turn') : mine ? h`<button class="btn btn-sm btn-primary" data-act="capa-done" data-id="${c.id}" data-a="${a.id}">${a.needsSignature ? 'Complete and send to Adobe Sign' : 'Mark done'}</button>` : a.status === 'Done' ? Q.chip(a.signedBy ? 'Done · signed' : 'Done', 'chip-done') : c.state === 'Planning' ? Q.chip('Planned', 'chip-outline') : a.status === 'In progress' ? Q.dueChip(a.due) : a.status === 'Not started' && Q.daysFromToday(a.due) > 7 ? Q.chip('Not started', 'chip-outline') : Q.dueChip(a.due)}
           ${editable ? h`<button class="icon-btn plain" data-act="capa-rmaction" data-id="${c.id}" data-a="${a.id}" aria-label="Remove action ${a.title}">${Q.icon('x', 'ico-sm')}</button>` : ''}</div>`;
       }) : h`<div class="empty" style="padding:20px">No actions yet. Add at least one corrective or preventive action.</div>`}</div>
       ${editable ? h`<button class="btn mt-16" data-act="capa-addaction" data-id="${c.id}">${Q.icon('plus', 'ico-sm')} Add action</button>` : ''}`;
@@ -254,25 +248,25 @@
   Q.act['ev-open'] = function (el) { var c = Q.S.capas[el.getAttribute('data-id')], ev = c.evidence[+el.getAttribute('data-i')]; Q.audit('read', 'CAPA', c.id, 'Opened evidence ' + ev.name); Q.save(); Q.toast('Prototype: the PDF copy of ' + ev.name + ' would open in the viewer.'); };
   function capaEff(c) {
     var e = c.effectiveness;
-    if (e.result) return h`<div class="card card-pad"><dl class="dl"><div style="grid-column:1/-1"><dt>Success criteria</dt><dd>${e.criteria}</dd></div><div style="grid-column:1/-1"><dt>Result</dt><dd>${e.result}</dd></div><div><dt>Verdict</dt><dd>${Q.chip(e.verdict, e.verdict === 'Effective' ? 'chip-done' : 'chip-overdue')}</dd></div><div><dt>Verified by</dt><dd>${Q.fullName(e.by)} · ${Q.fmtDate(e.at)}</dd></div>${c.closeEnvelope ? h`<div style="grid-column:1/-1"><dt>Closure approved</dt><dd><button class="btn-link mono" style="padding:0;min-height:0" data-act="ds-env" data-id="${c.closeEnvelope}">DocuSign ${c.closeEnvelope}</button></dd></div>` : ''}</dl></div>`;
-    var pend = c.pendingClosure, out = Q.ds.active(c.id);
-    if (out) return h`<div class="card card-pad"><div class="label mb-8">Closure out for DocuSign signature</div><dl class="dl"><div style="grid-column:1/-1"><dt>Result</dt><dd>${pend.result}</dd></div><div><dt>Verdict</dt><dd>${pend.verdict}</dd></div><div><dt>Recorded by</dt><dd>${Q.fullName(pend.by)} · ${Q.fmtDate(pend.at)}</dd></div></dl></div>`;
+    if (e.result) return h`<div class="card card-pad"><dl class="dl"><div style="grid-column:1/-1"><dt>Success criteria</dt><dd>${e.criteria}</dd></div><div style="grid-column:1/-1"><dt>Result</dt><dd>${e.result}</dd></div><div><dt>Verdict</dt><dd>${Q.chip(e.verdict, e.verdict === 'Effective' ? 'chip-done' : 'chip-overdue')}</dd></div><div><dt>Verified by</dt><dd>${Q.fullName(e.by)} · ${Q.fmtDate(e.at)}</dd></div>${c.closeAgreement ? h`<div style="grid-column:1/-1"><dt>Closure approved</dt><dd><button class="btn-link mono" style="padding:0;min-height:0" data-act="es-agreement" data-id="${c.closeAgreement}">Adobe Sign ${c.closeAgreement}</button></dd></div>` : ''}</dl></div>`;
+    var pend = c.pendingClosure, out = Q.esign.active(c.id, 'capa-closure');
+    if (out) return h`<div class="card card-pad"><div class="label mb-8">Closure out for Adobe Sign signature</div><dl class="dl"><div style="grid-column:1/-1"><dt>Result</dt><dd>${pend.result}</dd></div><div><dt>Verdict</dt><dd>${pend.verdict}</dd></div><div><dt>Recorded by</dt><dd>${Q.fullName(pend.by)} · ${Q.fmtDate(pend.at)}</dd></div></dl></div>`;
     var can = c.state === 'Effectiveness check' && !Q.readOnly() && (c.owner === Q.S.session.userId || Q.hasRole('qm') || e.assignee === Q.S.session.userId);
     if (!can) return h`<div class="card card-pad"><div class="label mb-8">Plan</div><p>${e.criteria || 'Set the success criteria during Planning.'}</p><p class="small muted" style="margin:0">${c.effectivenessPlan}${e.due ? ' · due ' + Q.fmtDate(e.due) : ''}</p></div>`;
     return h`<form class="card card-pad" data-submit="capa-eff" data-id="${c.id}"><div class="label mb-8">Success criteria</div><p>${e.criteria}</p>
       <div class="field mb-16"><label for="cer">Result</label><textarea class="textarea" id="cer" name="result" placeholder="What the evidence shows">${pend ? pend.result : ''}</textarea></div>
       <fieldset class="mb-16"><legend>Verdict</legend><label class="check"><input type="radio" name="verdict" value="Effective" ${!pend || pend.verdict === 'Effective' ? 'checked' : ''}> Effective: close the CAPA</label><label class="check"><input type="radio" name="verdict" value="Not effective" ${pend && pend.verdict === 'Not effective' ? 'checked' : ''}> Not effective: record it and raise a new event</label></fieldset>
-      <div class="callout mb-16"><strong>Closure is approved in DocuSign</strong><p class="small" style="margin:4px 0 0">One envelope: ${Q.fullName(c.owner)} signs as owner, then the QA approver. It uses 1 of ${Q.ds.remaining()} sends left this year.</p></div>
-      <button class="btn btn-primary" type="submit">Save result and send to DocuSign</button></form>`;
+      <div class="callout mb-16"><strong>Closure is approved in Adobe Sign</strong><p class="small" style="margin:4px 0 0">One agreement: ${Q.fullName(c.owner)} signs as owner, then the QA approver. It uses 1 of ${Q.esign.remaining()} transactions left this year.</p></div>
+      <button class="btn btn-primary" type="submit">Save result and send to Adobe Sign</button></form>`;
   }
   Q.on['capa-eff'] = function (form) {
     var c = Q.S.capas[form.getAttribute('data-id')], f = Q.formData(form);
     if (!f.result) return Q.fieldError(form, 'result', 'Describe the result.');
-    var block = Q.ds.cantSend(c.id); if (block) { Q.toast(block, 'warn'); return; }
+    var block = Q.esign.cantSend(c.id, 'capa-closure'); if (block) { Q.toast(block, 'warn'); return; }
     var b = c.pendingClosure ? { result: c.pendingClosure.result, verdict: c.pendingClosure.verdict } : null;
     c.pendingClosure = { result: f.result, verdict: f.verdict, by: Q.S.session.userId, at: new Date().toISOString() };
-    Q.audit('update', 'CAPA', c.id, 'Recorded effectiveness result for ' + c.id + ' (' + f.verdict + '); closure to be approved in DocuSign', b, { result: f.result, verdict: f.verdict });
-    Q.save(); Q.ds.openSend(c.id);
+    Q.audit('update', 'CAPA', c.id, 'Recorded effectiveness result for ' + c.id + ' (' + f.verdict + '); closure to be approved in Adobe Sign', b, { result: f.result, verdict: f.verdict });
+    Q.save(); Q.esign.openSend(c.id, 'capa-closure');
   };
 
   function CA(el) { return Q.S.capas[el.getAttribute('data-id')]; }
@@ -284,41 +278,29 @@
         <div class="field"><label for="caa">Assignee</label><select class="select" id="caa" name="assignee">${users.map(function (u) { return h`<option value="${u.id}">${u.name}</option>`; })}</select></div>
         <div class="field"><label for="cad">Due</label><input class="input" type="date" id="cad" name="due" value="${Q.dayIso(14).slice(0, 10)}"></div>
         <div class="field"><label for="cadoc">Linked document</label><select class="select" id="cadoc" name="doc"><option value="">None</option>${Object.keys(Q.S.docs).map(function (d) { return h`<option value="${d}">${d} ${Q.S.docs[d].title}</option>`; })}</select></div>
-        <label class="check" style="align-self:end"><input type="checkbox" name="sig" checked> Requires signature</label></div>`,
-      submit: function (f, form) { if (!f.title) return Q.fieldError(form, 'title', 'Give the action a title.'); Q.wf.capa.addAction(c, { type: f.type, title: f.title, assignee: f.assignee, due: new Date(f.due + 'T17:00:00').toISOString(), doc: f.doc || null, sig: f.sig }); if (f.doc) Q.link(c.id, f.doc); Q.drawer.close(); Q.toast('Action added'); Q.refresh(); } });
+        <div class="full"><label class="check"><input type="checkbox" name="needsSignature"> Needs a signature: signed off in Adobe Sign by the person who does it</label><div class="help">Leave it unticked and the action is marked done here, with no signature and no Adobe Sign transaction.</div></div></div>`,
+      submit: function (f, form) { if (!f.title) return Q.fieldError(form, 'title', 'Give the action a title.'); Q.wf.capa.addAction(c, { type: f.type, title: f.title, assignee: f.assignee, due: new Date(f.due + 'T17:00:00').toISOString(), doc: f.doc || null, needsSignature: f.needsSignature }); if (f.doc) Q.link(c.id, f.doc); Q.drawer.close(); Q.toast('Action added'); Q.refresh(); } });
   };
   Q.act['capa-rmaction'] = function (el) { var c = CA(el); Q.wf.capa.removeAction(c, el.getAttribute('data-a')); Q.refresh(); };
+  // The action plan is approved in Adobe Sign: owner then a Quality Manager (high severity), or the owner alone (low).
   Q.act['capa-plan'] = function (el) {
     var c = CA(el);
     if (!c.actions.length) { Q.toast('Add at least one action first.', 'warn'); return; }
-    if (c.severity === 'High' && !Q.hasRole('qm')) {
-      c.planPending = true;
-      var qm = Q.S.users.find(function (u) { return u.roles.indexOf('qm') >= 0 && u.status === 'Active'; });
-      Q.wf.assign({ kind: 'capa-approve', record: c.id, assignee: qm.id, due: Q.dayIso(3) });
-      Q.audit('state', 'CAPA', c.id, 'Plan sent to the Quality Manager (high severity route)'); Q.closeTasks(function (t) { return t.record === c.id && t.kind === 'capa-plan'; });
-      Q.toast('Sent to ' + qm.name + ' for approval'); Q.refresh(); return;
-    }
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon(c.actions)), stage: 'Actions approved' }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve the actions for ' + c.id,
-      extra: function () { return h`<div class="callout plain mb-16"><b style="color:var(--ink)">Actions lock after this.</b><p class="small" style="margin:4px 0 0">${c.actions.length} action${c.actions.length > 1 ? 's' : ''} will be assigned and their owners notified.</p></div>`; },
-      onSigned: function (s) { c.planPending = false; Q.closeTasks(function (t) { return t.record === c.id && t.kind === 'capa-approve'; }); Q.wf.capa.approvePlan(c, s[0]); Q.toast('Actions locked. Execution started.'); } });
+    Q.esign.openSend(c.id, 'capa-plan');
   };
+  // An action marked as needing a signature is signed off in Adobe Sign by the person who did it; any other action is
+  // marked done here, with no signature.
   Q.act['capa-done'] = function (el) {
     var c = CA(el), a = c.actions.find(function (x) { return x.id === el.getAttribute('data-a'); });
-    if (!a.sig) { Q.wf.capa.completeAction(c, a, null); Q.toast('Action done'); Q.refresh(); return; }
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon(a)), stage: 'Action ' + a.id }], meaning: 'Completed', meanings: ['Completed'], title: 'Sign completion: ' + a.title,
-      onSigned: function (s) { Q.wf.capa.completeAction(c, a, s[0]); Q.toast('Action signed'); } });
+    if (!a.needsSignature) { Q.wf.capa.completeAction(c, a, null); Q.toast('Action done · no signature needed'); Q.refresh(); return; }
+    Q.esign.openSend(c.id, 'capa-action', a.id);
   };
+  // Completed actions are approved in Adobe Sign (a Quality Manager who did none of them, for high severity).
   Q.act['capa-submit'] = function (el) {
     var c = CA(el);
-    if (c.actions.some(function (a) { return a.status !== 'Done'; })) { Q.toast('Every action must be done before you submit for approval.', 'warn'); Q.setQuery({ tab: 'actions' }); return; }
+    if (c.actions.some(function (a) { return a.status !== 'Done'; })) { Q.toast('Every action must be done before you send them for approval.', 'warn'); Q.setQuery({ tab: 'actions' }); return; }
     if (c.rootWhy == null) { Q.toast('Record the root cause first.', 'warn'); Q.setQuery({ tab: 'rootcause' }); return; }
-    Q.wf.capa.submitForApproval(c); Q.toast('Sent for approval'); Q.refresh();
-  };
-  Q.act['capa-approve'] = function (el) {
-    var c = CA(el);
-    if (c.actions.some(function (a) { return a.assignee === Q.S.session.userId; }) && c.severity === 'High') { Q.toast('You completed one of these actions, so you can’t approve them (segregation of duties).', 'warn'); return; }
-    Q.sign({ items: [{ id: c.id, hash: Q.sha256(Q.canon(c.actions)), stage: 'Completed actions approved' }], meaning: 'Approved', meanings: ['Approved'], title: 'Approve completed actions on ' + c.id,
-      onSigned: function (s) { Q.wf.capa.approveActions(c, s[0]); Q.toast('Approved. Effectiveness check scheduled.'); } });
+    Q.esign.openSend(c.id, 'capa-actions');
   };
 
   // ---------- Create ----------

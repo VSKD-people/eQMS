@@ -1,16 +1,17 @@
 /*
   VeQMS smoke test.
   Paste into the browser console on http://localhost:4173 (or run it with a browser tool).
-  Renders every page and record as every active persona, reports any page that fails,
-  checks the audit hash chain, then puts you back on the page and persona you started with.
-  It doesn't change any records. Opening a Restricted document adds one "read" audit entry,
-  which the app logs on purpose.
-  Last run on this build: 13 personas, 3,822 renders, 0 errors, audit chain valid.
+  Renders every page and record as every active persona, opens the document-flow drawers (submit, approve,
+  return, the Word stand-in editor, review), the training drawers and the integrity-alert drawer wherever that
+  persona may use them, reports anything that fails, checks the audit hash chain, then puts you back on the
+  page and persona you started with. It doesn't change any records. Opening a Restricted document adds one
+  "read" audit entry, which the app logs on purpose.
+  Last run on this build (fresh data): 13 personas, 4,433 renders, 23 drawers, 0 errors, audit chain valid.
 */
 (function () {
   var Q = window.Q;
   var errors = [];
-  var renders = 0;
+  var renders = 0, drawers = 0;
   var origError = console.error;
   console.error = function () {
     errors.push(Array.prototype.map.call(arguments, String).join(' '));
@@ -23,10 +24,10 @@
 
   function withTabs(base, tabs) { return tabs.map(function (t) { return base + '?tab=' + t; }); }
   var pages = [].concat(
-    ['/today', '/today?f=overdue', '/today?f=upcoming', '/tasks', '/documents'],
+    ['/today', '/today?f=overdue', '/today?f=upcoming', '/tasks', '/documents', '/documents?state=Signing', '/documents?state=In%20approval', '/documents?type=User%20access%20review'],
     withTabs('/training', ['my', 'matrix', 'records', 'audiences']),
     ['/training?tab=records&u=u-vic', '/training?tab=records&d=SOP-012&all=1', '/training?tab=matrix&g=IT%20team'],
-    ['/approvals', '/approvals?tab=register', '/approvals?year=all&st=voided'],
+    ['/approvals', '/approvals?tab=transactions', '/approvals?tab=register', '/approvals?year=all&st=cancelled', '/approvals?year=all&st=declined'],
     ['/changes', '/changes?view=board'],
     withTabs('/reviews', ['mine', 'org']),
     withTabs('/quality', ['observations', 'events', 'capa']),
@@ -37,7 +38,7 @@
     ['/help', '/search?q=access', '/raise'],
     withTabs('/admin/users', ['users', 'requests', 'review', 'delegations']),
     withTabs('/admin/automations', ['rules', 'runs', 'failed', 'log']),
-    ['/admin/audit', '/admin/integrations', '/admin/templates', '/admin/workflows', '/admin/settings']
+    ['/admin/audit', '/admin/sharepoint', '/admin/integrations', '/admin/templates', '/admin/workflows', '/admin/settings']
   );
   var TABS = {
     doc: ['document', 'compare', 'comments', 'history', 'approval', 'training'],
@@ -65,10 +66,36 @@
     if (errors.length > before) errors[errors.length - 1] = '[' + path + '] ' + errors[errors.length - 1];
   }
 
+  // Open a drawer the way a click would, then close it. Drawers here only read records.
+  function openDrawer(act, id) {
+    var before = errors.length;
+    var el = { getAttribute: function (k) { return k === 'data-id' ? id : null; }, closest: function () { return null; } };
+    try { Q.act[act](el, { target: document.body }); } catch (e) { errors.push(String(e && e.message || e)); }
+    drawers++;
+    var root = document.getElementById('drawer-root');
+    if (!Q.drawer.isOpen() || !root || !root.querySelector('.drawer')) errors.push('Drawer did not open');
+    if (errors.length > before) errors[errors.length - 1] = '[drawer ' + act + ' ' + id + ' as ' + Q.S.session.userId + '] ' + errors[errors.length - 1];
+    Q.drawer.close();
+  }
+  function drawersFor(u) {
+    var ro = Q.readOnly();
+    Object.keys(Q.S.docs).forEach(function (k) {
+      var d = Q.S.docs[k];
+      if (!Q.canSee(d)) return;
+      if (!ro && d.state === 'Draft' && (d.author === u.id || d.owner === u.id)) { openDrawer('doc-edit', k); openDrawer('doc-submit', k); }
+      if (Q.wf.doc.canReturn(d)) openDrawer('doc-sendback', k);
+      if (!ro && d.state === 'In review' && d.reviewers.some(function (r) { return r.u === u.id && r.status === 'Pending'; })) openDrawer('doc-review', k);
+      if (!ro && d.state === 'In approval' && d.approvers.some(function (a) { return a.u === u.id && a.status === 'To approve'; })) openDrawer('doc-approve', k);
+    });
+    if (!ro) Q.S.assignments.filter(function (a) { return a.user === u.id && Q.trOpen(a); }).forEach(function (a) { openDrawer('train-start', a.id); });
+    if (Q.sp.canResolve()) Q.sp.openAlerts().forEach(function (a) { openDrawer('sp-resolve', a.id); });
+  }
+
   try {
     people.forEach(function (u) {
       Q.S.session.userId = u.id;
       pages.concat(records).forEach(function (p) { show(p); });
+      drawersFor(u);
     });
   } finally {
     console.error = origError;
@@ -82,6 +109,7 @@
   var result = {
     personas: people.length,
     renders: renders,
+    drawers: drawers,
     errors: errors.length,
     auditChain: chain.ok ? 'valid (' + chain.count + ' entries)' : 'BROKEN at entry ' + chain.brokenAt
   };

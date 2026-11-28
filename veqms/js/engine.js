@@ -54,16 +54,13 @@
         }
         break;
       case 'doc.effective':
+        // The QA approvers' retraining decision is used here: with no retraining, training on the version it replaced
+        // still counts (open allocations stay open) and only people with no training on it are allocated.
         if ((r = active('RULE-09'))) {
+          var dd = Q.S.docs[ctx.record], ev = Q.effVer(dd), keep = !!ev && ev.retrain === false;
           var n = Q.allocateDoc(ctx.record, 'New version effective');
-          ran(r, ctx, 'Done', n ? 'Allocated the new version to ' + Q.plural(n, 'person', 'people') + '; earlier records kept as superseded' : Q.hasAudience(Q.S.docs[ctx.record]) ? 'Everyone in the audience already has a record for this version' : 'No training audience on this document');
-        }
-        if ((r = rule('RULE-14'))) {
-          if (r.status === 'Active' && Q.integrationOn('sp-pub')) ran(r, ctx, 'Sent', 'Published read-only PDF to SharePoint; archived superseded version');
-          else if (r.status === 'Active') {
-            Q.S.deadLetter.unshift({ id: Q.uid('DLQ'), rule: r.id, at: now(), record: ctx.record, channel: 'SharePoint', target: 'QMS publication library', attempts: 6, error: 'SharePoint publishing connector is off.', status: 'Failed' });
-            ran(r, ctx, 'Failed', 'Connector off; moved to dead-letter queue');
-          }
+          ran(r, ctx, 'Done', keep ? 'No retraining (QA approvers’ decision: ' + (ev.retrainReason || 'no reason recorded').replace(/[.\s]+$/, '') + '). Earlier training still counts; ' + (n ? Q.plural(n, 'person', 'people') + ' with no training on it allocated v' + ev.v : 'nobody newly allocated')
+            : n ? 'Allocated the new version to ' + Q.plural(n, 'person', 'people') + '; earlier records kept as superseded' : Q.hasAudience(dd) ? 'Everyone in the audience already has a record for this version' : 'No training audience on this document');
         }
         break;
       case 'record.created':
@@ -80,8 +77,8 @@
           ran(r, ctx, 'Sent', 'Owner told of signature');
         }
         break;
-      case 'docusign.completed':
-        if ((r = active('RULE-15'))) ran(r, ctx, 'Done', 'Envelope ' + ctx.envelope + ' completed: signed PDF and certificate stored' + (ctx.training ? '; ' + Q.plural(ctx.training, 'completed training record') + ' for author and reviewers' : ''));
+      case 'esign.completed':
+        if ((r = active('RULE-15'))) ran(r, ctx, 'Done', 'Agreement ' + ctx.agreement + ' completed: signed PDF and audit report stored' + (ctx.training ? '; ' + Q.plural(ctx.training, 'completed training record') + ' for author and reviewers' : ''));
         break;
       case 'security':
         if ((r = active('RULE-13'))) {
@@ -98,33 +95,37 @@
   wf.assign = assign;
 
   // ---------- Signatures (insert-only) ----------
-  Q.makeSignature = function (o) {
-    var s = {
-      id: 'SIG-' + (++Q.S.counters.SIG), record: o.record, version: o.version || null, user: me(), onBehalfOf: null,
-      meaning: o.meaning, statement: Q.statementFor(o.meaning),
-      at: now(), authAt: o.authAt, acrs: 'c1', hash: o.hash || Q.sha256(Q.canon(Q.rec(o.record) || o.record)), stage: o.stage || null
-    };
-    Q.S.signatures.push(s);
-    Q.audit('sign', Q.KIND_LABEL[Q.kindOf(o.record)] || 'Record', o.record, 'Signed ' + o.record + (o.version ? ' v' + o.version : '') + ' · ' + o.meaning + (o.stage ? ' (' + o.stage + ')' : ''), null, { signature: s.id, hash: s.hash, auth_time: s.authAt });
-    Q.fire('signature.completed', { record: o.record, owner: (Q.rec(o.record) || {}).owner, meaning: o.meaning });
-    return s;
-  };
+  // Every signature except read-and-understood training is made in Adobe Sign (see esign.js); completed agreements
+  // add one row per signer to Q.S.signatures. The statement is printed on every agreement PDF.
   Q.statementFor = function (meaning) { return Q.S.settings.statement.replace('{meaning}', meaning); };
   Q.sigById = function (id) { return Q.S.signatures.find(function (s) { return s.id === id; }); };
 
-  // Segregation of duties. Returns a reason string when the current user may not sign.
-  Q.sodBlock = function (rec, kind) {
-    var u = Q.me();
-    if (Q.readOnly()) return 'Your role is read-only.';
-    if (Q.S.settings.sod.adminCannotApprove && u.roles.indexOf('admin') >= 0 && u.roles.indexOf('approver') < 0 && u.roles.indexOf('qm') < 0) return 'System Administrators cannot approve quality records (segregation of duties).';
-    if (kind === 'doc' && Q.S.settings.sod.authorCannotApprove && rec.author === u.id) return 'You authored this version, so you cannot approve it. An admin override is needed, and it is logged.';
-    if (kind === 'cr' && rec.owner === u.id) return 'You own this change request, so you cannot approve its plan.';
+  // Segregation of duties: may this person approve this record? Returns the reason when not. Every Adobe Sign
+  // signing plan checks its approvers with it; with no uid it checks the current user.
+  Q.sodBlock = function (rec, kind, uid) {
+    var self = !uid || uid === me(), u = Q.user(uid || me());
+    var who = self ? 'You' : u.name, they = self ? 'you' : 'they', own = self ? 'own' : 'owns';
+    if (self && Q.readOnly()) return 'Your role is read-only.';
+    if (Q.S.settings.sod.adminCannotApprove && u.roles.indexOf('admin') >= 0 && u.roles.indexOf('approver') < 0 && u.roles.indexOf('qm') < 0) return (self ? 'System Administrators' : u.name + ' is a System Administrator and') + ' cannot approve quality records (segregation of duties).';
+    if (kind === 'doc' && Q.S.settings.sod.authorCannotApprove && rec.author === u.id) return who + ' authored this version, so ' + they + ' can’t approve it (segregation of duties). Choose another QA approver.';
+    if (kind === 'cr' && rec.owner === u.id) return who + ' ' + own + ' this change request, so ' + they + ' can’t also approve it (segregation of duties).';
+    if ((kind === 'capa' || kind === 'qe') && rec.owner === u.id) return who + ' ' + own + ' this record, so ' + they + ' can’t also approve it (segregation of duties).';
     return null;
   };
 
   // ---------- Documents ----------
+  // The amendment flow (PJ Walters, 24 November 2026). Every amendment starts as a change request. The author edits the
+  // Word file in the SharePoint Drafts library (simulated here by a stand-in editor) and submits in two steps: the draft
+  // is converted to PDF, hashed and locked, then the author checks the locked PDF (footer, version, document ID, dates).
+  // Reviewers mark it reviewed; QA approvers approve it in VeQMS and decide whether it needs retraining. The last
+  // approval sends one Adobe Sign agreement with every signer (Signing). The version is Effective when it completes.
+  // Draft → In review → In approval → Signing → Effective. Anyone on it can return it to the author before signing.
   var D = wf.doc = {};
+  Q.DOC_STATES = ['Draft', 'In review', 'In approval', 'Signing', 'Effective'];
   function participants(d) { return [d.author].concat(d.reviewers.map(function (r) { return r.u; }), d.approvers.map(function (a) { return a.u; })).filter(function (x, i, a) { return x && a.indexOf(x) === i; }); }
+  // The document's Word file in the SharePoint Drafts library (simulated: a name and a last-edited time).
+  Q.draftFileName = function (d) { return (d.id + ' ' + d.title).replace(/["*:<>?/\\|#%]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + '.docx'; };
+  function draftFile(d) { return { name: Q.draftFileName(d), library: 'Drafts', editedAt: now(), editedBy: me() }; }
   D.setState = function (d, state, summary) {
     var before = d.state; d.state = state; Q.curVer(d).state = state; d.modified = now();
     Q.audit('state', 'Document', d.id, summary || (d.id + ' moved to ' + state), { state: before }, { state: state });
@@ -135,101 +136,199 @@
     var id = Q.nextId(prefix);
     var tpl = Q.S.templates.find(function (t) { return t.id === o.template; });
     var content = o.content || (tpl ? tpl.sections.reduce(function (acc, s) { acc.push({ t: 'h', x: s }); acc.push({ t: 'p', x: '[Write this section.]' }); return acc; }, []) : [{ t: 'h', x: '1. Purpose' }, { t: 'p', x: '[Write this section.]' }]);
-    var v = { v: '0.1', kind: 'minor', state: 'Draft', summary: 'First draft.', created: now(), createdBy: me(), content: content, approvedAt: null, signatures: [] };
+    var v = { v: '0.1', kind: 'major', state: 'Draft', summary: 'First draft.', created: now(), createdBy: me(), content: content, approvedAt: null, signatures: [], pdf: null, verification: null, retrain: true, retrainReason: null };
     v.hash = Q.sha256(Q.canon(content));
     var d = {
       id: id, docType: o.docType, title: o.title, state: 'Draft', classification: o.classification, owner: o.owner || me(), author: me(),
       process: o.process, template: o.template || null, tags: o.tags || [], created: now(), modified: now(), effective: null,
       route: 'sequential', reviewRoute: 'parallel', audience: o.audience || { groups: [], roles: [], users: [], days: 14, quiz: false, retrainMonths: null }, sourceFile: o.sourceFile || null,
-      periodic: { months: +o.months || 12, notice: 60, approval: true }, reviewDue: o.reviewDue, approvalDue: o.approvalDue,
-      reviewers: (o.reviewers || []).map(function (u) { return { u: u, status: 'Not started' }; }),
-      approvers: (o.approvers || []).map(function (u) { return { u: u, status: 'Waiting' }; }),
-      versions: [v], comments: [], checkedOut: { u: me(), at: now() }
+      periodic: { months: +o.months || 12, notice: 60, approval: true }, reviewDue: null, approvalDue: null,
+      reviewers: [], approvers: [], versions: [v], comments: [], draft: null
     };
     Q.S.docs[id] = d;
     Q.audit('create', 'Document', id, 'Created ' + id + (o.template ? ' from template ' + o.template : o.sourceFile ? ' from upload ' + o.sourceFile : ' from a blank page'), null, { title: o.title, classification: o.classification });
-    assign({ kind: 'author', record: id, assignee: me(), due: o.reviewDue || due(7) });
+    d.draft = draftFile(d);
+    Q.audit('create', 'Document', id, 'Created the Word file "' + d.draft.name + '" in the SharePoint Drafts library', null, { file: d.draft.name, library: 'Drafts' }, { actor: 'system' });
+    C.openForVersion(d, v, 'New document', 'Major');
+    assign({ kind: 'author', record: id, assignee: me(), due: due(7), note: 'Edit the Word file in the Drafts library, then submit' });
     Q.save();
     return d;
   };
-  D.checkOut = function (d) { d.checkedOut = { u: me(), at: now() }; Q.audit('checkout', 'Document', d.id, 'Checked out ' + d.id + ' v' + Q.curVer(d).v); Q.save(); };
-  D.checkIn = function (d, content, summary) {
-    var v = Q.curVer(d);
-    var before = v.hash;
+  // The author saves the Word file (in the prototype, the stand-in editor). A PDF made from the old text no longer
+  // matches it, so it is cleared and has to be made and checked again.
+  D.saveDraft = function (d, content, summary) {
+    if (d.state !== 'Draft') throw new Error('Only a draft can be edited.');
+    if ([d.author, d.owner].indexOf(me()) < 0) throw new Error('Only the author or owner can edit the draft.');
+    var v = Q.curVer(d), before = v.hash, hadPdf = !!v.pdf;
     v.content = content; v.summary = summary; v.hash = Q.sha256(Q.canon(content));
-    var parts = v.v.split('.'); if (v.state === 'Draft') v.v = parts[0] + '.' + (+parts[1] + 1);
-    d.checkedOut = null; d.modified = now();
-    Q.audit('checkin', 'Document', d.id, 'Checked in ' + d.id + ' v' + v.v + ': ' + summary, { hash: before }, { hash: v.hash });
+    v.pdf = null; v.verification = null;
+    d.draft = d.draft || draftFile(d); d.draft.editedAt = now(); d.draft.editedBy = me(); d.modified = now();
+    Q.audit('checkin', 'Document', d.id, 'Saved the Word file of ' + d.id + ' v' + v.v + ': ' + summary + (hadPdf ? '. The locked PDF no longer matched the draft and was cleared' : ''), { sha256: before, pdf: hadPdf }, { sha256: v.hash, pdf: false });
     Q.save();
   };
-  D.cancelCheckout = function (d) { d.checkedOut = null; Q.audit('checkin', 'Document', d.id, 'Cancelled check-out of ' + d.id); Q.save(); };
-  D.newVersion = function (d, kind, summary) {
-    var cur = Q.curVer(d), parts = cur.v.split('.');
-    var nv = kind === 'major' ? (+parts[0] + 1) + '.0' : parts[0] + '.' + (+parts[1] + 1);
-    var v = { v: nv, kind: kind, state: 'Draft', summary: summary || '', created: now(), createdBy: me(), content: Q.clone(cur.content), approvedAt: null, signatures: [] };
-    v.hash = Q.sha256(Q.canon(v.content));
-    d.versions.push(v); d.state = 'Draft'; d.author = me(); d.checkedOut = { u: me(), at: now() };
-    d.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
-    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
-    d.comments = [];
-    Q.audit('version', 'Document', d.id, 'Started ' + kind + ' version v' + nv + ' of ' + d.id);
-    assign({ kind: 'author', record: d.id, assignee: me(), due: due(7) });
-    Q.save();
-    return v;
-  };
-  D.submitForReview = function (d) {
-    d.checkedOut = null;
-    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
-    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'author' || t.kind === 'resubmit'); });
-    var later = d.approvers.map(function (a) { return a.u; });
-    if (!d.reviewers.length) { // no reviewers: straight to the verification check and DocuSign send
-      D.setState(d, 'Review closed', 'Submitted v' + Q.curVer(d).v + ' (no reviewers assigned)');
-      D.readyToSend(d);
-      Q.save(); return;
+  function lockedPdf(d, v, signers) {
+    var list = signers.map(function (s) { return { u: s.u, role: s.role, meaning: s.meaning, order: s.order }; });
+    return { name: d.id + '_v' + v.v + '.pdf', hash: Q.sha256(Q.canon({ document: d.id, version: v.v, content: v.hash, signers: list })), madeAt: now(), madeBy: me(), signers: list };
+  }
+  // Submit, step 1: choose reviewers and QA approvers, then the draft is converted to PDF with a signature field for each
+  // signer, hashed (SHA-256) and locked. Segregation of duties is checked here, where the approvers are chosen; a refusal
+  // is logged.
+  D.makePdf = function (d, reviewers, approvers) {
+    if (d.state !== 'Draft') throw new Error('Only a draft can be submitted.');
+    if (Q.readOnly() || [d.author, d.owner].indexOf(me()) < 0) throw new Error('Only the author or owner can submit it.');
+    reviewers = (reviewers || []).filter(function (u, i, a) { return u && a.indexOf(u) === i; });
+    approvers = (approvers || []).filter(Boolean);
+    if (!approvers.length || approvers.length > 2) throw new Error('Choose one or two QA approvers.');
+    if (approvers.length === 2 && approvers[0] === approvers[1]) throw new Error('Choose two different QA approvers.');
+    var v = Q.curVer(d);
+    var p = Q.esign.plan(d.id, { stage: 'doc-approval', reviewers: reviewers, approvers: approvers });
+    if (p.problems.length) {
+      var sod = p.problems.filter(Q.esign.isSod);
+      if (sod.length) { Q.audit('sod.block', 'Document', d.id, 'Submit refused by segregation of duties: ' + sod[0], null, { reviewers: reviewers.map(Q.fullName), approvers: approvers.map(Q.fullName) }); Q.save(); }
+      throw new Error((sod.length ? 'Submit refused. ' : '') + p.problems[0]);
     }
+    d.reviewers = reviewers.map(function (u) { return { u: u, status: 'Not started' }; });
+    d.approvers = approvers.map(function (u) { return { u: u, status: 'Waiting' }; });
+    var before = v.pdf ? v.pdf.hash : null;
+    v.pdf = lockedPdf(d, v, p.signers); v.verification = null;
+    Q.audit('pdf.lock', 'Document', d.id, 'Converted v' + v.v + ' to PDF from the Word file and locked it for checking', before ? { pdfSha256: before } : null, { pdfSha256: v.pdf.hash, signers: p.signers.length });
+    Q.save();
+    return v.pdf;
+  };
+  // Submit, step 2: the author has checked the locked PDF. pdfHash is the hash of the PDF they were shown, so a PDF made
+  // again in the meantime is refused rather than submitted unchecked.
+  D.submit = function (d, ver, pdfHash) {
+    if (d.state !== 'Draft') throw new Error('Only a draft can be submitted.');
+    if (Q.readOnly() || [d.author, d.owner].indexOf(me()) < 0) throw new Error('Only the author or owner can submit it.');
+    if (!(ver && ver.footer && ver.version && ver.docId && ver.dates)) throw new Error('Check the PDF and tick all four checks (footer, version, document ID, dates) before submitting.');
+    var v = Q.curVer(d);
+    if (!v.pdf) throw new Error('Make the PDF and check it before submitting.');
+    if (pdfHash && v.pdf.hash !== pdfHash) throw new Error('The PDF changed after you opened it. Check the new PDF and submit again.');
+    var p = Q.esign.plan(d.id, { stage: 'doc-approval' }); // roles or accounts may have changed since the PDF was made
+    if (p.problems.length) throw new Error(p.problems[0]);
+    v.verification = { footer: true, version: true, docId: true, dates: true, note: ver.note || '', by: me(), at: now() };
+    Q.audit('submit', 'Document', d.id, 'Submitted v' + v.v + ': locked PDF checked (footer, version, document ID, dates)', null, { pdfSha256: v.pdf.hash, verification: Q.clone(v.verification) });
+    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'author' || t.kind === 'resubmit'); });
+    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; delete a.retrain; delete a.retrainReason; });
+    if (!d.reviewers.length) { startApproval(d, 'Submitted v' + v.v + ' (no reviewers): approval in VeQMS'); Q.save(); return; }
     d.reviewers.forEach(function (r) { r.status = 'Pending'; delete r.at; });
-    d.reviewDue = d.reviewDue && Q.daysFromToday(d.reviewDue) >= 0 ? d.reviewDue : due(5);
-    D.setState(d, 'In review', 'Submitted v' + Q.curVer(d).v + ' for review');
+    d.reviewDue = due(5);
+    D.setState(d, 'In review', 'Submitted v' + v.v + ' for review');
+    var later = d.approvers.map(function (a) { return a.u; });
     d.reviewers.forEach(function (r) { assign({ kind: 'review-doc', record: d.id, assignee: r.u, due: d.reviewDue }); });
-    later.forEach(function (u) { Q.addTask({ kind: 'fyi', record: d.id, assignee: u, due: due(9), fyi: true, note: 'You sign in DocuSign after review' }); });
-    Q.fire('workflow.entered', { record: d.id, to: later, what: 'sign in DocuSign', body: 'Expected around ' + Q.fmtDay(due(9)) + ', after review.' });
+    later.forEach(function (u) { Q.addTask({ kind: 'fyi', record: d.id, assignee: u, due: due(7), fyi: true, note: 'You approve in VeQMS after review, then sign in Adobe Sign' }); });
+    Q.fire('workflow.entered', { record: d.id, to: later, what: 'approve', body: 'Expected around ' + Q.fmtDay(due(7)) + ', after review. You approve in VeQMS, then sign in Adobe Sign.' });
     Q.save();
   };
+  // Review done (or no reviewers): the QA approvers approve in VeQMS.
+  function startApproval(d, summary) {
+    D.setState(d, 'In approval', summary);
+    d.approvalDue = due(3);
+    d.approvers.forEach(function (a) { a.status = 'To approve'; delete a.at; delete a.retrain; delete a.retrainReason; });
+    Q.closeTasks(function (t) { return t.record === d.id && t.kind === 'fyi'; });
+    d.approvers.forEach(function (a) { assign({ kind: 'approve-doc', record: d.id, assignee: a.u, due: d.approvalDue, note: 'Approve in VeQMS and decide whether retraining is needed', quiet: true }); });
+    Q.fire('stage.reached', { record: d.id, to: d.approvers.map(function (a) { return a.u; }), what: 'approve', body: 'Review is complete. When the last QA approver approves, the agreement goes to Adobe Sign for signing.' });
+  }
   D.review = function (d, comment) {
-    var r = d.reviewers.find(function (x) { return x.u === me(); });
-    if (!r) return;
+    if (d.state !== 'In review') throw new Error('This document isn’t in review.');
+    var r = d.reviewers.find(function (x) { return x.u === me() && x.status === 'Pending'; });
+    if (!r) throw new Error('You aren’t a pending reviewer on this document.');
     r.status = 'Reviewed'; r.at = now();
     if (comment) d.comments.push({ id: Q.uid('c'), u: me(), at: now(), block: null, text: comment, resolved: false });
     Q.audit('review', 'Document', d.id, 'Marked reviewed' + (comment ? ' with a comment' : ''));
     Q.closeTasks(function (t) { return t.record === d.id && t.kind === 'review-doc' && t.assignee === me(); });
-    if (d.reviewers.every(function (x) { return x.status === 'Reviewed'; })) {
-      D.setState(d, 'Review closed', 'Review closed: all ' + d.reviewers.length + ' reviewers done');
-      D.readyToSend(d);
-    }
+    if (d.reviewers.every(function (x) { return x.status === 'Reviewed'; })) startApproval(d, 'Review complete: all ' + Q.plural(d.reviewers.length, 'reviewer') + ' done');
     Q.save();
   };
-  // Review closed: the owner checks the PDF and sends one DocuSign envelope (see docusign.js).
-  D.readyToSend = function (d) {
-    var who = Q.user(d.owner).status === 'Active' ? d.owner : d.author;
-    assign({ kind: 'send-approval', record: d.id, assignee: who, due: due(2), note: 'Verify the PDF, then send one DocuSign envelope' });
+  // A QA approver approves in VeQMS and decides whether the change needs retraining (yes by default; "no" needs a
+  // reason). The last approval sends the Adobe Sign agreement at once; if it can't go (connector off, allowance used up),
+  // the approval isn't recorded.
+  D.approve = function (d, o) {
+    o = o || {};
+    if (d.state !== 'In approval') throw new Error('This document isn’t waiting for approval.');
+    var a = d.approvers.find(function (x) { return x.u === me() && x.status === 'To approve'; });
+    if (Q.readOnly() || !a) throw new Error('You aren’t a QA approver waiting to approve this document.');
+    var reason = (o.reason || '').trim(), retrain = o.retrain !== false;
+    if (!retrain && reason.length < 10) throw new Error('Say why no retraining is needed (at least a short sentence).');
+    var last = d.approvers.every(function (x) { return x === a || x.status === 'Approved'; });
+    if (last) { var block = Q.esign.cantSend(d.id, 'doc-approval'); if (block) throw new Error('Not approved: the agreement can’t go to Adobe Sign. ' + block); }
+    var v = Q.curVer(d);
+    a.status = 'Approved'; a.at = now(); a.retrain = retrain; a.retrainReason = retrain ? null : reason;
+    if (o.comment) d.comments.push({ id: Q.uid('c'), u: me(), at: now(), block: null, text: o.comment, resolved: false });
+    Q.audit('approve', 'Document', d.id, 'Approved v' + v.v + ' in VeQMS; ' + (retrain ? 'retraining needed' : 'no retraining needed: ' + reason), null, { retrain: retrain, reason: retrain ? null : reason });
+    Q.closeTasks(function (t) { return t.record === d.id && t.kind === 'approve-doc' && t.assignee === me(); });
+    if (!last) { Q.save(); return null; }
+    // Retraining unless every approver decided it isn't needed.
+    v.retrain = d.approvers.some(function (x) { return x.retrain !== false; });
+    v.retrainReason = v.retrain ? null : d.approvers.map(function (x) { return x.retrainReason; }).filter(Boolean).join(' · ');
+    return Q.esign.send(d.id, { stage: 'doc-approval', verification: v.verification, auto: true });
+  };
+  // The agreement went to Adobe Sign on the last approval (esign.js, doc-approval onSent).
+  D.signing = function (d, ag) {
+    d.approvalDue = due(5);
+    Q.curVer(d).agreement = ag.id;
+    D.setState(d, 'Signing', 'Approved in VeQMS; v' + ag.version + ' sent to Adobe Sign with every signer (agreement ' + ag.id + ')');
+    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'approve-doc' || t.kind === 'fyi'); });
+    var first = Math.min.apply(null, ag.signers.map(function (s) { return s.order; }));
+    ag.signers.filter(function (s) { return s.order > first; }).forEach(function (s) { Q.addTask({ kind: 'fyi', record: d.id, assignee: s.u, due: d.approvalDue, fyi: true, ref: ag.id, note: 'You’re signer ' + s.order + ' as ' + s.role + '. Adobe Sign emails you when it’s your turn.' }); });
+  };
+  function resetApprovals(d) {
+    d.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
+    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; delete a.retrain; delete a.retrainReason; delete a.signedAt; });
+    var v = Q.curVer(d); v.retrain = true; v.retrainReason = null;
+  }
+  // Return the draft to its author: a reviewer or approver, or the owner, author or a Quality Manager, while it is in
+  // review or approval. Once it is out for signing, cancelling the agreement does the same.
+  D.canReturn = function (d, uid) {
+    uid = uid || me();
+    if (Q.readOnly() || ['In review', 'In approval'].indexOf(d.state) < 0) return false;
+    return d.reviewers.some(function (r) { return r.u === uid; }) || d.approvers.some(function (a) { return a.u === uid; }) || d.owner === uid || d.author === uid || Q.hasRole('qm', Q.user(uid));
   };
   D.sendBack = function (d, reason) {
+    if (['In review', 'In approval'].indexOf(d.state) < 0) throw new Error('Only a document in review or approval can be returned. Cancel an agreement that is out for signing instead.');
+    if (!D.canReturn(d)) throw new Error('Only a reviewer, an approver, the owner, the author or a Quality Manager can return it.');
+    if (!reason) throw new Error('Give a reason so the author knows what to fix.');
     var before = d.state;
     var told = participants(d).filter(function (u) { return u !== me(); });
-    d.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
-    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
-    D.setState(d, 'Draft', 'Sent back to draft from ' + before + '. Reason: ' + reason);
-    Q.closeTasks(function (t) { return t.record === d.id && ['review-doc', 'send-approval', 'ds-sign', 'fyi'].indexOf(t.kind) >= 0; });
+    resetApprovals(d);
+    D.setState(d, 'Draft', 'Returned to the author by ' + Q.fullName(me()) + ' from ' + before + '. Reason: ' + reason);
+    Q.closeTasks(function (t) { return t.record === d.id && ['review-doc', 'approve-doc', 'esign-sign', 'fyi'].indexOf(t.kind) >= 0; });
     assign({ kind: 'resubmit', record: d.id, assignee: d.author, due: due(5), note: 'Reason: ' + reason });
     Q.fire('sent.back', { record: d.id, to: told, reason: reason });
     Q.save();
+  };
+  // A declined or cancelled agreement: back to Draft, the approvals and the retraining decision undone. It goes through
+  // review and approval again, and a corrected agreement is a new transaction.
+  D.returnedFromSigning = function (d, ag, back) {
+    resetApprovals(d);
+    D.setState(d, 'Draft', 'Returned to draft: ' + back.why + '. Review and approval start again');
+    assign({ kind: 'resubmit', record: d.id, assignee: d.author, due: due(5), note: back.why });
+    Q.fire('sent.back', { record: d.id, to: ag.signers.map(function (s) { return s.u; }).filter(function (u, i, a) { return u !== me() && a.indexOf(u) === i; }), reason: back.why });
+  };
+  D.newVersion = function (d, kind, summary) {
+    if (d.state !== 'Effective') throw new Error('Start a new version from the effective one.');
+    var cur = Q.curVer(d), parts = cur.v.split('.');
+    var nv = kind === 'major' ? (+parts[0] + 1) + '.0' : parts[0] + '.' + (+parts[1] + 1);
+    var v = { v: nv, kind: kind, state: 'Draft', summary: summary || '', created: now(), createdBy: me(), content: Q.clone(cur.content), approvedAt: null, signatures: [], pdf: null, verification: null, retrain: true, retrainReason: null };
+    v.hash = Q.sha256(Q.canon(v.content));
+    d.versions.push(v); d.state = 'Draft'; d.author = me();
+    d.draft = d.draft || draftFile(d); d.draft.editedAt = now(); d.draft.editedBy = me();
+    d.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
+    d.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; delete a.retrain; delete a.retrainReason; delete a.signedAt; });
+    d.comments = [];
+    Q.audit('version', 'Document', d.id, 'Started ' + kind + ' version v' + nv + ' of ' + d.id + ': ' + (summary || ''), { state: 'Effective' }, { state: 'Draft', version: nv });
+    C.openForVersion(d, v, summary || 'New version', kind === 'major' ? 'Major' : 'Minor');
+    assign({ kind: 'author', record: d.id, assignee: me(), due: due(7), note: 'Edit the Word file; update the version to v' + nv + ' on the cover and in the footer' });
+    Q.save();
+    return v;
   };
   D.makeEffective = function (d) {
     var v = Q.curVer(d);
     d.versions.forEach(function (x) { if (x !== v && x.state === 'Effective') { x.state = 'Superseded'; } });
     d.effective = now();
     D.setState(d, 'Effective', d.id + ' v' + v.v + ' is Effective' + (d.versions.length > 1 ? '; previous version Superseded' : ''));
-    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'fyi' || t.kind === 'ds-sign' || t.kind === 'send-approval'); });
+    Q.closeTasks(function (t) { return t.record === d.id && (t.kind === 'fyi' || t.kind === 'esign-sign' || t.kind === 'approve-doc'); });
+    C.closeForVersion(d, v);
     // Schedule the next periodic review
     if (d.periodic) {
       var nextDue = Q.iso(Q.addDays(new Date(), Math.round(d.periodic.months * 30.4)));
@@ -238,12 +337,16 @@
     }
     Q.notify({ to: d.owner, kind: 'info', channels: ['in-app', 'email'], record: d.id, title: d.id + ' v' + v.v + ' is now Effective', body: d.title });
     Q.fire('doc.effective', { record: d.id });
+    // The locked PDF goes to the controlled SharePoint library; the superseded file stays there, marked Superseded.
+    if (Q.sp) Q.sp.publish(d, v);
   };
-  D.obsolete = function (d, reason) {
+  // ag: the completed Adobe Sign agreement that approved it (the app always passes one; tests may call it directly).
+  D.obsolete = function (d, reason, ag) {
     var v = Q.effVer(d) || Q.curVer(d);
     Q.S.assignments.filter(function (a) { return a.doc === d.id && !a.completed && !a.closed; }).forEach(function (a) { closeOpen(a, d.id + ' made obsolete'); });
-    v.state = 'Obsolete'; d.obsoleteReason = reason;
-    D.setState(d, 'Obsolete', 'Made ' + d.id + ' obsolete (archived, not deleted). Reason: ' + reason);
+    v.state = 'Obsolete'; d.obsoleteReason = reason; d.obsoleteAgreement = ag ? ag.id : null;
+    D.setState(d, 'Obsolete', 'Made ' + d.id + ' obsolete (archived, not deleted)' + (ag ? ', approved through Adobe Sign agreement ' + ag.id : '') + '. Reason: ' + reason);
+    if (Q.sp) Q.sp.publishPending(); // the published file is marked Obsolete, not removed
     Q.save();
   };
   D.comment = function (d, block, text) {
@@ -252,6 +355,16 @@
     Q.save();
   };
   D.resolve = function (d, cid) { var c = d.comments.find(function (x) { return x.id === cid; }); if (c) { c.resolved = true; Q.audit('comment', 'Document', d.id, 'Resolved a comment'); Q.save(); } };
+  // Every PDF open is logged with the version it showed. A trainee must have opened the PDF of the version since it was
+  // allocated before they can confirm read and understood.
+  Q.logPdfOpen = function (d, v, why) {
+    Q.audit('read', 'Document', d.id, 'Opened the PDF of ' + d.id + ' v' + v.v + (why ? ' (' + why + ')' : ''), null, { version: v.v });
+    Q.save();
+  };
+  Q.pdfOpenedAt = function (a) {
+    var e = Q.S.audit.find(function (x) { return x.actor === a.user && x.action === 'read' && x.objectId === a.doc && x.after && x.after.version === a.ver && x.at >= a.assigned; });
+    return e ? e.at : null;
+  };
 
   // ---------- Training: read-and-understood records (not Part 11 signatures) ----------
   // Each record is attributable (SSO user), tied to one version, dated by the system and locked once
@@ -271,12 +384,20 @@
   };
   Q.ackStatement = function (docId, ver) { return Q.S.settings.ackStatement.replace('{doc}', docId).replace('{version}', ver); };
   Q.trCorrections = function (a) { return Q.S.assignments.filter(function (x) { return x.correctionOf === a.id; }); };
+  // The versions whose training counts: the effective one and, while the QA approvers decided a version needed no
+  // retraining, the version it replaced (and so on back to the last version that needed retraining).
+  Q.trainVersions = function (d) {
+    var eff = d && Q.effVer(d); if (!eff) return [];
+    var i = d.versions.indexOf(eff), out = [eff.v];
+    while (i > 0 && d.versions[i].retrain === false) { i--; out.push(d.versions[i].v); }
+    return out;
+  };
   Q.trStatus = function (a) {
     if (a.correctionOf && a.noRetrain) return 'Correction';
     if (Q.trCorrections(a).length) return 'Corrected';
     var d = Q.S.docs[a.doc], eff = d && Q.effVer(d);
     if (!eff) return 'Obsolete';
-    if (eff.v !== a.ver) return 'Superseded';
+    if (Q.trainVersions(d).indexOf(a.ver) < 0) return 'Superseded';
     if (a.closed) return 'Withdrawn';
     if (a.completed) return 'Complete';
     if (a.leaver) return 'Left';
@@ -297,7 +418,8 @@
   }
   function allocate(d, uid, o) {
     var v = Q.effVer(d); if (!v) return null;
-    var has = Q.S.assignments.some(function (a) { return a.user === uid && a.doc === d.id && a.ver === v.v && !a.closed && !a.noRetrain; });
+    var counts = Q.trainVersions(d);
+    var has = Q.S.assignments.some(function (a) { return a.user === uid && a.doc === d.id && counts.indexOf(a.ver) >= 0 && !a.closed && !a.noRetrain; });
     if (has) return null;
     var a = { id: Q.uid('TA'), user: uid, doc: d.id, title: d.title, ver: v.v, allocatedBy: o.by || 'system', allocReason: o.reason, assigned: now(), due: due(Q.audienceOf(d).days || 14), completed: null };
     Q.S.assignments.push(a);
@@ -305,10 +427,13 @@
     trTask(a);
     return a;
   }
-  // New effective version: earlier open allocations close as superseded, then the full audience is assigned.
+  // New effective version: open allocations of versions that no longer count close as superseded, then everyone in the
+  // audience without training on a version that counts is assigned the new one. With no retraining, that is nobody who
+  // already trained on (or was allocated) the version it replaced.
   Q.allocateDoc = function (docId, reason, by) {
     var d = Q.S.docs[docId], v = Q.effVer(d); if (!v) return 0;
-    Q.S.assignments.filter(function (a) { return a.doc === docId && a.ver !== v.v && !a.completed && !a.closed; }).forEach(function (a) { closeOpen(a, 'Superseded by v' + v.v); });
+    var counts = Q.trainVersions(d);
+    Q.S.assignments.filter(function (a) { return a.doc === docId && counts.indexOf(a.ver) < 0 && !a.completed && !a.closed; }).forEach(function (a) { closeOpen(a, 'Superseded by v' + v.v); });
     var n = 0;
     Q.audienceMembers(d).forEach(function (uid) { if (allocate(d, uid, { reason: reason, by: by })) n++; });
     return n;
@@ -323,21 +448,22 @@
     });
     return { added: added, closed: closed };
   };
-  // Approval envelope completed: author and each reviewer get a completed record for that version.
-  Q.recordApprovalTraining = function (d, ver, env) {
+  // Approval agreement completed: author and each reviewer get a completed record for that version.
+  Q.recordApprovalTraining = function (d, ver, ag) {
     var seen = [];
-    env.signers.filter(function (s) { return s.meaning === 'Authored' || s.meaning === 'Reviewed'; }).forEach(function (s) {
+    ag.signers.filter(function (s) { return s.meaning === 'Authored' || s.meaning === 'Reviewed'; }).forEach(function (s) {
       if (seen.indexOf(s.u) >= 0) return; seen.push(s.u);
-      var a = { id: Q.uid('TA'), user: s.u, doc: d.id, title: d.title, ver: ver, allocatedBy: 'system', allocReason: 'Approval envelope (' + s.meaning.toLowerCase() + ')', assigned: env.sentAt, due: env.completedAt, completed: env.completedAt, envelope: env.id,
-        statement: 'Signed ' + d.id + ', version ' + ver + ' in DocuSign with the meaning “' + s.meaning + '” (envelope ' + env.id + ')' };
+      var a = { id: Q.uid('TA'), user: s.u, doc: d.id, title: d.title, ver: ver, allocatedBy: 'system', allocReason: 'Approval agreement (' + s.meaning.toLowerCase() + ')', assigned: ag.sentAt, due: ag.completedAt, completed: ag.completedAt, agreement: ag.id,
+        statement: 'Signed ' + d.id + ', version ' + ver + ' in Adobe Sign with the reason “' + s.meaning + '” (agreement ' + ag.id + ')' };
       Q.S.assignments.push(a);
-      Q.audit('training.record', 'Training record', a.id, 'Completed record for ' + Q.fullName(s.u) + ' on ' + d.id + ' v' + ver + ' from DocuSign envelope ' + env.id, null, trSnap(a), { actor: 'system' });
+      Q.audit('training.record', 'Training record', a.id, 'Completed record for ' + Q.fullName(s.u) + ' on ' + d.id + ' v' + ver + ' from Adobe Sign agreement ' + ag.id, null, trSnap(a), { actor: 'system' });
     });
     return seen.length;
   };
   Q.completeTraining = function (a, info) {
     if (a.user !== me()) { Q.toast('Only ' + Q.fullName(a.user) + ' can confirm this record.', 'warn'); return false; }
     if (a.completed || !Q.trOpen(a)) return false;
+    if (!Q.pdfOpenedAt(a)) { Q.toast('Open the PDF of ' + a.doc + ' v' + a.ver + ' first. VeQMS records that you opened it.', 'warn'); return false; }
     var before = { completed: null, status: Q.trStatus(a) };
     a.completed = now(); a.statement = Q.ackStatement(a.doc, a.ver); a.quiz = info.quiz || null; a.via = 'Microsoft 365 single sign-on';
     Q.closeTasks(function (t) { return t.kind === 'training' && t.record === a.doc && t.assignee === a.user; });
@@ -406,8 +532,27 @@
     assign({ kind: 'cr-plan', record: id, assignee: me(), due: due(7) });
     Q.save(); return cr;
   };
+  // Every amendment starts as a change request. Phase 1 keeps it minimal: creating a document or starting a new version
+  // opens one in execution, linked to the version it produces, and it closes when that version is Effective. The full
+  // change control screens (plan, review, actions, effectiveness) are Phase 2.
+  C.openForVersion = function (d, v, why, size) {
+    var id = Q.nextId('CR');
+    var cr = { id: id, title: (d.id + ' v' + v.v + ': ' + d.title).slice(0, 200), size: size, state: 'In execution', classification: d.classification, owner: me(), createdBy: me(), process: d.process, created: now(), reviewDue: null, route: 'parallel',
+      description: why, reason: why, impact: 'Readers of ' + d.id + ' and everyone in its training audience.', impacted: [String(d.process || '').replace('ISMS · ', '')], items: [d.id], reviewers: [], approvers: [],
+      actions: [], attachments: [], effectiveness: { criteria: 'Closes when ' + d.id + ' v' + v.v + ' is Effective.', result: null }, signatures: [], forVersion: { doc: d.id, ver: v.v } };
+    Q.S.crs[id] = cr; v.cr = id;
+    Q.S.links.push([id, d.id]);
+    Q.audit('create', 'Change request', id, 'Opened ' + id + ' for ' + d.id + ' v' + v.v + ': ' + why, null, { document: d.id, version: v.v, size: size });
+    return cr;
+  };
+  C.closeForVersion = function (d, v) {
+    var cr = v.cr && Q.S.crs[v.cr];
+    if (!cr || cr.state === 'Closed') return;
+    cr.closedAt = now();
+    C.setState(cr, 'Closed', cr.id + ' closed: ' + d.id + ' v' + v.v + ' is Effective');
+  };
   C.addAction = function (cr, a) {
-    a.id = 'A-' + (++Q.S.counters.ACT); a.status = 'Not started';
+    a.id = 'A-' + (++Q.S.counters.ACT); a.status = 'Not started'; a.needsSignature = !!a.needsSignature;
     cr.actions.push(a);
     Q.audit('update', 'Change request', cr.id, 'Added action "' + a.title + '" for ' + Q.fullName(a.assignee));
     if (cr.state === 'In execution') assign({ kind: 'cr-action', record: cr.id, assignee: a.assignee, due: a.due, ref: a.id });
@@ -430,24 +575,31 @@
     if (cr.reviewers.every(function (x) { return x.status === 'Reviewed'; })) C.toApproval(cr);
     Q.save();
   };
+  // Review complete: the process owner checks the plan PDF and sends one Adobe Sign agreement (owner, then approvers).
   C.toApproval = function (cr) {
-    C.setState(cr, 'Approval', 'Review complete; plan sent for approval');
-    cr.approvers.forEach(function (a) { a.status = 'Your turn'; assign({ kind: 'cr-approve', record: cr.id, assignee: a.u, due: due(3), quiet: true }); });
-    Q.fire('stage.reached', { record: cr.id, to: cr.approvers.map(function (a) { return a.u; }), what: 'approve the plan for' });
+    C.setState(cr, 'Approval', 'Review complete; plan ready to send to Adobe Sign');
+    assign({ kind: 'send-approval', record: cr.id, assignee: cr.owner, due: due(2), stage: 'cr-plan', note: 'Verify the plan PDF, then send one Adobe Sign agreement' });
+    cr.approvers.forEach(function (a) { a.status = 'Waiting'; Q.addTask({ kind: 'fyi', record: cr.id, assignee: a.u, due: due(5), fyi: true, note: 'You sign the plan in Adobe Sign after ' + Q.fullName(cr.owner) }); });
+    Q.fire('workflow.entered', { record: cr.id, to: cr.approvers.map(function (a) { return a.u; }), what: 'sign the plan in Adobe Sign for' });
   };
-  C.approvePlan = function (cr, sig) {
-    var a = cr.approvers.find(function (x) { return x.u === me(); }); if (a) { a.status = 'Signed'; a.at = now(); }
-    cr.signatures.push({ id: sig.id, stage: 'Plan approved', user: me(), meaning: sig.meaning, at: sig.at });
-    Q.closeTasks(function (t) { return t.record === cr.id && t.kind === 'cr-approve' && t.assignee === me(); });
-    if (cr.approvers.every(function (x) { return x.status === 'Signed'; })) {
-      C.setState(cr, 'In execution', 'Plan approved with e-signature; actions assigned');
-      cr.actions.filter(function (x) { return x.status !== 'Done'; }).forEach(function (x) { assign({ kind: 'cr-action', record: cr.id, assignee: x.assignee, due: x.due, ref: x.id }); });
-    }
+  // The plan agreement completed: one signature row per signer, then execution starts.
+  C.planApproved = function (cr, ag, rows) {
+    (rows || []).filter(function (x) { return x.meaning === 'Approved'; }).forEach(function (x) { cr.signatures.push({ id: x.id, stage: 'Plan approved', user: x.user, meaning: x.meaning, at: x.at, agreement: ag.id }); });
+    C.setState(cr, 'In execution', 'Plan approved through Adobe Sign agreement ' + ag.id + '; actions assigned');
+    cr.actions.filter(function (x) { return x.status !== 'Done'; }).forEach(function (x) { assign({ kind: 'cr-action', record: cr.id, assignee: x.assignee, due: x.due, ref: x.id }); });
     Q.save();
   };
+  // A plan agreement declined or cancelled: back to planning with the reason.
+  C.returned = function (cr, why) {
+    cr.approvers.forEach(function (a) { a.status = 'Waiting'; delete a.at; });
+    C.setState(cr, 'Planning', 'Plan returned to planning: ' + why);
+    assign({ kind: 'cr-plan', record: cr.id, assignee: cr.owner, due: due(5), note: why });
+    Q.fire('sent.back', { record: cr.id, to: [cr.owner].filter(function (u) { return u !== me(); }), reason: why });
+  };
+  // sig: the signature row from a completed action agreement, or null when the action needs no signature.
   C.completeAction = function (cr, act, sig) {
-    act.status = 'Done'; act.doneAt = now(); if (sig) act.signedBy = me();
-    Q.audit('update', 'Change request', cr.id, 'Completed action "' + act.title + '"' + (sig ? ' with signature ' + sig.id : ''));
+    act.status = 'Done'; act.doneAt = now(); if (sig) { act.signedBy = sig.user; act.signature = sig.id; }
+    Q.audit('update', 'Change request', cr.id, 'Completed action "' + act.title + '"' + (sig ? ' (signed in Adobe Sign, agreement ' + sig.agreement + ')' : ' in VeQMS (no signature needed)'), null, { status: 'Done', signed: !!sig }, sig ? { actor: 'system' } : null);
     Q.closeTasks(function (t) { return t.record === cr.id && t.ref === act.id; });
     if (cr.state === 'In execution' && cr.actions.every(function (x) { return x.status === 'Done'; })) {
       C.setState(cr, 'Effectiveness check', 'All actions done; effectiveness check started');
@@ -456,19 +608,21 @@
     }
     Q.save();
   };
-  C.close = function (cr, result, verdict, sig) {
-    cr.effectiveness.result = result; cr.effectiveness.verdict = verdict; cr.effectiveness.by = me(); cr.effectiveness.at = now();
-    cr.signatures.push({ id: sig.id, stage: 'Completion approved', user: me(), meaning: sig.meaning, at: sig.at });
-    cr.closedAt = now();
+  // The completion agreement completed: record the result and close.
+  C.close = function (cr, result, verdict, ag, rows) {
+    var pc = cr.pendingClosure || {};
+    cr.effectiveness.result = result; cr.effectiveness.verdict = verdict; cr.effectiveness.by = pc.by || ag.sentBy; cr.effectiveness.at = pc.at || now();
+    (rows || []).filter(function (x) { return x.meaning === 'Approved'; }).forEach(function (x) { cr.signatures.push({ id: x.id, stage: 'Completion approved', user: x.user, meaning: x.meaning, at: x.at, agreement: ag.id }); });
+    cr.closedAt = now(); cr.closeAgreement = ag.id;
     Q.closeTasks(function (t) { return t.record === cr.id; });
-    C.setState(cr, 'Closed', 'Completion approved with e-signature; ' + cr.id + ' closed (' + verdict + ')');
+    C.setState(cr, 'Closed', 'Completion approved through Adobe Sign agreement ' + ag.id + '; ' + cr.id + ' closed (' + verdict + ')');
     Q.save();
   };
   C.sendBack = function (cr, reason) {
     var told = [cr.owner].concat(cr.reviewers.map(function (r) { return r.u; })).filter(function (u, i, a) { return u !== me() && a.indexOf(u) === i; });
     cr.reviewers.forEach(function (r) { r.status = 'Not started'; delete r.at; });
     cr.approvers.forEach(function (a) { a.status = 'Waiting'; });
-    Q.closeTasks(function (t) { return t.record === cr.id && (t.kind === 'cr-review' || t.kind === 'cr-approve'); });
+    Q.closeTasks(function (t) { return t.record === cr.id && (t.kind === 'cr-review' || t.kind === 'send-approval' || t.kind === 'fyi'); });
     C.setState(cr, 'Planning', 'Sent back to planning. Reason: ' + reason);
     assign({ kind: 'cr-plan', record: cr.id, assignee: cr.owner, due: due(5), note: 'Reason: ' + reason });
     Q.fire('sent.back', { record: cr.id, to: told, reason: reason });
@@ -532,10 +686,11 @@
       Q.fire('record.created', { record: id, severity: c.severity, owner: c.owner });
       Q.save(); return c;
     },
-    closeNoCapa: function (qe, justification, sig, env) {
-      var b = qe.state; qe.state = 'Closed';
-      qe.closure = env ? { justification: justification, by: env.sentBy, at: now(), sigId: env.id, envelope: env.id } : { justification: justification, by: me(), at: now(), sigId: sig.id };
-      Q.audit('state', 'Quality event', qe.id, 'Closed ' + qe.id + ' without CAPA (' + (env ? 'approved through DocuSign envelope ' + env.id : 'justified and signed ' + sig.id) + ')', { state: b }, { state: 'Closed' }, env ? { actor: 'system' } : null);
+    // ag: the completed Adobe Sign agreement (owner, then QA approver) that approved the closure.
+    closeNoCapa: function (qe, justification, ag) {
+      var b = qe.state, pc = qe.pendingClosure || {}; qe.state = 'Closed';
+      qe.closure = { justification: justification, by: pc.by || ag.sentBy, at: now(), agreement: ag.id };
+      Q.audit('state', 'Quality event', qe.id, 'Closed ' + qe.id + ' without CAPA (approved through Adobe Sign agreement ' + ag.id + ')', { state: b }, { state: 'Closed' }, { actor: 'system' });
       Q.closeTasks(function (t) { return t.record === qe.id; });
       Q.save();
     }
@@ -543,61 +698,57 @@
   wf.capa = {
     setState: function (c, state, summary) { var b = c.state; c.state = state; Q.audit('state', 'CAPA', c.id, summary || c.id + ' moved to ' + state, { state: b }, { state: state }); Q.fire('state.changed', { record: c.id, owner: c.owner, state: state }); },
     addAction: function (c, a) {
-      a.id = 'CA-' + (++Q.S.counters.ACT); a.status = 'Not started'; c.actions.push(a);
+      a.id = 'CA-' + (++Q.S.counters.ACT); a.status = 'Not started'; a.needsSignature = !!a.needsSignature; c.actions.push(a);
       Q.audit('update', 'CAPA', c.id, 'Added ' + a.type.toLowerCase() + ' action "' + a.title + '"'); Q.save();
     },
     removeAction: function (c, id) { c.actions = c.actions.filter(function (a) { return a.id !== id; }); Q.audit('update', 'CAPA', c.id, 'Removed action ' + id); Q.save(); },
-    approvePlan: function (c, sig) {
-      c.actionsLocked = true; c.planSig = sig.id;
-      wf.capa.setState(c, 'Execution', 'Actions approved and locked (signature ' + sig.id + '); execution started');
+    approvePlan: function (c, ag) {
+      c.actionsLocked = true; c.planAgreement = ag.id;
+      wf.capa.setState(c, 'Execution', 'Actions approved and locked through Adobe Sign agreement ' + ag.id + '; execution started');
       Q.closeTasks(function (t) { return t.record === c.id && t.kind === 'capa-plan'; });
       c.actions.forEach(function (a) { assign({ kind: 'capa-action', record: c.id, assignee: a.assignee, due: a.due, ref: a.id }); });
       Q.save();
     },
+    // sig: the signature row from a completed action agreement, or null when the action needs no signature.
     completeAction: function (c, a, sig) {
-      a.status = 'Done'; a.doneAt = now(); if (sig) a.signedBy = me();
-      Q.audit('update', 'CAPA', c.id, 'Completed ' + a.type.toLowerCase() + ' action "' + a.title + '"' + (sig ? ' (signed ' + sig.id + ')' : ''));
+      a.status = 'Done'; a.doneAt = now(); if (sig) { a.signedBy = sig.user; a.signature = sig.id; }
+      Q.audit('update', 'CAPA', c.id, 'Completed ' + a.type.toLowerCase() + ' action "' + a.title + '"' + (sig ? ' (signed in Adobe Sign, agreement ' + sig.agreement + ')' : ' in VeQMS (no signature needed)'), null, { status: 'Done', signed: !!sig }, sig ? { actor: 'system' } : null);
       Q.closeTasks(function (t) { return t.record === c.id && t.ref === a.id; });
       Q.save();
     },
-    submitForApproval: function (c) {
-      c.awaitingApproval = true;
-      var approver = c.severity === 'High' ? (Q.S.users.find(function (u) { return u.roles.indexOf('qm') >= 0 && u.status === 'Active'; }) || {}).id : c.owner;
-      c.approver = approver;
-      Q.audit('state', 'CAPA', c.id, 'Completed actions sent for approval to ' + Q.fullName(approver));
-      assign({ kind: 'capa-approve', record: c.id, assignee: approver, due: due(3), quiet: true });
-      Q.fire('stage.reached', { record: c.id, to: [approver], what: 'approve completed actions on' });
-      Q.save();
-    },
-    approveActions: function (c, sig) {
-      c.awaitingApproval = false; c.actionsSig = sig.id;
+    // The completed-actions agreement completed (owner, then a Quality Manager for high severity).
+    approveActions: function (c, ag) {
+      c.actionsAgreement = ag.id;
       c.effectiveness.due = Q.iso(Q.addDays(new Date(), c.severity === 'High' ? 90 : 60));
       c.effectiveness.assignee = c.owner;
-      Q.closeTasks(function (t) { return t.record === c.id && t.kind === 'capa-approve'; });
-      wf.capa.setState(c, 'Effectiveness check', 'Completed actions approved (signature ' + sig.id + '); effectiveness check scheduled');
+      Q.closeTasks(function (t) { return t.record === c.id && t.kind === 'capa-submit'; });
+      wf.capa.setState(c, 'Effectiveness check', 'Completed actions approved through Adobe Sign agreement ' + ag.id + '; effectiveness check scheduled');
       assign({ kind: 'effectiveness', record: c.id, assignee: c.owner, due: c.effectiveness.due });
       Q.save();
     },
-    close: function (c, result, verdict, sig, env) {
-      c.effectiveness.result = result; c.effectiveness.verdict = verdict; c.effectiveness.by = env ? (c.pendingClosure || {}).by || env.sentBy : me(); c.effectiveness.at = env ? (c.pendingClosure || {}).at || now() : now(); c.closedAt = now(); c.closeSig = sig ? sig.id : env.id;
-      if (env) c.closeEnvelope = env.id;
+    // ag: the completed Adobe Sign closure agreement (owner, then QA approver).
+    close: function (c, result, verdict, ag) {
+      var pc = c.pendingClosure || {};
+      c.effectiveness.result = result; c.effectiveness.verdict = verdict; c.effectiveness.by = pc.by || ag.sentBy; c.effectiveness.at = pc.at || now(); c.closedAt = now();
+      c.closeAgreement = ag.id;
       Q.closeTasks(function (t) { return t.record === c.id; });
-      wf.capa.setState(c, 'Closed', 'Effectiveness verified (' + verdict + (env ? '); closure approved through DocuSign envelope ' + env.id : ', signature ' + sig.id + ')') + '; ' + c.id + ' closed');
-      var qe = Q.S.events[c.source]; if (qe && qe.state !== 'Closed') { qe.state = 'Closed'; Q.audit('state', 'Quality event', qe.id, qe.id + ' closed with ' + c.id); }
+      wf.capa.setState(c, 'Closed', 'Effectiveness verified (' + verdict + '); closure approved through Adobe Sign agreement ' + ag.id + '; ' + c.id + ' closed');
+      var qe = Q.S.events[c.source]; if (qe && qe.state !== 'Closed') { var qb = qe.state; qe.state = 'Closed'; Q.audit('state', 'Quality event', qe.id, qe.id + ' closed with ' + c.id, { state: qb }, { state: 'Closed' }); }
       Q.save();
     }
   };
 
   // ---------- Periodic reviews ----------
   wf.review = {
-    noUpdate: function (r, sig) {
+    // ag: the completed Adobe Sign agreement the reviewer signed.
+    noUpdate: function (r, ag) {
       var d = Q.S.docs[r.doc];
-      r.state = 'Completed'; r.outcome = 'No update needed'; r.completedAt = now(); r.sigId = sig.id;
+      r.state = 'Completed'; r.outcome = 'No update needed'; r.completedAt = now(); r.agreement = ag.id;
       var nextDue = Q.iso(Q.addDays(new Date(), Math.round((d.periodic ? d.periodic.months : 12) * 30.4)));
       r.nextDue = nextDue;
       var id = Q.nextId('PR');
       Q.S.reviews[id] = { id: id, doc: r.doc, reviewer: r.reviewer, due: nextDue, notice: r.notice, approval: r.approval, created: now(), state: 'Open' };
-      Q.audit('review', 'Periodic review', r.id, 'Periodic review of ' + r.doc + ': no update needed (signed ' + sig.id + '); next review ' + Q.fmtDate(nextDue));
+      Q.audit('review', 'Periodic review', r.id, 'Periodic review of ' + r.doc + ': no update needed (signed in Adobe Sign, agreement ' + ag.id + '); next review ' + Q.fmtDate(nextDue), null, null, { actor: 'system' });
       Q.closeTasks(function (t) { return t.record === r.id; });
       Q.save();
     },
@@ -609,7 +760,7 @@
         var cr = C.create({ title: 'Update ' + d.id + ' ' + d.title + ' after periodic review', size: 'Minor', classification: d.classification, process: d.process, description: reason, reason: 'Periodic review ' + r.id + ' found the document needs an update.', impact: 'Readers of ' + d.id + '.', items: [d.id], reviewers: [], approvers: [d.owner === me() ? 'u-tom' : d.owner] });
         r.followUp = cr.id; Q.S.links.push([r.id, cr.id]);
       } else {
-        D.newVersion(d, 'minor', 'Periodic review: ' + reason);
+        if (d.state === 'Effective') D.newVersion(d, 'minor', 'Periodic review: ' + reason); // opens a change request too
         r.followUp = d.id;
       }
       Q.audit('review', 'Periodic review', r.id, 'Periodic review of ' + r.doc + ': needs update → ' + r.followUp);

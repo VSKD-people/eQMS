@@ -1,0 +1,12 @@
+{
+  "name": "veqms-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Browser tests for the Phase 1 UAT scenarios (docs/07). Needs the local stack running on a freshly seeded database.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

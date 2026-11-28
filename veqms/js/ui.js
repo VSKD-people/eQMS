@@ -70,7 +70,7 @@
     { id: 'changes', label: 'Change requests', icon: 'change', href: '#/changes' },
     { id: 'reviews', label: 'Periodic reviews', icon: 'review', href: '#/reviews' },
     { id: 'quality', label: 'Quality events and CAPA', icon: 'quality', href: '#/quality' },
-    { id: 'approvals', label: 'Approvals and DocuSign', icon: 'sign', href: '#/approvals', perm: 'approvals.view' },
+    { id: 'approvals', label: 'Approvals', icon: 'sign', href: '#/approvals', perm: 'approvals.view' },
     { id: 'analytics', label: 'Analytics', icon: 'chart', href: '#/analytics', perm: 'analytics' }
   ];
   Q.isDark = function () {
@@ -355,7 +355,7 @@
         { g: 'Go to', label: 'Periodic reviews', icon: 'review', href: '#/reviews' }, { g: 'Go to', label: 'Quality events and CAPA', icon: 'quality', href: '#/quality' },
         { g: 'Go to', label: 'Analytics', icon: 'chart', href: '#/analytics', perm: 'analytics' }, { g: 'Go to', label: 'Audit trail', icon: 'log', href: '#/admin/audit', perm: 'admin.audit' },
         { g: 'Go to', label: 'Automation rules', icon: 'zap', href: '#/admin/automations', perm: 'admin.automations' }, { g: 'Go to', label: 'Users and roles', icon: 'users', href: '#/admin/users', perm: 'admin.users' },
-        { g: 'Go to', label: 'Integrations', icon: 'plug', href: '#/admin/integrations', perm: 'admin.integrations' }, { g: 'Go to', label: 'Notifications', icon: 'bell', href: '#/notifications' },
+        { g: 'Go to', label: 'Integrations', icon: 'plug', href: '#/admin/integrations', perm: 'admin.integrations' }, { g: 'Go to', label: 'SharePoint libraries and integrity alerts', icon: 'doc', href: '#/admin/sharepoint', perm: 'admin.sharepoint' }, { g: 'Go to', label: 'Notifications', icon: 'bell', href: '#/notifications' },
         { g: 'Go to', label: 'Profile and preferences', icon: 'user', href: '#/profile' }, { g: 'Go to', label: 'Help centre', icon: 'help', href: '#/help' }
       ].filter(function (p) { return !p.perm || Q.can(p.perm); });
       var recs = Q.allRecordIds().filter(function (id) { return Q.canSee(Q.rec(id)); }).map(function (id) {
@@ -427,7 +427,7 @@
   // ---------- Components ----------
   var STATE_CLS = {
     'Effective': 'chip-done', 'Closed': 'chip-done', 'Done': 'chip-done', 'Reviewed': 'chip-done', 'Signed': 'chip-done', 'Completed': 'chip-done', 'Active': 'chip-done', 'Approved': 'chip-done',
-    'In review': 'chip-turn', 'In approval': 'chip-turn', 'Review': 'chip-turn', 'Approval': 'chip-turn', 'Your turn': 'chip-turn', 'Review closed': 'chip-turn', 'Pending approval': 'chip-turn',
+    'In review': 'chip-turn', 'In approval': 'chip-turn', 'Review': 'chip-turn', 'Approval': 'chip-turn', 'Your turn': 'chip-turn', 'Signing': 'chip-turn', 'To approve': 'chip-turn', 'Pending approval': 'chip-turn',
     'Pending training': 'chip-due', 'Effectiveness check': 'chip-due', 'Execution': 'chip-due', 'In execution': 'chip-due', 'Assessment': 'chip-due', 'In progress': 'chip-due', 'CAPA raised': 'chip-due', 'Escalated': 'chip-due', 'Due soon': 'chip-due',
     'Overdue': 'chip-overdue', 'Failed': 'chip-overdue', 'Revoked': 'chip-overdue', 'High': 'chip-overdue',
     'Superseded': 'chip-outline', 'Obsolete': 'chip-outline', 'Withdrawn': 'chip-outline', 'Corrected': 'chip-outline', 'Correction': 'chip-outline', 'Assigned': 'chip-turn', 'Complete': 'chip-done', 'Out for signature': 'chip-turn', 'Declined': 'chip-overdue', 'Voided': 'chip-outline', 'Sent': 'chip-turn', 'Left': 'chip-outline', 'Off': 'chip-outline', 'Not started': 'chip-outline', 'Waiting': 'chip-outline', 'Upcoming': 'chip-outline', 'Scheduled': 'chip-outline'
@@ -619,7 +619,8 @@
     { t: 'Welcome to VeQMS', x: 'This is a working prototype of the frontend. Everything runs in your browser with sample records; nothing is sent anywhere. Changes are saved in this browser until you reset the demo.' },
     { t: 'Start with Today', x: 'Today groups your work by urgency: overdue, next 7 days, then upcoming. Each card has one primary action. Pick a card to see the record beside it.' },
     { t: 'Search, create, jump: Ctrl K', x: 'The command bar searches records and document text, creates new items and jumps to any page. Results only include what you are allowed to see.' },
-    { t: 'Approvals in DocuSign, training in the app', x: 'Approvals go out as one DocuSign envelope per version (author, reviewers, then QA approver), and every send counts against 500 a year. Read-and-understood training is confirmed in the app under your Microsoft 365 sign-in. DocuSign is simulated here.' },
+    { t: 'Documents: Word in SharePoint, approval here, signing in Adobe Sign', x: 'Every amendment starts as a change request. Authors edit the Word file in SharePoint, then submit: the PDF is made, locked and checked. Reviewers and QA approvers act here; the last approval sends one Adobe Sign agreement with every signer. SharePoint and Adobe Sign are simulated here.' },
+    { t: 'Signatures in Adobe Sign, training in the app', x: 'Every sign-off goes out as one Adobe Sign agreement with all its signers in order: document approvals, change requests, CAPAs, quality events and reviews. Each agreement uses one of 500 transactions a year. Read-and-understood training is confirmed in the app under your Microsoft 365 sign-in, after you open the PDF of that version.' },
     { t: 'See it from other seats', x: 'Use the account menu → "Demo · view as" to switch between the Quality Manager, author, approver, employee, System Administrator and auditor. Rules such as segregation of duties change with the role.' }
   ];
   Q.tour = {

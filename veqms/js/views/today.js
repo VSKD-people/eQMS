@@ -80,13 +80,19 @@
           <button class="btn btn-sm desktop-only" data-act="views-menu" aria-haspopup="menu" style="min-height:40px">${q.view ? 'Saved view: ' + q.view : 'Saved views'} ${Q.icon('chevronDown', 'ico-sm')}</button>
         </div>
       </div>
-      ${Q.tip('today', h`<b>Today</b> shows everything assigned to you, grouped by urgency. Select a card to see the record and act on it. Approvals open in DocuSign; read-and-understood training is confirmed here.`)}
+      ${Q.tip('today', h`<b>Today</b> shows everything assigned to you, grouped by urgency. Select a card to see the record and act on it. Sign-offs open in Adobe Sign; read-and-understood training is confirmed here.`)}
       <div class="split-today">
         <div>${body}<p class="small muted mt-16">Sample records, for layout only.</p></div>
         <div class="selected-wrap">${sel && !created ? Q.selectedPanel(sel) : sel ? Q.selectedPanel(sel, true) : ''}</div>
       </div>`;
   };
 
+  // For a signing task: the agreement it belongs to and who has signed so far.
+  function agLine(t) {
+    var ag = t.kind === 'esign-sign' ? (Q.esign.byId(t.ref) || Q.esign.active(t.record)) : null;
+    if (!ag) return '';
+    return h`<div class="callout mt-16"><strong>Adobe Sign · ${ag.purpose}</strong><p class="small" style="margin:4px 0 0">${Q.esign.signedCount(ag)} of ${ag.signers.length} signed · ${Q.esign.myTurn(ag) ? 'your turn' : Q.esign.STATUS[ag.status].toLowerCase()}</p></div>`;
+  }
   Q.selectedPanel = function (t, readonly) {
     var r = Q.rec(t.record), k = Q.kindOf(t.record), m = Q.taskMeta(t);
     var inner;
@@ -95,8 +101,9 @@
       var states = Q.DOC_STATES;
       var si = states.indexOf(d.state);
       var revDone = d.reviewers.filter(function (x) { return x.status === 'Reviewed'; }).length;
-      var env = Q.ds.active(d.id);
-      var plan = t.kind === 'send-approval' && d.state === 'Review closed' ? Q.ds.plan(d.id) : null;
+      var env = Q.esign.active(d.id);
+      var approved = d.approvers.filter(function (x) { return x.status === 'Approved' || x.status === 'Signed'; }).length;
+      var cr = v.cr && Q.S.crs[v.cr];
       inner = h`
         <h2>${d.id} ${d.title} v${v.v}</h2>
         ${t.note ? h`<div class="small muted" style="margin-top:2px">${t.note}</div>` : ''}
@@ -105,11 +112,12 @@
         <hr>
         <div style="font-weight:600;margin-bottom:4px" class="small">Change summary</div>
         <p class="small">${v.summary}</p>
-        <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(d.owner)}</dd></div><div><dt>Reviewers</dt><dd>${revDone} of ${d.reviewers.length} done</dd></div>
+        <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(d.owner)}</dd></div><div><dt>Change request</dt><dd>${cr ? cr.id + ' · ' + cr.state : '—'}</dd></div>
+          <div><dt>Reviewers</dt><dd>${revDone} of ${d.reviewers.length} done</dd></div><div><dt>QA approvers</dt><dd>${approved} of ${d.approvers.length} approved</dd></div>
           <div><dt>Training audience</dt><dd>${Q.audienceText(Q.audienceOf(d))}</dd></div><div><dt>Classification</dt><dd>${d.classification}</dd></div>
-          ${env ? h`<div style="grid-column:1/-1"><dt>DocuSign</dt><dd>${Q.ds.signedCount(env)} of ${env.signers.length} signed · ${Q.ds.myTurn(env) ? 'your turn' : 'waiting on ' + env.signers.filter(function (x) { return x.status === 'Sent'; }).map(function (x) { return Q.fullName(x.u); }).join(', ')}</dd></div>` : ''}</dl>
-        ${plan && plan.problems.length ? h`<div class="callout warn mt-16"><strong>Fix before sending</strong><p class="small" style="margin:4px 0 0">${plan.problems[0]}</p></div>` : ''}
-        ${t.kind === 'send-approval' ? h`<p class="small muted mt-16">Sending uses 1 of ${Q.ds.remaining()} DocuSign sends left this year.</p>` : ''}`;
+          ${env ? h`<div style="grid-column:1/-1"><dt>Adobe Sign</dt><dd>${Q.esign.signedCount(env)} of ${env.signers.length} signed · ${Q.esign.myTurn(env) ? 'your turn' : 'waiting on ' + env.signers.filter(function (x) { return x.status === 'Sent'; }).map(function (x) { return Q.fullName(x.u); }).join(', ')}</dd></div>` : ''}</dl>
+        ${t.kind === 'approve-doc' ? h`<p class="small muted mt-16">Approve here and decide whether people need retraining. ${d.approvers.filter(function (x) { return x.status !== 'Approved'; }).length === 1 ? 'You are the last QA approver: when you approve, the agreement goes to Adobe Sign at once (1 of ' + Q.esign.remaining() + ' transactions left this year).' : 'The agreement goes to Adobe Sign when the last QA approver approves.'}</p>` : ''}
+        ${t.kind === 'author' || t.kind === 'resubmit' ? h`<p class="small muted mt-16">Edit the Word file (${d.draft ? d.draft.name : d.id}) in the SharePoint Drafts library, then submit: make the PDF, check it and submit.</p>` : ''}`;
     } else if (k === 'review') {
       var doc = Q.S.docs[r.doc];
       inner = h`<h2>Periodic review · ${doc.id}</h2><p class="small muted" style="margin-top:2px">${doc.title} v${(Q.effVer(doc) || Q.curVer(doc)).v}</p>
@@ -123,9 +131,9 @@
         <hr>
         <p class="small">${r.description || r.desc || r.details || r.desc || ''}</p>
         <dl class="dl mt-16"><div><dt>Owner</dt><dd>${Q.name(r.owner || r.createdBy)}</dd></div><div><dt>Due</dt><dd>${t.due ? Q.fmtDate(t.due) : '—'}</dd></div>
-        ${t.ref && r.actions ? h`<div style="grid-column:1/-1"><dt>Your action</dt><dd>${(r.actions.find(function (a) { return a.id === t.ref; }) || {}).title || ''}</dd></div>` : ''}</dl>`;
+        ${t.ref && r.actions ? h`<div style="grid-column:1/-1"><dt>Your action</dt><dd>${(r.actions.find(function (a) { return a.id === t.ref; }) || {}).title || ''}</dd></div>` : ''}</dl>${agLine(t)}`;
     } else {
-      inner = h`<h2>${Q.taskTitle(t)}</h2><p class="small muted">${t.note || ''}</p>`;
+      inner = h`<h2>${Q.taskTitle(t)}</h2><p class="small muted">${t.note || ''}</p>${agLine(t)}`;
     }
     return h`<div class="card selected-panel" style="position:sticky;top:84px">
       <div class="label mb-8">${readonly ? 'Waiting on ' + Q.fullName(t.assignee) : 'Selected task · ' + m.label}</div>
@@ -147,8 +155,9 @@
   });
   Q.taskGo = function (t) {
     switch (t.kind) {
-      case 'ds-sign': Q.ds.openSigning(Q.ds.byId(t.ref) || Q.ds.active(t.record)); break;
-      case 'send-approval': Q.ds.openSend(t.record); break;
+      case 'esign-sign': Q.esign.openSigning(Q.esign.byId(t.ref) || Q.esign.active(t.record)); break;
+      case 'send-approval': Q.esign.openSend(t.record, t.stage || null); break;
+      case 'capa-submit': Q.go('#/quality/' + t.record + '?tab=actions'); break;
       case 'training': Q.go('#/training?doc=' + t.record); break;
       case 'capa-action': case 'capa-plan': Q.go('#/quality/' + t.record + '?tab=actions'); break;
       case 'effectiveness': Q.go('#/quality/' + t.record + '?tab=effectiveness'); break;
@@ -195,15 +204,15 @@
     var t = Q.S.tasks.find(function (x) { return x.id === p.id; });
     if (!t) return Q.views.notFound();
     var m = Q.taskMeta(t), r = Q.rec(t.record), k = Q.kindOf(t.record);
-    var signable = t.kind === 'ds-sign' && t.status === 'open';
+    var signable = t.kind === 'esign-sign' && t.status === 'open';
     var v = k === 'doc' ? Q.curVer(r) : null;
     return h`<a class="btn-link" href="#/today" style="padding:0">${Q.icon('back', 'ico-sm')} Today</a>
       <div class="mt-8"><div class="small muted">${m.label}${t.fyi ? '' : ' · '}${t.fyi ? '' : Q.dueChip(t.due)}</div><h1 style="margin-top:6px">${Q.taskTitle(t)}</h1>${t.note ? h`<p class="muted small">${t.note}</p>` : ''}</div>
       ${k === 'doc' ? h`<a class="card card-pad spread mt-16" href="#/documents/${r.id}" style="text-decoration:none;color:inherit"><span><b>Read the document</b><br><span class="small muted">${r.id} v${v.v} · ${v.content.length > 8 ? '2' : '1'} pages</span></span>${Q.icon('chevron')}</a>
         <div class="card card-pad mt-16"><div class="label mb-8">Change summary</div><p class="small" style="margin:0">${v.summary}</p></div>` : h`<div class="mt-16">${Q.selectedPanel(t)}</div>`}
-      ${signable ? h`<div class="card card-pad mt-16"><div class="label mb-8">Signing in DocuSign</div><p class="small" style="margin:0">${t.note || ''}. DocuSign asks you to sign in again and records the meaning with your signature.</p></div>
-        <div class="callout mt-16"><strong>Face or fingerprint unlock doesn’t count as a signature</strong><p class="small" style="margin:4px 0 0">You decline in DocuSign if something needs to change; the record returns with your reason.</p></div>
-        <div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">Open in DocuSign</button></div>` :
+      ${signable ? h`<div class="card card-pad mt-16"><div class="label mb-8">Signing in Adobe Sign</div><p class="small" style="margin:0">${t.note || ''}. Adobe Sign checks who you are again when you sign and records your reason for signing.</p></div>
+        <div class="callout mt-16"><strong>Face or fingerprint unlock doesn’t count as a signature</strong><p class="small" style="margin:4px 0 0">You decline in Adobe Sign if something needs to change; the record returns with your reason.</p></div>
+        <div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">Open in Adobe Sign</button></div>` :
         t.status === 'open' && !t.fyi ? h`<div class="stack-sm mt-16"><button class="btn btn-primary" data-act="task-go" data-id="${t.id}">${m.action}</button></div>` : ''}`;
   };
 })(window.Q);

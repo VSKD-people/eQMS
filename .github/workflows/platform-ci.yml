@@ -1,35 +1,148 @@
-name: platform-ci
+# VeQMS platform CI: type-check, unit tests, build, and the database invariant tests on PostgreSQL 16.
+name: Platform CI
+
 on:
-  push:
-    paths: ['platform/**', '.github/workflows/platform-ci.yml']
   pull_request:
-    paths: ['platform/**', '.github/workflows/platform-ci.yml']
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-ci.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
+
+concurrency:
+  group: platform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  domain-and-database:
-    runs-on: ubuntu-24.04
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: platform
+
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: ci-only-password
-        ports: ['5432:5432']
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     env:
       PGHOST: localhost
+      PGPORT: '5432'
       PGUSER: postgres
-      PGPASSWORD: ci-only-password
-    defaults:
-      run:
-        working-directory: platform
+      PGPASSWORD: postgres
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Domain tests
-        run: npm test
-      - name: Database invariants
-        run: npm run db:test
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Domain unit tests
+        run: npm test --workspace @veqms/domain
+
+      - name: Build
+        run: npm run build
+
+      - name: Make sure psql is available
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Database invariant tests (row-level security, audit chain, locked records, Adobe Sign allowance)
+        run: bash packages/db/test/run.sh
+
+      - name: Migrate and seed a scratch database with the Node runner
+        run: |
+          psql -d postgres -c "drop database if exists veqms_ci" -c "create database veqms_ci"
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/migrate.js
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/migrate.js   # second run must be a no-op
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/veqms_ci node packages/db/dist/seed.js
+
+      - name: Other workspace tests (API integration tests use the seeded database)
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/veqms_ci
+          DEV_AUTH: '1'
+          ADOBE_SIGN_MODE: mock
+          STORAGE_MODE: local
+          LOCAL_STORAGE_DIR: ${{ runner.temp }}/veqms-storage
+        run: npm test --workspaces --if-present
+
+  # The UAT scenarios (docs/07) in a browser, against the Docker stack: fresh database, demo seed, Adobe Sign mock.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: ci
+    defaults:
+      run:
+        working-directory: platform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the local stack
+        run: docker compose up -d --build
+
+      - name: Wait for the web app
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:3000/login; then exit 0; fi
+            sleep 5
+          done
+          docker compose ps -a
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: platform/e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: platform/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: UAT scenarios in the browser
+        working-directory: platform/e2e
+        env:
+          CI: '1'
+        run: npx playwright test
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            platform/e2e/playwright-report
+            platform/e2e/test-results
+          retention-days: 14
