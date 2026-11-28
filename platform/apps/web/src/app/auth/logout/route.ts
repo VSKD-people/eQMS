@@ -14,5 +14,5 @@ export async function GET(req: NextRequest) {
   const reason = REASONS[req.nextUrl.searchParams.get('reason') ?? ''];
   // Refused by VeQMS: end the VeQMS session and explain. The Microsoft session isn't the problem, so keep it.
   if (reason) return NextResponse.redirect(`${env.appBaseUrl}/login?err=${encodeURIComponent(reason)}`);
-  return NextResponse.redirect(s?.devUser ? `${env.appBaseUrl}/login` : logoutUrl());
+  return NextResponse.redirect(s?.devUser || s?.local ? `${env.appBaseUrl}/login` : logoutUrl());
 }

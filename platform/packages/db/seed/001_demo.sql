@@ -13,7 +13,8 @@ do $$ begin perform set_config('app.tenant_id', pg_temp.k('tenant')::text, false
 
 insert into app.tenants (id, name) values (pg_temp.k('tenant'), 'VeQMS demo');
 insert into app.tenant_directory (entra_tenant_id, tenant_id) values ('dev-tenant', pg_temp.k('tenant'));
-insert into app.settings (tenant_id, signing_go_live) values (pg_temp.k('tenant'), pg_temp.d(-120, 9));
+-- Demo data: Adobe Sign runs in mock mode, so its signatures are recorded as simulated (allowed here, never in production).
+insert into app.settings (tenant_id, signing_go_live, allow_simulated_signatures) values (pg_temp.k('tenant'), pg_temp.d(-120, 9), true);
 
 -- People (Entra object ids 'dev-<key>' are used by the development sign-in only)
 insert into app.users (id, tenant_id, entra_oid, email, name, initials, job_title, site, status, clearance, manager_id, left_on)

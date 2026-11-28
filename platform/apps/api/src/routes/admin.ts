@@ -10,6 +10,7 @@ import { audit, notify } from '../lib/work.ts';
 import { body, need, param, query, uuid, z } from '../lib/params.ts';
 import { reconcileUser } from '../services/training.ts';
 import * as sp from '../services/sharepoint.ts';
+import * as localAuth from '../services/local-auth.ts';
 
 const id = { id: uuid };
 
@@ -48,14 +49,19 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
     need(me, 'admin.users');
     const b = body(z.object({ email: z.email().max(200), name: z.string().min(2).max(120), jobTitle: z.string().max(120).optional(),
       roles: z.array(z.enum(ROLES)).min(1), groups: z.array(z.string()).default([]), managerId: uuid.optional(),
-      clearance: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']).default('Internal') }), req.body);
+      clearance: z.enum(['Public', 'Internal', 'Confidential', 'Restricted']).default('Internal'),
+      // Email and password sign-in only: the first, temporary password (changed at the first sign-in).
+      temporaryPassword: z.string().max(200).optional() }), req.body);
     checkRoles(me, '', b.roles);
+    if (ctx.cfg.AUTH_MODE === 'local' && !b.temporaryPassword) throw badRequest('Set a temporary password for the new account.');
+    if (await maybe(db, 'select 1 from app.users where lower(email) = lower($1)', [b.email])) throw conflict('Someone with that email address already has an account.');
     const initials = b.name.split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 3).toUpperCase();
     const u = await one<{ id: string }>(db, `insert into app.users (tenant_id, email, name, initials, job_title, manager_id, clearance) values (app.current_tenant(), lower($1), $2, $3, $4, $5, $6) returning id`,
       [b.email, b.name, initials, b.jobTitle ?? null, b.managerId ?? null, b.clearance]);
     for (const r of b.roles) await db.query('insert into app.user_roles (tenant_id, user_id, role, granted_by) values (app.current_tenant(), $1, $2, $3)', [u.id, r, me.id]);
     await setGroups(db, u.id, b.groups);
     await audit(db, 'user.create', 'User', b.email, `Added ${b.name} with roles ${b.roles.join(', ')}`, null, { roles: b.roles, groups: b.groups, clearance: b.clearance });
+    if (ctx.cfg.AUTH_MODE === 'local') await localAuth.setTemporaryPassword(db, me, (await people(db, [u.id]))[0]!, b.temporaryPassword!, 'New account');
     const t = await reconcileUser(db, u.id, 'New starter');
     return { id: u.id, training: t };
   }));
@@ -91,6 +97,16 @@ export function adminRoutes(api: FastifyInstance, ctx: Ctx): void {
     if (uid === me.id) throw forbidden('You can’t change your own access.');
     const b = body(z.object({ status: z.enum(['active', 'revoked', 'left']), reason: z.string().min(5).max(500) }), req.body);
     return { status: b.status, training: await setStatus(db, await load(db, uid), b.status, b.reason) };
+  }));
+
+  // Email and password sign-in: a System Administrator resets a forgotten password (or unlocks an account) with a
+  // temporary one, which the person must change at their next sign-in.
+  api.post('/users/:id/password', (req) => ctx.run(req, async (db, me) => {
+    need(me, 'admin.users');
+    if (ctx.cfg.AUTH_MODE !== 'local') throw forbidden('Passwords are managed by Microsoft 365.');
+    const b = body(z.object({ temporaryPassword: z.string().min(1).max(200), reason: z.string().min(5).max(500) }), req.body);
+    await localAuth.setTemporaryPassword(db, me, await load(db, param(id, req.params).id), b.temporaryPassword, b.reason);
+    return { ok: true };
   }));
 
   // Ends every session now: tokens issued before this moment are refused.

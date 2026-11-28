@@ -29,7 +29,7 @@ async function main(): Promise<void> {
   let log: { error: (obj: object, msg: string) => void } = { error: (obj, msg) => console.error(msg, obj) };
   // Log the message and code only: pg errors carry the whole client object, which is large and holds connection details.
   const pool = await poolFor(cfg, (err) => log.error({ err: { message: err.message, code: (err as { code?: string }).code } }, 'Database connection lost; it will be replaced on the next request'));
-  const esign = createAdobeSign(cfg), storage = createStorage(cfg), sharepoint = createSharePoint(cfg);
+  const esign = createAdobeSign(cfg), storage = createStorage(cfg, pool), sharepoint = createSharePoint(cfg);
   const inbox = createInboxWorker(pool, { esign, storage }, { error: (obj, msg) => log.error(obj, msg) });
   const publisher = createPublisher(pool, { sharepoint, storage }, cfg.ENTRA_TENANT_ID, { error: (obj, msg) => log.error(obj, msg) });
   const app = buildApp({ cfg, pool, esign, storage, sharepoint, inbox, publisher });
@@ -40,7 +40,11 @@ async function main(): Promise<void> {
   publisher.kick();
   if (cfg.devAuthAllowed) app.log.warn('Development sign-in (X-Dev-User) is ON. Never use this setting in production.');
   if (cfg.ADOBE_SIGN_MODE === 'mock') app.log.warn('Adobe Sign is in MOCK mode: nothing is sent to Adobe Sign and signatures are simulated.');
+  if (cfg.mode === 'pilot') app.log.warn('PILOT: test and pilot data only. Placeholders allowed for sign-in, signatures and SharePoint.');
+  if (cfg.AUTH_MODE === 'local') app.log.warn('Sign-in: email and password held in VeQMS (AUTH_MODE=local), until Microsoft 365 is connected.');
   if (cfg.SHAREPOINT_MODE === 'mock') app.log.warn('SharePoint is in MOCK mode: both libraries are a local folder.');
+  if (cfg.SHAREPOINT_MODE === 'off') app.log.warn('SharePoint is not connected (SHAREPOINT_MODE=off): Effective versions wait to be published.');
+  if (cfg.STORAGE_MODE === 'database') app.log.warn('Files are stored in the database (STORAGE_MODE=database); audit anchors too, so they do not guard against a database administrator.');
   const stop = async () => { inbox.stop(); publisher.stop(); await app.close(); await pool.end(); process.exit(0); };
   process.on('SIGTERM', () => void stop());
   process.on('SIGINT', () => void stop());

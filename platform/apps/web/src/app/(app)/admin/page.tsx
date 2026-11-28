@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
 import { getMe, has, load } from '@/lib/page';
-import type { AuditEntry, Settings, SharePointOverview, UserRow } from '@/lib/types';
+import type { AuditEntry, Group, Settings, SharePointOverview, UserRow } from '@/lib/types';
 import { MONTHS, fmtUtc, qs } from '@/lib/format';
 import { Chip, Empty, Notice, Tabs } from '@/components/ui';
-import { endSessions, republish, resolveAlert, saveRoles, saveSettings, saveStatus, simulateOutsideEdit, syncNow } from './actions';
+import { addUser, endSessions, republish, resetPassword, resolveAlert, saveRoles, saveSettings, saveStatus, simulateOutsideEdit, syncNow } from './actions';
 
 export const metadata = { title: 'Administration' };
 
@@ -28,7 +28,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <Tabs base="/admin" current={tab} tabs={tabs} />
       <Notice ok={sp.ok} err={sp.err} />
       {tab === 'audit' ? <AuditTab sp={sp} /> : tab === 'sharepoint' ? <SharePointTab canSync={has(me, 'admin.settings')} canResolve={has(me, 'integrity.resolve')} />
-        : tab === 'settings' ? <SettingsTab /> : <UsersTab canManage={has(me, 'admin.users')} myId={me.user.id} />}
+        : tab === 'settings' ? <SettingsTab /> : <UsersTab canManage={has(me, 'admin.users')} myId={me.user.id} local={me.authMode === 'local'} />}
     </>
   );
 }
@@ -78,9 +78,10 @@ async function SharePointTab({ canSync, canResolve }: { canSync: boolean; canRes
   return (
     <div className="stack">
       {o.mode === 'mock' ? <div className="callout mb-8"><strong>Mock SharePoint.</strong> A local folder stands in for both libraries, and drafts are written in VeQMS instead of Word. Development and UAT only.</div> : null}
+      {o.mode === 'off' ? <div className="callout mb-8"><strong>SharePoint isn’t connected.</strong> Documents are written in VeQMS. Effective versions wait below and are published to the controlled library once SharePoint is connected (setting <code>SHAREPOINT_MODE</code>).</div> : null}
       <div className="card card-pad">
         <div className="spread mb-8"><h2 className="label" style={{ margin: 0 }}>Libraries</h2>
-          {canSync ? <form action={syncNow}><button className="btn btn-sm" type="submit">Sync now</button></form> : null}</div>
+          {canSync && o.mode !== 'off' ? <form action={syncNow}><button className="btn btn-sm" type="submit">Sync now</button></form> : null}</div>
         <div className="table-wrap"><table className="t"><caption className="sr-only">Last sync of each library</caption>
           <thead><tr><th scope="col">Library</th><th scope="col">Last sync (UTC)</th><th scope="col">Outcome</th><th scope="col">Changes</th><th scope="col">Alerts</th></tr></thead>
           <tbody>{(['drafts', 'controlled'] as const).map((lib) => { const r = run(lib); return (
@@ -162,12 +163,33 @@ async function SettingsTab() {
 const ROLE_LABELS: [string, string][] = [['admin', 'System Administrator'], ['qm', 'Quality Manager'], ['author', 'Author'], ['reviewer', 'Reviewer'],
   ['approver', 'Approver'], ['process', 'Process owner'], ['employee', 'Employee'], ['auditor', 'Auditor (read-only)']];
 
-async function UsersTab({ canManage, myId }: { canManage: boolean; myId: string }) {
-  const users = await load<UserRow[]>('/users');
+async function UsersTab({ canManage, myId, local }: { canManage: boolean; myId: string; local: boolean }) {
+  const [users, groups] = await Promise.all([load<UserRow[]>('/users'), local && canManage ? load<Group[]>('/groups') : Promise.resolve([] as Group[])]);
   return (
     <>
-      <div className="callout plain mb-16">People, groups and leavers come from Microsoft Entra ID through SCIM provisioning. Roles are granted here by a System Administrator.
-        A System Administrator can’t also be an Approver or Quality Manager, and nobody can change their own access.</div>
+      <div className="callout plain mb-16">{local
+        ? 'People sign in with an email address and a password held in VeQMS, until Microsoft 365 sign-in is connected; then they keep their accounts. A System Administrator adds people and resets forgotten passwords here.'
+        : 'People, groups and leavers come from Microsoft Entra ID through SCIM provisioning. Roles are granted here by a System Administrator.'}
+        {' '}A System Administrator can’t also be an Approver or Quality Manager, and nobody can change their own access.</div>
+      {local && canManage ? (
+        <details className="card card-pad mb-16"><summary style={{ fontWeight: 600 }}>Add a person</summary>
+          <form action={addUser} className="stack mt-16" style={{ maxWidth: 640 }}>
+            <div className="form-grid">
+              <div className="field"><label htmlFor="nu-name">Full name</label><input className="input" id="nu-name" name="name" required minLength={2} /></div>
+              <div className="field"><label htmlFor="nu-email">Email address</label><input className="input" id="nu-email" name="email" type="email" required /></div>
+              <div className="field"><label htmlFor="nu-title">Job title (optional)</label><input className="input" id="nu-title" name="jobTitle" /></div>
+              <div className="field"><label htmlFor="nu-cl">Clearance</label><select className="select" id="nu-cl" name="clearance" defaultValue="Internal">
+                {['Public', 'Internal', 'Confidential', 'Restricted'].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            </div>
+            <fieldset><legend className="small">Roles</legend>
+              {ROLE_LABELS.map(([r, label]) => <label key={r} className="check small"><input type="checkbox" name="roles" value={r} defaultChecked={r === 'employee'} /> {label}</label>)}</fieldset>
+            {groups.length ? <fieldset><legend className="small">Groups (training audiences)</legend>
+              {groups.map((g) => <label key={g.id} className="check small"><input type="checkbox" name="groups" value={g.name} /> {g.name}</label>)}</fieldset> : null}
+            <div className="field"><label htmlFor="nu-pw">Temporary password</label><input className="input" id="nu-pw" name="temporaryPassword" type="text" autoComplete="off" required minLength={12} />
+              <div className="help">At least 12 characters. Give it to the person directly (not by email); they must change it when they first sign in.</div></div>
+            <div><button className="btn btn-primary" type="submit">Add person</button></div>
+          </form>
+        </details>) : null}
       {users.length ? (
         <div className="table-wrap"><table className="t"><caption className="sr-only">Users</caption>
           <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Job title</th><th scope="col">Roles</th><th scope="col">Groups</th><th scope="col">Status</th>{canManage ? <th scope="col">Manage</th> : null}</tr></thead>
@@ -189,9 +211,15 @@ async function UsersTab({ canManage, myId }: { canManage: boolean; myId: string 
                     <div><button className="btn" type="submit">Save access</button></div>
                   </form>
                   <form action={endSessions.bind(null, u.id)} className="mt-16"><button className="btn" type="submit">End all sessions now</button></form>
+                  {local ? (
+                    <form action={resetPassword.bind(null, u.id)} className="stack mt-16">
+                      <div className="field"><label className="small" htmlFor={`pw-${u.id}`}>New temporary password</label><input className="input" id={`pw-${u.id}`} name="temporaryPassword" type="text" autoComplete="off" required minLength={12} /></div>
+                      <div className="field"><label className="small" htmlFor={`pr-${u.id}`}>Reason</label><input className="input" id={`pr-${u.id}`} name="reason" required minLength={5} /></div>
+                      <div><button className="btn" type="submit">Reset password</button></div>
+                    </form>) : null}
                 </details>)}</td> : null}</tr>
           ))}</tbody></table></div>
-      ) : <Empty title="No users yet" text="Users appear once Entra ID provisioning has run." />}
+      ) : <Empty title="No users yet" text={local ? 'Add the first people above.' : 'Users appear once Entra ID provisioning has run.'} />}
     </>
   );
 }

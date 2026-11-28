@@ -9,6 +9,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   if (!session) redirect(`/login?next=${encodeURIComponent(path)}`);
   const me = await getMe();
+  // A temporary password must be changed before anything else (the API refuses everything else meanwhile).
+  if (me.mustChange && !path.startsWith('/account/password')) redirect(`/account/password?next=${encodeURIComponent(path)}`);
   const nav: [string, string, string, boolean][] = [
     ['/today', 'Today', 'home', true],
     ['/documents', 'Documents', 'doc', true],
@@ -33,9 +35,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <header className="topbar">
           <a className="brand-logo" href="/today" aria-label="Katalyze Data · VeQMS home" />
           <div className="topbar-spacer" />
-          <span className="small muted" style={{ textAlign: 'right' }}>{me.user.name}<br />{me.tenant.name}</span>
+          <span className="small muted" style={{ textAlign: 'right' }}>{me.user.name}<br />{me.tenant.name}
+            {me.authMode === 'local' ? <> · <a href="/account/password">Change password</a></> : null}</span>
           <span className="avatar" aria-hidden="true">{me.user.initials}</span>
         </header>
+        {me.mode === 'pilot' ? (
+          <div className="callout warn" role="note" style={{ margin: 0, borderRadius: 0 }}>
+            <strong>Pilot.</strong> Test and pilot data only: nothing here is a controlled record.
+            {me.esignMode === 'mock' ? ' Signatures are simulated, not Part 11 (Adobe Sign isn’t connected).' : ''}
+            {me.sharepointMode !== 'live' ? ' SharePoint isn’t connected: documents are written here.' : ''}
+          </div>) : null}
         <main id="main" className="content" tabIndex={-1}>{children}</main>
       </div>
       <nav className="tabbar" aria-label="Mobile">

@@ -52,6 +52,23 @@ const USERS = '/admin?tab=users';
 const ROLES = ['admin', 'qm', 'author', 'reviewer', 'approver', 'process', 'employee', 'auditor'];
 const reasonOf = (fd: FormData) => str(fd, 'reason');
 
+// Add a person. With email and password sign-in the administrator sets a temporary password (told to the person
+// directly, never by email), which they must change at their first sign-in. With Microsoft sign-in, SCIM adds people.
+export async function addUser(fd: FormData) {
+  const roles = list(fd, 'roles').filter((r) => ROLES.includes(r));
+  if (!roles.length) redirect(withMsg(USERS, 'err', 'Choose at least one role.'));
+  const body = { email: str(fd, 'email'), name: str(fd, 'name'), jobTitle: str(fd, 'jobTitle') || undefined, roles, groups: list(fd, 'groups'),
+    clearance: str(fd, 'clearance') || 'Internal', temporaryPassword: str(fd, 'temporaryPassword') || undefined };
+  await mutate('/users', { method: 'POST', body }, USERS, `${body.name} added. Give them their temporary password directly; they must change it when they first sign in.`);
+}
+
+export async function resetPassword(userId: string, fd: FormData) {
+  const reason = reasonOf(fd);
+  if (reason.length < 5) redirect(withMsg(USERS, 'err', 'Give a reason for the reset (at least 5 characters).'));
+  await mutate(`/users/${encodeURIComponent(userId)}/password`, { method: 'POST', body: { temporaryPassword: str(fd, 'temporaryPassword'), reason } }, USERS,
+    'Password reset and any lock cleared. Their open sessions have ended; they must change the temporary password when they sign in.');
+}
+
 export async function saveRoles(userId: string, fd: FormData) {
   const roles = list(fd, 'roles').filter((r) => ROLES.includes(r));
   const reason = reasonOf(fd);

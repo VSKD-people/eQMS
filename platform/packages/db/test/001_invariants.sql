@@ -238,7 +238,24 @@ do $$ declare v uuid; r uuid; a uuid; begin
   perform pg_temp.expect_error(format($q$delete from app.integrity_alerts where id = %L$q$, a), 'permission denied|cannot be deleted');
 end $$;
 
-\echo '11. Audit chain still verifies after all the tests (except the deliberate tamper, entry 5)'
+\echo '11. Pilot: passwords only as hashes and never deleted; stored files are write-once; simulated signatures only where the tenant allows them'
+do $$ declare k text := 'test/' || gen_random_uuid() || '.pdf'; begin
+  perform pg_temp.expect_error(format($q$insert into app.local_credentials (user_id, tenant_id, password_hash) values (%L, %L, 'plain-text')$q$, pg_temp.k('daniel'), pg_temp.k('tenant')), 'local_credentials_password_hash_check');
+  insert into app.local_credentials (user_id, tenant_id, password_hash) values (pg_temp.k('daniel'), pg_temp.k('tenant'), 'scrypt$32768$8$1$c2FsdA==$aGFzaA==');
+  perform pg_temp.expect_error(format($q$delete from app.local_credentials where user_id = %L$q$, pg_temp.k('daniel')), 'permission denied');
+  insert into app.file_store (key, content_type, bytes, sha256, size) values (k, 'application/pdf', '\x25504446', repeat('a', 64), 4);
+  perform pg_temp.expect_error(format($q$insert into app.file_store (key, content_type, bytes, sha256, size) values (%L, 'application/pdf', '\x00', %L, 1)$q$, k, repeat('b', 64)), 'duplicate key');
+  perform pg_temp.expect_error(format($q$update app.file_store set bytes = '\x00' where key = %L$q$, k), 'permission denied|insert-only');
+  perform pg_temp.expect_error(format($q$delete from app.file_store where key = %L$q$, k), 'permission denied|insert-only');
+  update app.settings set allow_simulated_signatures = false where tenant_id = app.current_tenant();
+  perform pg_temp.expect_error(format($q$insert into app.signatures (tenant_id, record_type, record_id, record_number, user_id, meaning, signed_at, source, content_sha256, statement)
+    values (app.current_tenant(), 'document', %L, 'SOP-012', %L, 'Approved', now(), 'simulated', 'x', 'Simulated')$q$, pg_temp.k('SOP-012'), pg_temp.k('vic')), 'simulated signatures are not allowed');
+  update app.settings set allow_simulated_signatures = true where tenant_id = app.current_tenant();
+  insert into app.signatures (tenant_id, record_type, record_id, record_number, user_id, meaning, signed_at, source, content_sha256, statement)
+    values (app.current_tenant(), 'document', pg_temp.k('SOP-012'), 'SOP-012', pg_temp.k('vic'), 'Approved', now(), 'simulated', 'x', 'Simulated (not Part 11)');
+end $$;
+
+\echo '12. Audit chain still verifies after all the tests (except the deliberate tamper, entry 5)'
 do $$ declare r record; begin select * into r from app.verify_audit_chain(); assert r.broken_at = 5, 'unexpected chain state'; end $$;
 reset role;
 \echo 'All database invariants hold.'

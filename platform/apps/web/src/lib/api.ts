@@ -43,7 +43,7 @@ async function currentSession(canWrite: boolean, next?: string): Promise<Session
 
 // The person's IP address and device, passed on to the API for the audit trail. The first X-Forwarded-For address is
 // the one Azure's ingress saw; the user agent is the browser's.
-async function clientHeaders(): Promise<Record<string, string>> {
+export async function clientHeaders(): Promise<Record<string, string>> {
   try {
     const h = await headers();
     const ip = (h.get('x-forwarded-for') ?? '').split(',')[0]?.trim() || h.get('x-real-ip') || '';

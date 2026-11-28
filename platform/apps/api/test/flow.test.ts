@@ -130,7 +130,7 @@ test('API flow: Adobe Sign approvals, training records, closures, SharePoint, ad
   ok(await docState('VP-001') === 'Effective', 'VP-001 is Effective');
   ok((await versionOf('VP-001')).cr_state === 'Closed', 'its change request CR-019 closed');
   const sig1 = await sys((db) => rows(db, `select meaning, source from app.signatures where record_number = 'VP-001' order by meaning`));
-  ok(sig1.length === 3 && sig1.every((s: any) => s.source === 'adobe'), '3 signatures recorded from Adobe Sign');
+  ok(sig1.length === 3 && sig1.every((s: any) => s.source === 'simulated'), '3 signatures recorded, as simulated (mock Adobe Sign: not Part 11)');
   const tr1 = await sys((db) => rows<any>(db, `select r.user_id, r.completed_at, r.agreement_id, r.alloc_reason from app.training_records r where r.document_number = 'VP-001'`));
   ok(tr1.some((r) => r.user_id === ids.priya && r.completed_at && r.agreement_id === e1.id) && tr1.some((r) => r.user_id === ids.omar && r.completed_at), 'author and reviewer get completed training records from the agreement');
   ok(tr1.some((r) => r.user_id === ids.jake && !r.completed_at), 'the IT team audience is allocated the new version');
@@ -277,6 +277,8 @@ test('API flow: Adobe Sign approvals, training records, closures, SharePoint, ad
   await sys((db) => signing.fromProvider(db, ldeps, e7.id, 'poll'));
   const c7 = await as('sam', (db, me) => signing.detail(db, me, e7.id));
   ok(c7.status === 'completed' && (await docState(nd.number)) === 'Effective', 'completed from Adobe Sign status; v0.2 Effective');
+  const sig7 = await sys((db) => rows<any>(db, `select source from app.signatures where agreement_id = $1`, [e7.id]));
+  ok(c7.provider === 'adobe' && sig7.length === 2 && sig7.every((s) => s.source === 'adobe'), 'with Adobe Sign live, the agreement and its signatures are recorded as Adobe Sign');
   // v0.2 needed no retraining: v0.1 training still counts, so nobody is allocated v0.2 and open v0.1 allocations stay open.
   const v01 = await sys((db) => rows<any>(db, `select r.version, r.closed_at from app.training_records r where r.document_number = $1 and r.completed_at is null`, [nd.number]));
   ok(v01.length > 0 && v01.every((r) => r.version === '0.1' && !r.closed_at), 'no retraining: open v0.1 allocations stay open and nobody is allocated v0.2');

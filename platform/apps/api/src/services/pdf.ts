@@ -114,7 +114,7 @@ export async function closurePdf(c: ClosurePdfInput): Promise<Uint8Array> {
 // Mock mode only: stands in for Adobe Sign's signed PDF and audit report.
 export async function mockAuditReport(lines: [string, string][]): Promise<Uint8Array> {
   const w = await start();
-  w.text('Audit report (MOCK - development only)', 14, { bold: true });
+  w.text('Audit report - SIMULATED, NOT PART 11 (Adobe Sign not connected)', 14, { bold: true });
   for (const [k, v] of lines) w.text(`${k}: ${v}`, 10);
   footer(w, 'Mock audit report');
   return w.doc.save();
@@ -124,7 +124,7 @@ export async function stampSigned(original: Uint8Array, lines: string[]): Promis
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const page = doc.addPage(A4);
   let y = A4[1] - M;
-  page.drawText('Signatures (MOCK - development only)', { x: M, y, size: 14, font });
+  page.drawText('SIMULATED SIGNATURES - NOT PART 11 (Adobe Sign not connected)', { x: M, y, size: 14, font });
   for (const l of lines) { y -= 18; page.drawText(clean(l), { x: M, y, size: 10, font }); }
   return doc.save();
 }

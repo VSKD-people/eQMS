@@ -7,13 +7,16 @@ export type Me = {
   user: { id: string; name: string; email: string; initials: string; jobTitle: string | null; roles: Role[]; groups: string[]; clearance: string };
   permissions: string[];
   tenant: { id: string; name: string };
-  esignMode?: 'live' | 'mock';   // 'mock' only in development (ADOBE_SIGN_MODE=mock)
-  sharepointMode?: 'live' | 'mock';   // 'mock': a local folder stands in for SharePoint, and drafts are written in VeQMS
+  esignMode?: 'live' | 'mock';   // 'mock': Adobe Sign not connected; signatures are simulated (not Part 11)
+  sharepointMode?: 'live' | 'mock' | 'off';   // 'mock': a local folder stands in; 'off': not connected. Either way drafts are written in VeQMS
+  mode?: 'development' | 'pilot' | 'production';
+  authMode?: 'entra' | 'local';  // 'local': email and password accounts held in VeQMS
+  mustChange?: boolean;          // signed in with a temporary password
 };
 
 // GET /sharepoint (Administration): last sync of each library, publishing, integrity alerts.
 export type SharePointOverview = {
-  mode: 'live' | 'mock';
+  mode: 'live' | 'mock' | 'off';
   runs: { library: string; startedAt: string; finishedAt: string | null; outcome: string; changes: number; alerts: number; error: string | null }[];
   alerts: { id: string; raisedAt: string; kind: string; library: string | null; detail: string; document: string | null; version: string | null;
     resolvedAt: string | null; resolution: string | null; resolvedBy: string | null }[];
@@ -38,7 +41,7 @@ export type Signer = {
 };
 
 export type AgreementSummary = {
-  id: string; providerAgreementId: string | null; recordType: string; recordNumber: string; version: string | null;
+  id: string; provider?: 'adobe' | 'simulated'; providerAgreementId: string | null; recordType: string; recordNumber: string; version: string | null;
   subject: string; purpose: string; status: 'sent' | 'completed' | 'declined' | 'cancelled';
   sentBy: Person; sentAt: string; completedAt: string | null; transactionNo: number; allowanceYear: number;
   signed: number; signers: Signer[]; correctionOf: string | null; reason: string | null;

@@ -1,16 +1,19 @@
-// Sign-in: validates the Microsoft Entra ID access token on every request, maps it to a tenant and a VeQMS user,
-// and refuses revoked or departed users. Development builds can use X-Dev-User instead (never in production).
+// Sign-in: validates the Microsoft Entra ID access token on every request (AUTH_MODE=entra), or the API's own token
+// from email and password sign-in (AUTH_MODE=local, services/local-auth.ts); maps it to a tenant and a VeQMS user,
+// and refuses revoked or departed users. Development builds can use X-Dev-User instead (never when deployed).
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { maybe, withTenant, type Pool } from '@veqms/db';
 import type { Config } from '../config.ts';
 import { HttpError } from './http.ts';
-import { personByEmail, personByOid, type Person } from './people.ts';
+import { person, personByEmail, personByOid, type Person } from './people.ts';
+import { readToken, tokenStillValid } from '../services/local-auth.ts';
 
 export interface Auth {
   tenantId: string;
   tenantName: string;
   user: Person;
-  via: 'Microsoft 365 single sign-on' | 'Development sign-in';
+  via: 'Microsoft 365 single sign-on' | 'Email and password' | 'Development sign-in';
+  mustChange?: boolean;   // a temporary password: only changing it is allowed until then
 }
 
 const authOf = new WeakMap<object, Auth>();
@@ -48,6 +51,16 @@ export function createAuthenticator(cfg: Config, pool: Pool) {
     }
     const h = headers.authorization;
     const token = typeof h === 'string' && h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (token && cfg.AUTH_MODE === 'local') {
+      const t = await readToken(cfg, token);
+      let current = true;
+      const a = await resolve(cfg.LOCAL_TENANT_KEY, (tenantId) => withTenant(pool, { tenantId, userId: null }, async (db) => {
+        current = await tokenStillValid(db, t.userId, t.passwordSetAt);
+        return person(db, t.userId);
+      }), 'Email and password', t.iat);
+      if (!current) throw new HttpError(401, 'Your password was changed or reset, so this session has ended. Sign in again.');
+      return { ...a, mustChange: t.mustChange };
+    }
     if (!token || !jwks) throw new HttpError(401, 'Sign in first.');
     let payload: JWTPayload & { oid?: string; tid?: string; scp?: string; preferred_username?: string; email?: string };
     try {

@@ -7,3 +7,6 @@ dist/
 !.env.example
 coverage/
 storage-local/
+
+# Pilot secrets (copy of pilot.env.example).
+pilot.env

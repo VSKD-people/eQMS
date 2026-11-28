@@ -9,7 +9,7 @@ import { anchor } from '../services/anchor.ts';
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const pool = await poolFor(cfg);
-  const storage = createStorage(cfg);
+  const storage = createStorage(cfg, pool);
   let failed = 0;
   try {
     const tenants = (await pool.query<{ tenant_id: string }>('select distinct tenant_id from app.tenant_directory')).rows;

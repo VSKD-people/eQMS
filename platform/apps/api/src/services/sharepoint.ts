@@ -37,6 +37,7 @@ export async function raiseAlert(db: Db, a: { kind: AlertKind; library?: Library
 export async function publishPending(db: Db, deps: SpDeps): Promise<{ published: number; failed: number; superseded: number }> {
   const sp = deps.sharepoint, col = sp.columns;
   const out = { published: 0, failed: 0, superseded: 0 };
+  if (sp.mode === 'off') return out; // not connected: versions wait, and publish once SharePoint is connected
   const pending = await rows<{ id: string; version: string; content_sha256: string; pdf_blob: string | null; publish_attempts: number; published_item_id: string | null;
     document_id: string; number: string; effective_at: Date | null }>(db, `select v.id, v.version, v.content_sha256, v.pdf_blob, v.publish_attempts, v.published_item_id, d.id as document_id, d.number, d.effective_at
     from app.document_versions v join app.documents d on d.id = v.document_id where v.publish_status = 'pending' order by v.created_at`);
@@ -236,6 +237,7 @@ export async function sharePointTenants(pool: Pool, entraTenantId: string): Prom
 
 // Publish, then sync both libraries, for one tenant (the 15-minute job and "Sync now").
 export async function runSync(db: Db, deps: SpDeps) {
+  if (deps.sharepoint.mode === 'off') throw conflict('SharePoint isn’t connected yet. Effective versions wait and are published once it is.');
   const publish = await publishPending(db, deps);
   const drafts = await syncLibrary(db, deps.sharepoint, 'drafts');
   const controlled = await syncLibrary(db, deps.sharepoint, 'controlled');

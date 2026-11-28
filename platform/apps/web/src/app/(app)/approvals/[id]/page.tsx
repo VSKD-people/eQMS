@@ -30,6 +30,7 @@ export default async function AgreementPage({ params, searchParams }: { params: 
         </div>
       </div>
       <Notice ok={sp.ok} err={sp.err} />
+      {e.provider === 'simulated' ? <div className="callout warn mb-16" role="note"><strong>Simulated, not Part 11.</strong> Adobe Sign wasn’t connected when this was signed, so its signatures, signed PDF and audit report are stand-ins. Sign the record again through Adobe Sign before relying on it.</div> : null}
       <MockSignPanel e={e} me={me} back={`/approvals/${e.id}`} />
       {e.reason ? <div className="callout mb-16"><strong>{AGREEMENT_STATUS[e.status]}:</strong> {e.reason}</div> : null}
       <div className="grid-2">

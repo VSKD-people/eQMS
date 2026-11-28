@@ -11,7 +11,13 @@ import { runSync, sharePointTenants } from '../services/sharepoint.ts';
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const pool = await poolFor(cfg);
-  const deps = { sharepoint: createSharePoint(cfg), storage: createStorage(cfg) };
+  const deps = { sharepoint: createSharePoint(cfg), storage: createStorage(cfg, pool) };
+  if (deps.sharepoint.mode !== 'live') {
+    // Off: nothing to do. Mock: its folder is inside the API's container, which publishes to it itself.
+    console.log(JSON.stringify({ job: 'sharepoint', skipped: `SharePoint is ${deps.sharepoint.mode === 'off' ? 'not connected' : 'in mock mode'}` }));
+    await pool.end();
+    process.exit(0);
+  }
   let failed = 0;
   try {
     for (const t of await sharePointTenants(pool, cfg.ENTRA_TENANT_ID)) {

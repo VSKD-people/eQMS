@@ -155,7 +155,7 @@ async function Approval({ d }: { d: DocumentDetail }) {
     <div className="stack">
       {items.map((e) => (
         <div className="card card-pad" key={e.id}>
-          <div className="spread"><div><b>v{e.version}</b> · sent {fmtDateTime(e.sentAt)} by {e.sentBy.name} {e.correctionOf ? <Chip text="Correction" cls="chip-due" /> : null}</div><AgreementStatus e={e} /></div>
+          <div className="spread"><div><b>v{e.version}</b> · sent {fmtDateTime(e.sentAt)} by {e.sentBy.name} {e.correctionOf ? <Chip text="Correction" cls="chip-due" /> : null}{e.provider === 'simulated' ? <> <Chip text="Simulated · not Part 11" cls="chip-due" /></> : null}</div><AgreementStatus e={e} /></div>
           <p className="small muted">Transaction {e.transactionNo} of the {e.allowanceYear} allowance · {e.signed} of {e.signers.length} signed{e.completedAt ? ` · completed ${fmtUtc(e.completedAt)}` : ''}</p>
           {e.reason ? <p className="small"><b>{e.status === 'declined' ? 'Declined' : 'Cancelled'}:</b> {e.reason}</p> : null}
           <div className="row-wrap"><AgreementFiles e={e} /><a className="btn btn-sm" href={`/approvals/${e.id}`}>Details</a></div>

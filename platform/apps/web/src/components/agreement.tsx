@@ -24,10 +24,11 @@ export function AgreementStatus({ e }: { e: AgreementSummary }) {
 export function AgreementCard({ e, children }: { e: AgreementSummary; children?: React.ReactNode }) {
   return (
     <div className="card ctx-card">
-      <div className="spread"><span className="label" style={{ margin: 0 }}>Adobe Sign approval</span><AgreementStatus e={e} /></div>
+      <div className="spread"><span className="label" style={{ margin: 0 }}>{e.provider === 'simulated' ? 'Simulated approval' : 'Adobe Sign approval'}</span><AgreementStatus e={e} /></div>
+      {e.provider === 'simulated' ? <Chip text="Simulated · not Part 11" cls="chip-due" /> : null}
       <div className="small mt-8" style={{ fontWeight: 600 }}>{e.subject}</div>
       <div className="small muted">Transaction {e.transactionNo} of the {e.allowanceYear} allowance · sent {fmtDateTime(e.sentAt)} by {e.sentBy.name}</div>
-      {e.status === 'sent' ? <p className="small mt-8" style={{ marginBottom: 0 }}>Signers sign from the Adobe Sign email, in order. {e.signed} of {e.signers.length} signed.</p> : null}
+      {e.status === 'sent' ? <p className="small mt-8" style={{ marginBottom: 0 }}>{e.provider === 'simulated' ? 'Signers sign on the record page, in order (Adobe Sign isn’t connected).' : 'Signers sign from the Adobe Sign email, in order.'} {e.signed} of {e.signers.length} signed.</p> : null}
       {e.reason ? <p className="small mt-8" style={{ marginBottom: 0 }}><b>{e.status === 'declined' ? 'Declined' : 'Cancelled'}:</b> {e.reason}</p> : null}
       <div className="mt-8"><SignerList signers={e.signers} /></div>
       <div className="btn-row mt-16"><a className="btn btn-sm" href={`/approvals/${e.id}`}>Agreement details</a>{children}</div>

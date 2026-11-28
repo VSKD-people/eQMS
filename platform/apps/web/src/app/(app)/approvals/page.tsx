@@ -53,7 +53,7 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
                 <tr key={e.id}>
                   <td><a href={`/approvals/${e.id}`}>#{e.transactionNo}</a><div className="small muted">{e.allowanceYear}</div></td>
                   <td><a href={recordHref(e.recordType, e.recordNumber)}>{e.recordNumber}</a>{e.version ? ` v${e.version}` : ''}<div className="small muted">{e.subject}</div></td>
-                  <td className="small">{e.purpose}{e.correctionOf ? <div className="muted">Correction</div> : null}</td>
+                  <td className="small">{e.purpose}{e.correctionOf ? <div className="muted">Correction</div> : null}{e.provider === 'simulated' ? <div className="muted">Simulated, not Part 11</div> : null}</td>
                   <td className="small">{fmtDateTime(e.sentAt)}<div className="muted">{e.sentBy.name}</div></td>
                   <td>{e.signed} of {e.signers.length}</td>
                   <td><AgreementStatus e={e} /></td>

@@ -5,7 +5,8 @@ import { PERMISSIONS, can, type Permission } from '@veqms/domain';
 import type { Ctx } from '../app.ts';
 import { forbidden } from '../lib/http.ts';
 import { people } from '../lib/people.ts';
-import { noContent, param, uuid } from '../lib/params.ts';
+import { body, noContent, param, uuid, z } from '../lib/params.ts';
+import * as localAuth from '../services/local-auth.ts';
 
 export function coreRoutes(api: FastifyInstance, ctx: Ctx): void {
   api.get('/me', (req) => ctx.run(req, async (_db, me, auth) => ({
@@ -14,8 +15,18 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx): void {
     tenant: { id: auth.tenantId, name: auth.tenantName },
     via: auth.via,
     esignMode: ctx.esign.mode,
-    sharepointMode: ctx.sharepoint.mode
+    sharepointMode: ctx.sharepoint.mode,
+    mode: ctx.cfg.mode,          // development, pilot or production
+    authMode: ctx.cfg.AUTH_MODE, // entra or local
+    mustChange: !!auth.mustChange
   })));
+
+  // Email and password sign-in: the person changes their own password (a temporary one first of all).
+  api.post('/auth/password', (req) => ctx.run(req, async (db, me) => {
+    if (ctx.cfg.AUTH_MODE !== 'local') throw forbidden('Your password is managed by Microsoft 365.');
+    const b = body(z.object({ current: z.string().min(1).max(200), next: z.string().min(1).max(200) }), req.body);
+    return localAuth.changePassword(db, ctx.cfg, me, b.current, b.next);
+  }));
 
   api.get('/tasks', (req) => ctx.run(req, async (db, me) => {
     const list = await rows<{ id: string; kind: string; record_type: string; record_id: string; record_number: string; title: string | null; due_at: Date | null; note: string | null; ref: string | null; fyi: boolean }>(db, `

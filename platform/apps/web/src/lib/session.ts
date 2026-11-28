@@ -7,6 +7,8 @@ import { env } from './env';
 // across numbered cookies (veqms_session.0, .1 …) to stay under the 4 KB per-cookie limit.
 export interface Session {
   devUser?: string;                 // development persona (X-Dev-User), only when DEV_AUTH=1
+  local?: boolean;                  // email and password sign-in: accessToken is the API's own token (no refresh)
+  mustChange?: boolean;             // signed in with a temporary password: change it before anything else
   accessToken?: string;             // Entra access token for the API
   refreshToken?: string;
   expiresAt?: number;               // access token expiry, epoch seconds
@@ -67,6 +69,6 @@ export async function clearSession(): Promise<void> {
 }
 
 export function needsRefresh(s: Session): boolean {
-  if (s.devUser) return false;
+  if (s.devUser || s.local) return false; // the API refuses an expired local token, which sends the person to sign in
   return !s.accessToken || !s.expiresAt || s.expiresAt - 120 < Math.floor(Date.now() / 1000);
 }

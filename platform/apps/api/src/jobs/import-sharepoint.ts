@@ -26,8 +26,8 @@ async function main(): Promise<void> {
   const apply = process.argv.includes('--apply');
   if (!tenant || !/^[0-9a-f-]{36}$/i.test(tenant)) throw new Error('Give the VeQMS tenant ID: --tenant <uuid>');
   const map = JSON.parse(cfg.SHAREPOINT_IMPORT_MAP) as Record<string, string>;
-  const sp = createSharePoint(cfg), storage = createStorage(cfg);
   const pool = await poolFor(cfg);
+  const sp = createSharePoint(cfg), storage = createStorage(cfg, pool);
   const report: { file: string; number?: string; problems: string[] }[] = [];
   const rows: Row[] = [];
   try {

@@ -10,6 +10,8 @@ import { createAuthenticator, getAuth, setAuth, type Auth } from './lib/auth.ts'
 import { forbidden, HttpError, toHttp } from './lib/http.ts';
 import { audit } from './lib/work.ts';
 import { isReadOnly } from '@veqms/domain';
+import { z } from 'zod';
+import * as localAuth from './services/local-auth.ts';
 import type { Person } from './lib/people.ts';
 import { coreRoutes } from './routes/core.ts';
 import { documentRoutes } from './routes/documents.ts';
@@ -57,12 +59,24 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return reply.status(h.status).send(h.body);
   });
 
+  // Email and password sign-in (AUTH_MODE=local only). Called by the web app's server, never by the browser.
+  app.post('/auth/local/login', async (req, reply) => {
+    if (deps.cfg.AUTH_MODE !== 'local') return reply.status(404).send({ error: { code: 'not_found', message: 'Not found' } });
+    const b = z.object({ email: z.string().trim().min(3).max(200), password: z.string().min(1).max(200) }).safeParse(req.body);
+    if (!b.success) return reply.status(400).send({ error: { code: 'bad_request', message: 'Enter your email address and password.' } });
+    const r = await localAuth.login(deps.pool, deps.cfg, b.data.email, b.data.password, { ip: header(req, 'x-veqms-client-ip') ?? req.ip, userAgent: header(req, 'x-veqms-user-agent') ?? header(req, 'user-agent') });
+    if (!r.ok) return reply.status(401).send({ error: { code: 'sign_in_refused', message: r.message } });
+    return r;
+  });
+
   app.get('/health', async () => ({ ok: true }));
   app.get('/ready', async () => { await deps.pool.query('select 1'); return { ok: true }; });
 
   app.register(async (api) => {
     api.addHook('onRequest', async (req) => {
       const a = await authenticate(req.headers);
+      // A temporary password: nothing but reading who you are and changing it, until it is changed.
+      if (a.mustChange && !['/api/v1/me', '/api/v1/auth/password'].includes(req.url.split('?')[0]!)) throw forbidden('Change your temporary password first.');
       // The auditor role is read-only everywhere: refuse any change before it reaches a route.
       if (req.method !== 'GET' && req.method !== 'HEAD' && !/\/notifications\/[^/]+\/read$/.test(req.url) && isReadOnly(a.user.roles)) throw forbidden('Your role is read-only.');
       setAuth(req, a);

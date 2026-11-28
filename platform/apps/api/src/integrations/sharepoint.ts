@@ -20,7 +20,7 @@ export interface SpChange {
   byApp: string | null; byUser: string | null; byName: string | null;
 }
 export interface SharePoint {
-  mode: 'live' | 'mock';
+  mode: 'live' | 'mock' | 'off';
   appId: string;                                       // changes by this app ID are VeQMS's own
   columns: Record<string, string>;                     // controlled library columns: number, version, status, effective, sha256
   createDraft(fileName: string, docx: Uint8Array): Promise<SpItem>;
@@ -42,7 +42,15 @@ export class DeltaExpired extends Error { constructor(lib: Library) { super(`The
 
 export function createSharePoint(cfg: Config): SharePoint {
   const columns = JSON.parse(cfg.SHAREPOINT_COLUMNS) as Record<string, string>;
+  if (cfg.SHAREPOINT_MODE === 'off') return off(columns);
   return cfg.SHAREPOINT_MODE === 'live' ? live(cfg, columns) : mock(join(cfg.LOCAL_STORAGE_DIR, '.sharepoint-mock'), columns);
+}
+
+// Not connected yet (SHAREPOINT_MODE=off): documents are written in VeQMS, nothing is published or synced, and
+// Effective versions wait in the publishing queue until SharePoint is connected.
+function off(columns: Record<string, string>): SharePoint {
+  const no = async (): Promise<never> => { throw new Error('SharePoint isn’t connected (SHAREPOINT_MODE=off).'); };
+  return { mode: 'off', appId: '', columns, createDraft: no, getItem: no, pdfOf: no, upload: no, setFields: no, fields: no, download: no, delta: no };
 }
 
 // ---------- Live: Microsoft Graph v1.0 ----------

@@ -16,7 +16,7 @@ import { LABEL, checkPlan, documentPlan } from './plans.ts';
 
 export interface Deps { esign: ESign; storage: Storage }
 
-type AgreementRow = { id: string; provider_agreement_id: string | null; record_type: 'document' | 'capa' | 'quality_event'; record_id: string; record_number: string; document_version_id: string | null;
+type AgreementRow = { id: string; provider: 'adobe' | 'simulated'; provider_agreement_id: string | null; record_type: 'document' | 'capa' | 'quality_event'; record_id: string; record_number: string; document_version_id: string | null;
   version: string | null; subject: string; purpose: string; status: 'sent' | 'completed' | 'declined' | 'cancelled'; sent_by: string; sent_by_name: string; sent_at: Date; completed_at: Date | null;
   decline_reason: string | null; cancel_reason: string | null; correction_of: string | null; verification: Verification & { by: string; at: string }; pdf_blob: string; pdf_sha256: string;
   signed_pdf_blob: string | null; signed_pdf_sha256: string | null; audit_report_blob: string | null; audit_report_sha256: string | null; allowance_year: number | null; transaction_no: number | null };
@@ -37,7 +37,7 @@ async function signers(db: Db, agreementId: string): Promise<SignerRow[]> {
 export async function summary(db: Db, e: AgreementRow) {
   const ss = await signers(db, e.id);
   return {
-    id: e.id, providerAgreementId: e.provider_agreement_id, recordType: e.record_type, recordNumber: e.record_number, version: e.version, subject: e.subject, purpose: e.purpose,
+    id: e.id, provider: e.provider, providerAgreementId: e.provider_agreement_id, recordType: e.record_type, recordNumber: e.record_number, version: e.version, subject: e.subject, purpose: e.purpose,
     status: e.status, sentBy: { id: e.sent_by, name: e.sent_by_name }, sentAt: iso(e.sent_at), completedAt: iso(e.completed_at), transactionNo: e.transaction_no ?? 0, allowanceYear: e.allowance_year ?? 0,
     signed: ss.filter((s) => s.status === 'signed').length, correctionOf: e.correction_of, reason: e.decline_reason ?? e.cancel_reason,
     signers: ss.map((s) => ({ userId: s.user_id, name: s.name, roleLabel: s.role_label, meaning: s.meaning, routingOrder: s.routing_order, status: s.status, signedAt: iso(s.signed_at) }))
@@ -137,9 +137,11 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: Agreeme
   const pdfSha = hashBytes(o.pdf);
   // Documents: the four checks were made on this same locked PDF at submit, so the record keeps who made them and when.
   const verification = { footer: true, version: true, documentId: true, dates: true, note: o.verification.note ?? '', by: o.checkedAtSubmit?.by ?? me.id, at: o.checkedAtSubmit?.at ?? new Date().toISOString() };
-  await db.query(`insert into app.agreements (id, tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256, correction_of)
-    values ($1, app.current_tenant(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [id, o.recordType, o.recordId, o.recordNumber, o.versionId, o.version, o.plan.subject, o.plan.purpose, me.id, JSON.stringify(verification), pdfKey, pdfSha, correctionOf]);
+  // Mock Adobe Sign (development and pilot): the agreement and its signatures are recorded as simulated, not Part 11.
+  const provider = deps.esign.mode === 'mock' ? 'simulated' : 'adobe';
+  await db.query(`insert into app.agreements (id, tenant_id, record_type, record_id, record_number, document_version_id, version, subject, purpose, sent_by, verification, pdf_blob, pdf_sha256, correction_of, provider)
+    values ($1, app.current_tenant(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [id, o.recordType, o.recordId, o.recordNumber, o.versionId, o.version, o.plan.subject, o.plan.purpose, me.id, JSON.stringify(verification), pdfKey, pdfSha, correctionOf, provider]);
   // The database numbers the transaction and refuses it if the allowance is used up (P0002).
   const send = await one<{ transaction_no: number; allowance_year: number }>(db, `insert into app.signing_transactions (tenant_id, allowance_year, transaction_no, agreement_id, sent_by) values (app.current_tenant(), 0, 0, $1, $2) returning transaction_no, allowance_year`, [id, me.id]);
   // Signers are matched to Adobe Sign's participants by the email address the agreement went to.
@@ -161,7 +163,7 @@ async function dispatch(db: Db, deps: Deps, me: Person, o: { recordType: Agreeme
   await db.query('update app.agreements set provider_agreement_id = $2 where id = $1', [id, dsId]);
   await db.query('insert into app.agreement_directory (provider_agreement_id, tenant_id, agreement_id) values ($1, app.current_tenant(), $2)', [dsId, id]);
   await db.query(`insert into app.agreement_events (tenant_id, agreement_id, type, user_id, detail) values (app.current_tenant(), $1, 'sent', $2, $3)`, [id, me.id, `Agreement sent to ${lines.length} signers${correctionOf ? ' (correction send)' : ''}`]);
-  await audit(db, 'esign.send', LABEL[o.recordType], o.recordNumber, `Sent Adobe Sign agreement ${dsId} (transaction ${send.transaction_no} of the ${send.allowance_year} allowance${correctionOf ? '; correction after a ' + last!.status + ' agreement' : ''})`, null,
+  await audit(db, 'esign.send', LABEL[o.recordType], o.recordNumber, `${provider === 'simulated' ? `Sent simulated agreement ${dsId}, not Part 11 (Adobe Sign not connected)` : `Sent Adobe Sign agreement ${dsId}`} (transaction ${send.transaction_no} of the ${send.allowance_year} allowance${correctionOf ? '; correction after a ' + last!.status + ' agreement' : ''})`, null,
     { agreement: id, providerAgreementId: dsId, subject: o.plan.subject, signers: lines.map((s) => `${s.person.name} · ${s.meaning}`), transactionNo: send.transaction_no });
   await advance(db, id);
   const a = await allowance(db);
@@ -284,9 +286,9 @@ async function complete(db: Db, deps: Deps, agreementId: string, source: Source)
   await db.query(`insert into app.agreement_events (tenant_id, agreement_id, type, detail, source) values (app.current_tenant(), $1, 'completed', 'Agreement completed. Signed PDF and audit report downloaded and stored.', $2)`, [e.id, source]);
   for (const s of ss) {
     await db.query(`insert into app.signatures (tenant_id, record_type, record_id, record_number, document_version_id, user_id, meaning, signed_at, source, agreement_id, content_sha256, statement)
-      values (app.current_tenant(), $1, $2, $3, $4, $5, $6, coalesce($7::timestamptz, now()), 'adobe', $8, $9, $10)`,
+      values (app.current_tenant(), $1, $2, $3, $4, $5, $6, coalesce($7::timestamptz, now()), $11, $8, $9, $10)`,
       [e.record_type, e.record_id, e.record_number, e.document_version_id, s.user_id, s.meaning, s.signed_at, e.id, e.pdf_sha256,
-       adobeSignStatement(s.meaning)]);
+       e.provider === 'simulated' ? `Simulated signature (not Part 11; Adobe Sign not connected): ${s.meaning}` : adobeSignStatement(s.meaning), e.provider]);
   }
   await audit(db, 'esign.completed', LABEL[e.record_type], e.record_number, `Agreement ${e.provider_agreement_id} completed; signed PDF, audit report and agreement ID stored`, null,
     { agreement: e.id, providerAgreementId: e.provider_agreement_id, signedPdfSha256: signedSha, auditReportSha256: certSha });

@@ -17,7 +17,7 @@ import { hashCheck, sharePointTenants } from '../services/sharepoint.ts';
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const pool = await poolFor(cfg);
-  const deps = { esign: createAdobeSign(cfg), storage: createStorage(cfg) };
+  const deps = { esign: createAdobeSign(cfg), storage: createStorage(cfg, pool) };
   const sharepoint = createSharePoint(cfg);
   let failed = 0;
   try {
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
           }
           console.log(JSON.stringify({ tenant: t.tenant_id, job: 'agreement-poll', checked: stale.length }));
         }
-        if (spTenants.has(t.tenant_id)) {
+        if (spTenants.has(t.tenant_id) && sharepoint.mode === 'live') { // off: nothing published; mock: files live in the API's container
           // Every published Effective file re-hashed against its locked PDF; a mismatch or a missing file alerts QA.
           const h = await withTenant(pool, { tenantId: t.tenant_id, userId: null }, (db) => hashCheck(db, sharepoint));
           console.log(JSON.stringify({ tenant: t.tenant_id, job: 'sharepoint-hash-check', ...h }));

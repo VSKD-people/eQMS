@@ -29,7 +29,7 @@ export default async function EditDraftPage({ params, searchParams }: { params: 
         </form>
       ) : (
         <form action={saveDraft.bind(null, d.number)} className="card card-pad">
-          {me.sharepointMode !== 'live' ? <div className="callout mb-16"><strong>Development stand-in for Word.</strong> With SharePoint connected, authors write in Word in the Drafts library. Here, with mock SharePoint, the text is written in VeQMS.</div> : null}
+          {me.sharepointMode !== 'live' ? <div className="callout mb-16"><strong>Written in VeQMS for now.</strong> SharePoint isn’t connected, so the text is written here. Once it is, authors write in Word in the SharePoint Drafts library.</div> : null}
           <div className="field mb-16"><label htmlFor="dc">Content</label>
             <textarea className="textarea" id="dc" name="content" defaultValue={text} style={{ minHeight: 360, fontFamily: 'var(--font-mono)', fontSize: 13 }} />
             <div className="help">Start a line with “## ” for a heading. Leave a blank line between paragraphs.</div></div>

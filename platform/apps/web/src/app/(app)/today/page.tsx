@@ -1,7 +1,7 @@
 import { getMe, load } from '@/lib/page';
 import type { Task } from '@/lib/types';
 import { daysFromNow } from '@/lib/format';
-import { DueChip, Empty } from '@/components/ui';
+import { DueChip, Empty, Notice } from '@/components/ui';
 
 export const metadata = { title: 'Today' };
 
@@ -28,9 +28,10 @@ function href(t: Task): string {
   return `/documents/${t.recordNumber}`;
 }
 
-export default async function TodayPage() {
+export default async function TodayPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
+  const sp = await searchParams;
   const [tasks, me] = await Promise.all([load<Task[]>('/tasks'), getMe()]);
-  const signNote = me.esignMode === 'mock' ? 'Adobe Sign is in mock mode: open the record to sign.' : 'Sign in Adobe Sign: use the link in your Adobe Sign email.';
+  const signNote = me.esignMode === 'mock' ? 'Adobe Sign isn’t connected: open the record to sign (simulated, not Part 11).' : 'Sign in Adobe Sign: use the link in your Adobe Sign email.';
   const groups: [string, Task[]][] = [
     ['Overdue', tasks.filter((t) => !t.fyi && (daysFromNow(t.dueAt) ?? 1) < 0)],
     ['Next 7 days', tasks.filter((t) => !t.fyi && (daysFromNow(t.dueAt) ?? 99) >= 0 && (daysFromNow(t.dueAt) ?? 99) <= 7)],
@@ -41,6 +42,7 @@ export default async function TodayPage() {
     <>
       <div className="page-head"><div><h1 className="display">Today</h1>
         <div className="sub">{new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' }).format(new Date())} · {overdue} overdue · {groups[1]![1].length} due in the next 7 days</div></div></div>
+      <Notice ok={sp.ok} err={sp.err} />
       {!tasks.length ? <Empty title="You’re all caught up" text="New tasks appear here as soon as they’re assigned to you." /> : null}
       {groups.filter(([, list]) => list.length).map(([label, list]) => (
         <section key={label} aria-label={label}>
